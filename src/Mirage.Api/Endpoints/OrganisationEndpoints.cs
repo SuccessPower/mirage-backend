@@ -19,7 +19,10 @@ internal static class OrganisationEndpoints
                 "Organisations retrieved successfully."));
         organisations.MapPost("/", Create).RequireAuthorization();
 
-        api.MapPost("/recommendations", Recommend).RequireAuthorization();
+        var recommendations = api.MapGroup("/recommendations").WithTags("Recommendations").RequireAuthorization();
+        recommendations.MapGet("/", ListRecommendations);
+        recommendations.MapPost("/", Recommend);
+        recommendations.MapDelete("/{id:guid}", RevokeRecommendation);
         return api;
     }
 
@@ -54,5 +57,44 @@ internal static class OrganisationEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/recommendations/{recommendation.Id}",
             new { recommendation.Id }, "Recommendation created successfully.");
+    }
+
+    private static async Task<IResult> ListRecommendations(HttpContext context, IMirageDbContext db,
+        string direction = "received", int page = 1, int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = context.User.GetUserId();
+        var query = db.Recommendations.AsNoTracking().AsQueryable();
+        query = direction.Equals("given", StringComparison.OrdinalIgnoreCase)
+            ? query.Where(x => x.RecommendedByUserId == userId)
+            : query.Where(x => x.RecommendedUserId == userId);
+        var result = query.OrderByDescending(x => x.CreatedAt).Select(x => new
+        {
+            x.Id,
+            x.RecommendedUserId,
+            x.RecommendedByUserId,
+            x.OrganisationId,
+            OrganisationName = x.Organisation != null ? x.Organisation.Name : null,
+            x.Note,
+            x.Status,
+            x.CreatedAt
+        });
+        return ApiResults.Ok(context,
+            await result.ToPagedResultAsync(page, pageSize, cancellationToken),
+            "Recommendations retrieved successfully.");
+    }
+
+    private static async Task<IResult> RevokeRecommendation(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var recommendation = await db.Recommendations.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (recommendation is null) return EndpointHelpers.NotFound(context, "Recommendation was not found.");
+        if (recommendation.RecommendedByUserId != context.User.GetUserId())
+            return EndpointHelpers.Forbidden(context);
+        if (recommendation.Status == RecommendationStatus.Revoked)
+            return EndpointHelpers.Conflict(context, "Recommendation is already revoked.");
+        recommendation.Revoke();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { recommendation.Id }, "Recommendation revoked successfully.");
     }
 }

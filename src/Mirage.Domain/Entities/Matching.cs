@@ -31,4 +31,11 @@ public sealed class Match : Entity
     public MatchStatus Status { get; private set; } = MatchStatus.Active;
     public DateTimeOffset MatchedAt { get; private set; }
     public DateTimeOffset? LastActivityAt { get; private set; }
+
+    public void Close()
+    {
+        Status = MatchStatus.Closed;
+        LastActivityAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
 }

@@ -13,9 +13,14 @@ internal static class DateRequestEndpoints
     {
         var group = api.MapGroup("/date-requests").WithTags("Date Requests").RequireAuthorization();
         group.MapGet("/", List);
+        group.MapGet("/mine", ListMine);
+        group.MapGet("/{id:guid}", GetById);
+        group.MapGet("/{id:guid}/acceptances", GetAcceptances);
         group.MapPost("/", Create);
         group.MapPost("/{id:guid}/accept", Accept);
+        group.MapDelete("/{id:guid}/accept", WithdrawAcceptance);
         group.MapPost("/{id:guid}/select/{userId:guid}", Select);
+        group.MapDelete("/{id:guid}", Cancel);
         return api;
     }
 
@@ -50,6 +55,73 @@ internal static class DateRequestEndpoints
             "Date request created successfully.");
     }
 
+    private static async Task<IResult> ListMine(HttpContext context, IMirageDbContext db,
+        int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+    {
+        var userId = context.User.GetUserId();
+        var query = db.DateRequests.AsNoTracking()
+            .Where(x => x.RequestorUserId == userId ||
+                        x.Acceptances.Any(acceptance => acceptance.AcceptorUserId == userId))
+            .OrderByDescending(x => x.CreatedAt);
+        return ApiResults.Ok(context,
+            await query.ToPagedResultAsync(page, pageSize, cancellationToken),
+            "Your date requests were retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetById(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var request = await db.DateRequests.AsNoTracking()
+            .Select(x => new
+            {
+                x.Id,
+                x.RequestorUserId,
+                x.Activity,
+                x.StartsAt,
+                x.EndsAt,
+                x.LocationArea,
+                x.Note,
+                x.Status,
+                x.SelectedUserId,
+                AcceptanceCount = x.Acceptances.Count,
+                x.CreatedAt
+            }).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return request is null
+            ? EndpointHelpers.NotFound(context, "Date request was not found.")
+            : ApiResults.Ok(context, request, "Date request retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetAcceptances(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var isOwner = await db.DateRequests.AnyAsync(x => x.Id == id && x.RequestorUserId == userId, cancellationToken);
+        if (!isOwner) return EndpointHelpers.Forbidden(context);
+
+        var acceptances = await db.DateRequestAcceptances.AsNoTracking()
+            .Where(x => x.DateRequestId == id)
+            .Join(db.Profiles.AsNoTracking(), acceptance => acceptance.AcceptorUserId, profile => profile.UserId,
+                (acceptance, profile) => new
+                {
+                    acceptance.Id,
+                    acceptance.AcceptorUserId,
+                    acceptance.Status,
+                    acceptance.CreatedAt,
+                    Profile = new
+                    {
+                        profile.DisplayName,
+                        Age = DateTime.UtcNow.Year - profile.DateOfBirth.Year,
+                        profile.City,
+                        profile.Denomination,
+                        profile.IsVerified,
+                        profile.Intent
+                    }
+                })
+            .OrderByDescending(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, acceptances, "Date request acceptances retrieved successfully.");
+    }
+
     private static async Task<IResult> Accept(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -80,5 +152,28 @@ internal static class DateRequestEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { dateRequestId = id, selectedUserId = userId },
             "Date request participant selected successfully.");
+    }
+
+    private static async Task<IResult> WithdrawAcceptance(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var acceptance = await db.DateRequestAcceptances.SingleOrDefaultAsync(
+            x => x.DateRequestId == id && x.AcceptorUserId == userId, cancellationToken);
+        if (acceptance is null) return EndpointHelpers.NotFound(context, "Date request acceptance was not found.");
+        acceptance.Withdraw();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { dateRequestId = id }, "Date request acceptance withdrawn successfully.");
+    }
+
+    private static async Task<IResult> Cancel(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var request = await db.DateRequests.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (request is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
+        if (request.RequestorUserId != context.User.GetUserId()) return EndpointHelpers.Forbidden(context);
+        request.Cancel();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { request.Id, request.Status }, "Date request cancelled successfully.");
     }
 }

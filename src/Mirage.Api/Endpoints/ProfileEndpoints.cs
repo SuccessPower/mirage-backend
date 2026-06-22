@@ -12,6 +12,7 @@ internal static class ProfileEndpoints
     {
         var group = api.MapGroup("/profiles").WithTags("Profiles");
         group.MapGet("/", Discover);
+        group.MapGet("/{userId:guid}", GetById);
         group.MapGet("/me", GetMine).RequireAuthorization();
         group.MapPut("/me", UpdateMine).RequireAuthorization();
         return api;
@@ -19,22 +20,53 @@ internal static class ProfileEndpoints
 
     private static async Task<IResult> Discover(HttpContext context, IMirageDbContext db,
         RelationshipIntent? intent, string? city,
-        string? denomination, int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+        string? denomination, int? minAge, int? maxAge, int page = 1, int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
+        if (minAge is < 18 || maxAge is > 100 || minAge > maxAge)
+            return EndpointHelpers.ValidationProblem(context,
+                ("age", "Age filters must be between 18 and 100, with minAge not exceeding maxAge."));
+
         var query = db.Profiles.AsNoTracking().AsQueryable();
         if (intent.HasValue) query = query.Where(x => x.Intent == intent);
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))
             query = query.Where(x => EF.Functions.ILike(x.Denomination, $"%{denomination.Trim()}%"));
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (minAge.HasValue)
+        {
+            var latestBirthDate = today.AddYears(-minAge.Value);
+            query = query.Where(x => x.DateOfBirth <= latestBirthDate);
+        }
+        if (maxAge.HasValue)
+        {
+            var earliestBirthDate = today.AddYears(-(maxAge.Value + 1)).AddDays(1);
+            query = query.Where(x => x.DateOfBirth >= earliestBirthDate);
+        }
         var recommendedIds = db.Recommendations.AsNoTracking()
             .Where(x => x.Status == RecommendationStatus.Active).Select(x => x.RecommendedUserId);
-        var projected = query.OrderByDescending(x => x.IsVerified).ThenByDescending(x => x.CreatedAt)
-            .Select(x => new ProfileResponse(x.UserId, x.DisplayName,
-                DateTime.UtcNow.Year - x.DateOfBirth.Year, x.City, x.Country, x.Denomination, x.Intent, x.Bio,
-                x.IsVerified, recommendedIds.Contains(x.UserId), x.SubscriptionTier, x.Interests));
-        return ApiResults.Ok(context,
-            await projected.ToPagedResultAsync(page, pageSize, cancellationToken),
+        var pagedProfiles = await query.OrderByDescending(x => x.IsVerified).ThenByDescending(x => x.CreatedAt)
+            .ToPagedResultAsync(page, pageSize, cancellationToken);
+        var recommendedUserIds = await recommendedIds
+            .Where(userId => pagedProfiles.Items.Select(profile => profile.UserId).Contains(userId))
+            .ToListAsync(cancellationToken);
+        var response = new Mirage.Application.Common.PagedResult<ProfileResponse>(
+            pagedProfiles.Items.Select(profile => profile.ToResponse(recommendedUserIds.Contains(profile.UserId))).ToList(),
+            pagedProfiles.Page,
+            pagedProfiles.PageSize,
+            pagedProfiles.TotalCount);
+        return ApiResults.Ok(context, response,
             "Profiles retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetById(Guid userId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+        var recommended = await db.Recommendations.AnyAsync(
+            x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
+        return ApiResults.Ok(context, profile.ToResponse(recommended), "Profile retrieved successfully.");
     }
 
     private static async Task<IResult> GetMine(HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)

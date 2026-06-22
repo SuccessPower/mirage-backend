@@ -34,4 +34,31 @@ public sealed class DomainInvariantTests
         session.ConsentToReveal(false);
         Assert.Equal(TrustUnlockStatus.Unlocked, session.TrustUnlockStatus);
     }
+
+    [Fact]
+    public void Match_can_be_closed()
+    {
+        var match = new Match(Guid.NewGuid(), Guid.NewGuid());
+        match.Close();
+        Assert.Equal(MatchStatus.Closed, match.Status);
+        Assert.NotNull(match.LastActivityAt);
+    }
+
+    [Fact]
+    public void Recommendation_can_be_revoked()
+    {
+        var recommendation = new Recommendation(Guid.NewGuid(), Guid.NewGuid(), null, "Trusted member");
+        recommendation.Revoke();
+        Assert.Equal(RecommendationStatus.Revoked, recommendation.Status);
+    }
+
+    [Fact]
+    public void Completed_date_request_cannot_be_cancelled()
+    {
+        var request = new DateRequest(Guid.NewGuid(), "Coffee", DateTimeOffset.UtcNow.AddDays(1),
+            DateTimeOffset.UtcNow.AddDays(1).AddHours(1), "Lagos", null);
+        request.Cancel();
+        Assert.Equal(DateRequestStatus.Cancelled, request.Status);
+        Assert.Throws<InvalidOperationException>(request.Cancel);
+    }
 }

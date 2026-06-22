@@ -13,6 +13,8 @@ internal static class MatchingEndpoints
         var group = api.MapGroup("/matching").WithTags("Matching").RequireAuthorization();
         group.MapPost("/likes", Like);
         group.MapGet("/matches", GetMatches);
+        group.MapGet("/matches/{id:guid}", GetMatch);
+        group.MapDelete("/matches/{id:guid}", CloseMatch);
         return api;
     }
 
@@ -49,5 +51,30 @@ internal static class MatchingEndpoints
             .Where(x => x.User1Id == userId || x.User2Id == userId)
             .OrderByDescending(x => x.MatchedAt).ToListAsync(cancellationToken);
         return ApiResults.Ok(context, matches, "Matches retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetMatch(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.AsNoTracking().SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        return match is null
+            ? EndpointHelpers.NotFound(context, "Match was not found.")
+            : ApiResults.Ok(context, match, "Match retrieved successfully.");
+    }
+
+    private static async Task<IResult> CloseMatch(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+        if (match.Status != Mirage.Domain.Enums.MatchStatus.Active)
+            return EndpointHelpers.Conflict(context, "Match is already closed.");
+        match.Close();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { match.Id, match.Status }, "Match closed successfully.");
     }
 }

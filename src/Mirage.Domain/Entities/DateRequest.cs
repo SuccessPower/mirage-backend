@@ -36,6 +36,14 @@ public sealed class DateRequest : Entity
         foreach (var acceptance in Acceptances) acceptance.MarkSelected(acceptance.AcceptorUserId == userId);
         Touch();
     }
+
+    public void Cancel()
+    {
+        if (Status is DateRequestStatus.Completed or DateRequestStatus.Cancelled)
+            throw new InvalidOperationException("The date request can no longer be cancelled.");
+        Status = DateRequestStatus.Cancelled;
+        Touch();
+    }
 }
 
 public sealed class DateRequestAcceptance : Entity
@@ -51,4 +59,11 @@ public sealed class DateRequestAcceptance : Entity
     public DateAcceptanceStatus Status { get; private set; } = DateAcceptanceStatus.Pending;
     public DateRequest DateRequest { get; private set; } = null!;
     internal void MarkSelected(bool selected) => Status = selected ? DateAcceptanceStatus.Selected : DateAcceptanceStatus.Declined;
+    public void Withdraw()
+    {
+        if (Status != DateAcceptanceStatus.Pending)
+            throw new InvalidOperationException("Only pending acceptances can be withdrawn.");
+        Status = DateAcceptanceStatus.Withdrawn;
+        Touch();
+    }
 }

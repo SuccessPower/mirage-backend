@@ -28,6 +28,14 @@ matching, messaging, counselling, notifications, and billing when scale or team 
 - Pagination, database indexes, retries, connection-pool limits, rate limiting, Problem Details.
 - Liveness/readiness probes, Docker, and Render Blueprint.
 
+Additional account and workflow APIs include:
+
+- Logout, logout-all, password change, and account session history.
+- Profile lookup by user ID and discovery filters for age, city, denomination, and intent.
+- Recommendation history and revocation.
+- Match details and match closure.
+- Personal date-request history, request details, acceptance listings, withdrawal, and cancellation.
+
 Vendor integrations from later BRD phases—social auth, media storage, SignalR messaging, WebRTC,
 payments, OpenSearch, push notifications, and a durable event bus—are intentionally not faked.
 

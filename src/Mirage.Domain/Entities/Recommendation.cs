@@ -21,4 +21,10 @@ public sealed class Recommendation : Entity
     public string? Note { get; private set; }
     public RecommendationStatus Status { get; private set; } = RecommendationStatus.Active;
     public Organisation? Organisation { get; private set; }
+
+    public void Revoke()
+    {
+        Status = RecommendationStatus.Revoked;
+        Touch();
+    }
 }

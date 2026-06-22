@@ -14,6 +14,11 @@ public sealed record ApiResponseMetadata(
     double ResponseTimeMs);
 
 public sealed record AuthResponse(string AccessToken, DateTimeOffset AccessTokenExpiresAt, string RefreshToken);
+public sealed record AccountSessionResponse(
+    Guid Id,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset ExpiresAt,
+    bool IsActive);
 public sealed record ProfileResponse(
     Guid UserId,
     string DisplayName,
