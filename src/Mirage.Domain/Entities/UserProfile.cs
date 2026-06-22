@@ -1,0 +1,49 @@
+using Mirage.Domain.Common;
+using Mirage.Domain.Enums;
+
+namespace Mirage.Domain.Entities;
+
+public sealed class UserProfile : Entity
+{
+    private UserProfile() { }
+
+    public UserProfile(Guid userId, string displayName, DateOnly dateOfBirth, string city, string country,
+        string denomination, RelationshipIntent intent, string bio)
+    {
+        UserId = userId;
+        DisplayName = displayName.Trim();
+        DateOfBirth = dateOfBirth;
+        City = city.Trim();
+        Country = country.Trim();
+        Denomination = denomination.Trim();
+        Intent = intent;
+        Bio = bio.Trim();
+    }
+
+    public Guid UserId { get; private set; }
+    public string DisplayName { get; private set; } = string.Empty;
+    public DateOnly DateOfBirth { get; private set; }
+    public string City { get; private set; } = string.Empty;
+    public string Country { get; private set; } = string.Empty;
+    public string Denomination { get; private set; } = string.Empty;
+    public RelationshipIntent Intent { get; private set; }
+    public string Bio { get; private set; } = string.Empty;
+    public bool IsVerified { get; private set; }
+    public bool AnonymityEnabled { get; private set; }
+    public SubscriptionTier SubscriptionTier { get; private set; } = SubscriptionTier.Free;
+    public string[] Interests { get; private set; } = [];
+
+    public void Update(string displayName, string city, string country, string denomination,
+        RelationshipIntent intent, string bio, bool anonymityEnabled, string[] interests)
+    {
+        DisplayName = displayName.Trim();
+        City = city.Trim();
+        Country = country.Trim();
+        Denomination = denomination.Trim();
+        Intent = intent;
+        Bio = bio.Trim();
+        AnonymityEnabled = anonymityEnabled;
+        Interests = interests.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        Touch();
+    }
+}

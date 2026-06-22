@@ -1,0 +1,73 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Mirage.Infrastructure.Identity;
+
+namespace Mirage.Infrastructure.Persistence;
+
+public static class DatabaseInitialiser
+{
+    private const long MigrationLockId = 6_141_726_503_726_643_145;
+
+    public static async Task InitialiseDatabaseAsync(
+        this IHost app,
+        bool forceMigrations = false,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        if (!forceMigrations && !configuration.GetValue("Database:ApplyMigrationsOnStartup", false)) return;
+
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<MirageDbContext>>();
+        var db = scope.ServiceProvider.GetRequiredService<MirageDbContext>();
+        logger.LogInformation("Acquiring PostgreSQL migration lock.");
+
+        await db.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await db.Database.ExecuteSqlRawAsync(
+                $"SELECT pg_advisory_lock({MigrationLockId});",
+                cancellationToken);
+
+            logger.LogInformation("Applying Mirage database migrations.");
+            await db.Database.MigrateAsync(cancellationToken);
+
+            await SeedRolesAsync(scope.ServiceProvider, cancellationToken);
+            logger.LogInformation("Database migration and role initialization completed.");
+        }
+        finally
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    $"SELECT pg_advisory_unlock({MigrationLockId});",
+                    CancellationToken.None);
+            }
+            finally
+            {
+                await db.Database.CloseConnectionAsync();
+            }
+        }
+    }
+
+    private static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken)
+    {
+        var roleManager = services.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        foreach (var role in MirageRoles.All)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await roleManager.RoleExistsAsync(role))
+            {
+                var result = await roleManager.CreateAsync(new IdentityRole<Guid>(role));
+                if (!result.Succeeded)
+                {
+                    var errors = string.Join("; ", result.Errors.Select(error => error.Description));
+                    throw new InvalidOperationException($"Failed to create role '{role}': {errors}");
+                }
+            }
+        }
+    }
+}
