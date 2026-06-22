@@ -15,17 +15,70 @@ using Mirage.Infrastructure;
 using Mirage.Infrastructure.Persistence;
 using Serilog;
 using Serilog.Events;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+var isMigrationCommand = args.Contains("--migrate", StringComparer.OrdinalIgnoreCase);
 
-builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext());
+builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+{
+    loggerConfiguration
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .Enrich.WithEnvironmentName()
+        .Enrich.WithThreadId()
+        .Enrich.WithProperty("Application", "Mirage.Api")
+        .Enrich.WithProperty("Service", "mirage-api");
+
+    if (context.Configuration.GetSection("Serilog").Exists())
+    {
+        loggerConfiguration.ReadFrom.Configuration(context.Configuration);
+        return;
+    }
+
+    loggerConfiguration
+        .MinimumLevel.Information()
+        .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+        .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
+        .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Migrations", LogEventLevel.Information);
+
+    if (context.HostingEnvironment.IsDevelopment())
+    {
+        loggerConfiguration
+            .MinimumLevel.Debug()
+            .WriteTo.Console(outputTemplate:
+                "[{Timestamp:HH:mm:ss.fff} {Level:u3}] [{CorrelationId}] {SourceContext}: {Message:lj}{NewLine}{Exception}");
+    }
+    else
+    {
+        loggerConfiguration.WriteTo.Console(new RenderedCompactJsonFormatter());
+    }
+});
 
 if (builder.Configuration["PORT"] is { Length: > 0 } port)
 {
     builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
+var missingConfiguration = new List<string>();
+if (string.IsNullOrWhiteSpace(builder.Configuration["DATABASE_URL"]) &&
+    string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Postgres")))
+{
+    missingConfiguration.Add("DATABASE_URL");
+}
+
+var configuredSigningKey = builder.Configuration["Jwt:SigningKey"];
+if (string.IsNullOrWhiteSpace(configuredSigningKey) || Encoding.UTF8.GetByteCount(configuredSigningKey) < 32)
+{
+    missingConfiguration.Add("Jwt__SigningKey (minimum 32 bytes)");
+}
+
+if (missingConfiguration.Count > 0)
+{
+    throw new InvalidOperationException(
+        $"Missing or invalid required configuration: {string.Join(", ", missingConfiguration)}. " +
+        "Configure these as environment variables in Render.");
 }
 
 builder.Services.AddApplication();
@@ -150,9 +203,8 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddCors(options =>
 {
-    var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
     options.AddPolicy("MirageFrontend", policy =>
-        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials());
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -183,7 +235,7 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 var swaggerEnabled = app.Configuration.GetValue("Swagger:Enabled", true);
 
-if (args.Contains("--migrate", StringComparer.OrdinalIgnoreCase))
+if (isMigrationCommand)
 {
     await app.InitialiseDatabaseAsync(forceMigrations: true);
     return;

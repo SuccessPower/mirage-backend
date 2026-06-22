@@ -43,6 +43,8 @@ payments, OpenSearch, push notifications, and a durable event bus—are intentio
 
 ```bash
 cp .env.example .env
+cp src/Mirage.Api/appsettings.example.json src/Mirage.Api/appsettings.json
+cp src/Mirage.Api/appsettings.Development.example.json src/Mirage.Api/appsettings.Development.json
 set -a
 source .env
 set +a
@@ -50,9 +52,8 @@ dotnet restore
 ./scripts/start-dev.sh
 ```
 
-Development automatically applies pending migrations. Render runs `dotnet Mirage.Api.dll --migrate`
-as a pre-deploy command after the image is built and before the new version starts. A failed migration
-fails the deployment and leaves the previous service version running.
+Pending migrations are applied when the API starts. PostgreSQL advisory locking ensures that only
+one instance performs migration work when multiple instances start concurrently.
 
 To apply migrations explicitly:
 
@@ -121,11 +122,31 @@ Aiven before production launch. Update only the Render secret after rotation.
 Create the service from `render.yaml`, then provide:
 
 - `DATABASE_URL`
-- `Cors__AllowedOrigins__0` with the production Vercel origin
+- `Jwt__SigningKey`
 
-Render supplies `PORT`; the API binds to it automatically. Production startup migrations are disabled:
-the Blueprint executes the app's dedicated `--migrate` mode once per deployment. PostgreSQL advisory
-locking also prevents concurrent migration runners from modifying the schema simultaneously.
+Render supplies `PORT`; the API binds to it automatically. Startup fails if migration or role
+initialization fails, preventing an unhealthy instance from receiving traffic.
+
+For an existing Render service, configure these under **Environment**:
+
+| Variable | Required value |
+| --- | --- |
+| `DATABASE_URL` | Full Aiven PostgreSQL URI |
+| `Jwt__SigningKey` | Random secret of at least 32 bytes |
+| `Jwt__Issuer` | `mirage-api` |
+| `Jwt__Audience` | `mirage-client` |
+| `Jwt__AccessTokenMinutes` | `15` |
+| `Jwt__RefreshTokenDays` | `30` |
+| `Database__ApplyMigrationsOnStartup` | `true` |
+| `Database__MaxPoolSize` | `15` |
+| `Database__CommandTimeoutSeconds` | `30` |
+| `Swagger__Enabled` | `true` |
+| `ASPNETCORE_ENVIRONMENT` | `Production` |
+
+`PORT` is provided automatically by Render.
+
+CORS currently permits every origin, method, and header. Credentials are intentionally disabled;
+authentication uses bearer tokens. Restrict origins before production hardening.
 
 ## Production follow-ups
 

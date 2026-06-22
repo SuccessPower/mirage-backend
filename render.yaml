@@ -4,23 +4,28 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    preDeployCommand: dotnet Mirage.Api.dll --migrate
     healthCheckPath: /health/ready
     autoDeployTrigger: commit
     envVars:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
       - key: Database__ApplyMigrationsOnStartup
-        value: "false"
+        value: "true"
       - key: Database__MaxPoolSize
         value: "15"
+      - key: Database__CommandTimeoutSeconds
+        value: "30"
       - key: DATABASE_URL
         sync: false
       - key: Jwt__SigningKey
-        generateValue: true
+        sync: false
       - key: Jwt__Issuer
         value: mirage-api
       - key: Jwt__Audience
         value: mirage-client
-      - key: Cors__AllowedOrigins__0
-        sync: false
+      - key: Jwt__AccessTokenMinutes
+        value: "15"
+      - key: Jwt__RefreshTokenDays
+        value: "30"
+      - key: Swagger__Enabled
+        value: "true"
