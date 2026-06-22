@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Caching.Memory;
 using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Infrastructure.Persistence;
@@ -51,6 +52,21 @@ public static class DatabaseInitialiser
                 await db.Database.CloseConnectionAsync();
             }
         }
+    }
+
+    public static async Task WarmDatabaseCachesAsync(this IHost app, CancellationToken cancellationToken = default)
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        var cache = scope.ServiceProvider.GetRequiredService<IMemoryCache>();
+        var db = scope.ServiceProvider.GetRequiredService<MirageDbContext>();
+        await cache.GetOrCreateAsync(IdentityCacheKeys.DefaultUserRoleId, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1);
+            return await db.Roles.AsNoTracking()
+                .Where(role => role.NormalizedName == MirageRoles.User.ToUpperInvariant())
+                .Select(role => role.Id)
+                .SingleAsync(cancellationToken);
+        });
     }
 
     private static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken)

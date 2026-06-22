@@ -17,3 +17,8 @@ public static class MirageRoles
     public const string PlatformAdmin = "PlatformAdmin";
     public static readonly string[] All = [User, ChurchAdmin, Counsellor, Mentor, PlatformAdmin];
 }
+
+public static class IdentityCacheKeys
+{
+    public const string DefaultUserRoleId = "mirage:identity:role:user";
+}

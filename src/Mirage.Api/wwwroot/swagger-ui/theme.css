@@ -157,10 +157,32 @@ body.swagger-dark {
   font: 600 13px/1 system-ui, sans-serif;
 }
 
+#mirage-theme-toggle.is-mounted {
+  position: static;
+  margin-left: auto;
+  min-width: 122px;
+  flex: 0 0 auto;
+  box-shadow: none;
+}
+
+.swagger-ui .topbar .topbar-wrapper {
+  max-width: 1460px;
+}
+
 body:not(.swagger-dark) #mirage-theme-toggle {
   border-color: #d8dde6;
   background: #fff;
   color: #1f2937;
+}
+
+body.swagger-dark #mirage-theme-toggle:hover {
+  background: #20242d;
+  border-color: var(--mirage-accent);
+}
+
+body:not(.swagger-dark) #mirage-theme-toggle:hover {
+  background: #f1f5f9;
+  border-color: #64748b;
 }
 
 #mirage-theme-toggle:focus-visible {
