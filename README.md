@@ -52,9 +52,8 @@ dotnet restore
 ./scripts/start-dev.sh
 ```
 
-Development automatically applies pending migrations. Render runs `dotnet Mirage.Api.dll --migrate`
-as a pre-deploy command after the image is built and before the new version starts. A failed migration
-fails the deployment and leaves the previous service version running.
+Pending migrations are applied when the API starts. PostgreSQL advisory locking ensures that only
+one instance performs migration work when multiple instances start concurrently.
 
 To apply migrations explicitly:
 
@@ -123,11 +122,10 @@ Aiven before production launch. Update only the Render secret after rotation.
 Create the service from `render.yaml`, then provide:
 
 - `DATABASE_URL`
-- `Cors__AllowedOrigins__0` with the production Vercel origin
+- `Jwt__SigningKey`
 
-Render supplies `PORT`; the API binds to it automatically. Production startup migrations are disabled:
-the Blueprint executes the app's dedicated `--migrate` mode once per deployment. PostgreSQL advisory
-locking also prevents concurrent migration runners from modifying the schema simultaneously.
+Render supplies `PORT`; the API binds to it automatically. Startup fails if migration or role
+initialization fails, preventing an unhealthy instance from receiving traffic.
 
 For an existing Render service, configure these under **Environment**:
 
@@ -139,14 +137,16 @@ For an existing Render service, configure these under **Environment**:
 | `Jwt__Audience` | `mirage-client` |
 | `Jwt__AccessTokenMinutes` | `15` |
 | `Jwt__RefreshTokenDays` | `30` |
-| `Database__ApplyMigrationsOnStartup` | `false` |
+| `Database__ApplyMigrationsOnStartup` | `true` |
 | `Database__MaxPoolSize` | `15` |
 | `Database__CommandTimeoutSeconds` | `30` |
-| `Cors__AllowedOrigins__0` | Production Vercel origin, without a trailing slash |
 | `Swagger__Enabled` | `true` |
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
 
 `PORT` is provided automatically by Render.
+
+CORS currently permits every origin, method, and header. Credentials are intentionally disabled;
+authentication uses bearer tokens. Restrict origins before production hardening.
 
 ## Production follow-ups
 

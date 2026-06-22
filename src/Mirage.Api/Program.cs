@@ -74,12 +74,6 @@ if (string.IsNullOrWhiteSpace(configuredSigningKey) || Encoding.UTF8.GetByteCoun
     missingConfiguration.Add("Jwt__SigningKey (minimum 32 bytes)");
 }
 
-if (!isMigrationCommand && builder.Environment.IsProduction() &&
-    (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? []).Length == 0)
-{
-    missingConfiguration.Add("Cors__AllowedOrigins__0");
-}
-
 if (missingConfiguration.Count > 0)
 {
     throw new InvalidOperationException(
@@ -209,12 +203,8 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddCors(options =>
 {
-    var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
     options.AddPolicy("MirageFrontend", policy =>
-    {
-        if (origins.Length > 0)
-            policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
-    });
+        policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
 });
 
 builder.Services.AddEndpointsApiExplorer();

@@ -20,7 +20,7 @@ public static class DatabaseInitialiser
     {
         await using var scope = app.Services.CreateAsyncScope();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        if (!forceMigrations && !configuration.GetValue("Database:ApplyMigrationsOnStartup", false)) return;
+        if (!forceMigrations && !configuration.GetValue("Database:ApplyMigrationsOnStartup", true)) return;
 
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<MirageDbContext>>();
         var db = scope.ServiceProvider.GetRequiredService<MirageDbContext>();
