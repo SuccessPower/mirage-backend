@@ -43,6 +43,8 @@ payments, OpenSearch, push notifications, and a durable event bus—are intentio
 
 ```bash
 cp .env.example .env
+cp src/Mirage.Api/appsettings.example.json src/Mirage.Api/appsettings.json
+cp src/Mirage.Api/appsettings.Development.example.json src/Mirage.Api/appsettings.Development.json
 set -a
 source .env
 set +a
@@ -126,6 +128,25 @@ Create the service from `render.yaml`, then provide:
 Render supplies `PORT`; the API binds to it automatically. Production startup migrations are disabled:
 the Blueprint executes the app's dedicated `--migrate` mode once per deployment. PostgreSQL advisory
 locking also prevents concurrent migration runners from modifying the schema simultaneously.
+
+For an existing Render service, configure these under **Environment**:
+
+| Variable | Required value |
+| --- | --- |
+| `DATABASE_URL` | Full Aiven PostgreSQL URI |
+| `Jwt__SigningKey` | Random secret of at least 32 bytes |
+| `Jwt__Issuer` | `mirage-api` |
+| `Jwt__Audience` | `mirage-client` |
+| `Jwt__AccessTokenMinutes` | `15` |
+| `Jwt__RefreshTokenDays` | `30` |
+| `Database__ApplyMigrationsOnStartup` | `false` |
+| `Database__MaxPoolSize` | `15` |
+| `Database__CommandTimeoutSeconds` | `30` |
+| `Cors__AllowedOrigins__0` | Production Vercel origin, without a trailing slash |
+| `Swagger__Enabled` | `true` |
+| `ASPNETCORE_ENVIRONMENT` | `Production` |
+
+`PORT` is provided automatically by Render.
 
 ## Production follow-ups
 

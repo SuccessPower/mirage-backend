@@ -6,6 +6,10 @@
 .env
 .env.*
 !.env.example
+**/appsettings.json
+**/appsettings.*.json
+!**/appsettings.example.json
+!**/appsettings.*.example.json
 *.user
 *.suo
 TestResults/
