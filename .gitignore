@@ -14,3 +14,4 @@
 *.suo
 TestResults/
 coverage/
+/.vs
