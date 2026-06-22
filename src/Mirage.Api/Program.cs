@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Mirage.Api;
@@ -59,12 +60,82 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = "sub",
             RoleClaimType = "role"
         };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Mirage.Security.Authentication");
+                logger.LogDebug(
+                    "JWT validated for UserId {UserId}. CorrelationId: {CorrelationId}",
+                    context.Principal?.FindFirst("sub")?.Value,
+                    context.HttpContext.Items[CorrelationIdMiddleware.ItemKey]);
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Mirage.Security.Authentication");
+                logger.LogWarning(
+                    "JWT authentication failed for {RequestMethod} {RequestPath}. FailureType: {FailureType}; " +
+                    "CorrelationId: {CorrelationId}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Exception.GetType().Name,
+                    context.HttpContext.Items[CorrelationIdMiddleware.ItemKey]);
+                return Task.CompletedTask;
+            },
+            OnChallenge = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Mirage.Security.Authentication");
+                logger.LogWarning(
+                    "Authentication challenge issued for {RequestMethod} {RequestPath}. " +
+                    "CorrelationId: {CorrelationId}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.HttpContext.Items[CorrelationIdMiddleware.ItemKey]);
+                return Task.CompletedTask;
+            },
+            OnForbidden = context =>
+            {
+                var logger = context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("Mirage.Security.Authorization");
+                logger.LogWarning(
+                    "Authorization denied for UserId {UserId} on {RequestMethod} {RequestPath}. " +
+                    "CorrelationId: {CorrelationId}",
+                    context.Principal?.FindFirst("sub")?.Value,
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.HttpContext.Items[CorrelationIdMiddleware.ItemKey]);
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        var logger = context.HttpContext.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Mirage.Api.RateLimiting");
+        logger.LogWarning(
+            "Rate limit exceeded for {RequestMethod} {RequestPath}. UserId: {UserId}; " +
+            "RemoteIpAddress: {RemoteIpAddress}; CorrelationId: {CorrelationId}",
+            context.HttpContext.Request.Method,
+            context.HttpContext.Request.Path,
+            context.HttpContext.User.FindFirst("sub")?.Value,
+            context.HttpContext.Connection.RemoteIpAddress?.ToString(),
+            context.HttpContext.Items[CorrelationIdMiddleware.ItemKey]);
+        return ValueTask.CompletedTask;
+    };
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",

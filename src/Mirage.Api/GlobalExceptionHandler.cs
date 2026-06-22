@@ -10,15 +10,6 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext context, Exception exception, CancellationToken cancellationToken)
     {
-        logger.LogError(
-            exception,
-            "Unhandled exception processing {RequestMethod} {RequestPath}. StatusCode: {StatusCode}; " +
-            "CorrelationId: {CorrelationId}; TraceId: {TraceId}",
-            context.Request.Method,
-            context.Request.Path,
-            context.Response.StatusCode,
-            context.Items[CorrelationIdMiddleware.ItemKey],
-            context.TraceIdentifier);
         var (status, title) = exception switch
         {
             UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
@@ -26,6 +17,17 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
             DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Concurrent update conflict"),
             _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred")
         };
+        logger.LogError(
+            exception,
+            "Unhandled exception processing {RequestMethod} {RequestPath}. ExceptionType: {ExceptionType}; " +
+            "MappedStatusCode: {StatusCode}; UserId: {UserId}; CorrelationId: {CorrelationId}; TraceId: {TraceId}",
+            context.Request.Method,
+            context.Request.Path,
+            exception.GetType().FullName,
+            status,
+            context.User.FindFirst("sub")?.Value,
+            context.Items[CorrelationIdMiddleware.ItemKey],
+            context.TraceIdentifier);
         var responseTimeMs = context.Items[ResponseTimeMiddleware.StopwatchItemKey] is Stopwatch stopwatch
             ? Math.Round(stopwatch.Elapsed.TotalMilliseconds, 3)
             : 0;
