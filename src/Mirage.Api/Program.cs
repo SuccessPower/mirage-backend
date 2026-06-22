@@ -78,7 +78,7 @@ if (missingConfiguration.Count > 0)
 {
     throw new InvalidOperationException(
         $"Missing or invalid required configuration: {string.Join(", ", missingConfiguration)}. " +
-        "Configure these as environment variables in Render.");
+        "Set these as environment variables or in appsettings.Local.json (gitignored).");
 }
 
 builder.Services.AddApplication();
