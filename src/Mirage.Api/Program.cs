@@ -30,6 +30,7 @@ if (builder.Configuration["PORT"] is { Length: > 0 } port)
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddMemoryCache();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddProblemDetails();
@@ -234,8 +235,8 @@ if (swaggerEnabled)
     {
         options.DocumentTitle = "Mirage API";
         options.SwaggerEndpoint("/swagger/v1/swagger.json", "Mirage API v1");
-        options.InjectStylesheet("/swagger-ui/theme.css");
-        options.InjectJavascript("/swagger-ui/theme.js");
+        options.InjectStylesheet("/swagger-ui/theme.css?v=2");
+        options.InjectJavascript("/swagger-ui/theme.js?v=2");
         options.DisplayRequestDuration();
         options.EnableDeepLinking();
         options.EnablePersistAuthorization();
@@ -267,6 +268,7 @@ if (swaggerEnabled)
 }
 
 await app.InitialiseDatabaseAsync();
+await app.WarmDatabaseCachesAsync();
 await app.RunAsync();
 
 public partial class Program;

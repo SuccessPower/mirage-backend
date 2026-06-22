@@ -1,10 +1,15 @@
+using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Mirage.Api.Contracts;
+using Mirage.Api.Middleware;
 using Mirage.Api.Security;
 using Mirage.Domain.Entities;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
+using Npgsql;
 
 namespace Mirage.Api.Endpoints;
 
@@ -25,40 +30,105 @@ internal static class AuthEndpoints
 
     private static async Task<IResult> Register(RegisterRequest request, HttpContext context,
         UserManager<ApplicationUser> userManager,
-        MirageDbContext db, TokenService tokens, IConfiguration configuration, CancellationToken cancellationToken)
+        IPasswordHasher<ApplicationUser> passwordHasher,
+        IMemoryCache cache,
+        MirageDbContext db, TokenService tokens, IConfiguration configuration, ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken)
     {
         var errors = Validate(request);
         if (errors.Length > 0) return EndpointHelpers.ValidationProblem(context, errors);
 
-        var strategy = db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var logger = loggerFactory.CreateLogger("Mirage.Performance.Registration");
+        var registrationStopwatch = Stopwatch.StartNew();
+        var normalizedEmail = userManager.NormalizeEmail(request.Email.Trim());
+        var normalizedUserName = userManager.NormalizeName(request.Email.Trim());
+        var user = new ApplicationUser
         {
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            var user = new ApplicationUser
+            Id = Guid.NewGuid(),
+            Email = request.Email.Trim(),
+            NormalizedEmail = normalizedEmail,
+            UserName = request.Email.Trim(),
+            NormalizedUserName = normalizedUserName,
+            EmailConfirmed = false,
+            LockoutEnabled = true,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+
+        var passwordValidationStarted = registrationStopwatch.Elapsed.TotalMilliseconds;
+        var passwordErrors = new List<IdentityError>();
+        foreach (var validator in userManager.PasswordValidators)
+        {
+            var result = await validator.ValidateAsync(userManager, user, request.Password);
+            if (!result.Succeeded) passwordErrors.AddRange(result.Errors);
+        }
+        if (passwordErrors.Count > 0)
+            return EndpointHelpers.ValidationProblem(context,
+                passwordErrors.GroupBy(x => x.Code)
+                    .ToDictionary(x => x.Key, x => x.Select(error => error.Description).ToArray()),
+                "Registration validation failed.");
+
+        user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
+        var passwordHashingMs = registrationStopwatch.Elapsed.TotalMilliseconds - passwordValidationStarted;
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
             {
-                Id = Guid.NewGuid(),
-                Email = request.Email.Trim(),
-                UserName = request.Email.Trim()
-            };
-            var result = await userManager.CreateAsync(user, request.Password);
-            if (!result.Succeeded)
-                return EndpointHelpers.ValidationProblem(context,
-                    result.Errors.GroupBy(x => x.Code)
-                        .ToDictionary(x => x.Key, x => x.Select(e => e.Description).ToArray()),
-                    "Registration validation failed.");
+                var databaseStarted = registrationStopwatch.Elapsed.TotalMilliseconds;
+                var roleId = await cache.GetOrCreateAsync(IdentityCacheKeys.DefaultUserRoleId, async entry =>
+                {
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1);
+                    return await db.Roles.AsNoTracking()
+                        .Where(x => x.NormalizedName == MirageRoles.User.ToUpperInvariant())
+                        .Select(x => x.Id)
+                        .SingleAsync(cancellationToken);
+                });
 
-            var roleResult = await userManager.AddToRoleAsync(user, MirageRoles.User);
-            if (!roleResult.Succeeded)
-                throw new InvalidOperationException(
-                    $"Failed to assign default role: {string.Join("; ", roleResult.Errors.Select(x => x.Description))}");
+                var refreshValue = tokens.CreateRefreshToken();
+                var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+                var refreshToken = new RefreshToken(
+                    user.Id,
+                    refreshValue,
+                    DateTimeOffset.UtcNow.AddDays(refreshDays));
+                var accessToken = tokens.CreateAccessToken(user, [MirageRoles.User]);
 
-            db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
-                request.Country, request.Denomination, request.Intent, request.Bio));
-            await db.SaveChangesAsync(cancellationToken);
-            var response = await IssueTokens(user, [MirageRoles.User], db, tokens, configuration, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return ApiResults.Ok(context, response, "Registration completed successfully.");
-        });
+                db.Users.Add(user);
+                db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
+                db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
+                    request.Country, request.Denomination, request.Intent, request.Bio));
+                db.RefreshTokens.Add(refreshToken);
+                await db.SaveChangesAsync(cancellationToken);
+
+                var databaseMs = registrationStopwatch.Elapsed.TotalMilliseconds - databaseStarted;
+                ResponseTimeMiddleware.SetServerTiming(context, "password", passwordHashingMs);
+                ResponseTimeMiddleware.SetServerTiming(context, "database", databaseMs);
+                logger.LogInformation(
+                    "Registration completed in {TotalMilliseconds:F3} ms. PasswordHashing: {PasswordHashingMilliseconds:F3} ms; " +
+                    "Database: {DatabaseMilliseconds:F3} ms; UserId: {UserId}",
+                    registrationStopwatch.Elapsed.TotalMilliseconds,
+                    passwordHashingMs,
+                    databaseMs,
+                    user.Id);
+
+                return ApiResults.Ok(context,
+                    new AuthResponse(accessToken.Token, accessToken.ExpiresAt, refreshValue),
+                    "Registration completed successfully.");
+            });
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+                                                 { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            logger.LogWarning("Registration rejected by a uniqueness constraint for normalized email {NormalizedEmail}",
+                normalizedEmail);
+            return EndpointHelpers.ValidationProblem(context,
+                new Dictionary<string, string[]>
+                {
+                    ["DuplicateUserName"] = ["An account with this email already exists."]
+                },
+                "Registration validation failed.");
+        }
     }
 
     private static async Task<IResult> Login(LoginRequest request, HttpContext context,
@@ -189,10 +259,13 @@ internal static class AuthEndpoints
     {
         var errors = new List<(string, string)>();
         if (string.IsNullOrWhiteSpace(request.Email)) errors.Add(("email", "Email is required."));
+        else if (!new EmailAddressAttribute().IsValid(request.Email))
+            errors.Add(("email", "A valid email address is required."));
         if (string.IsNullOrWhiteSpace(request.DisplayName)) errors.Add(("displayName", "Display name is required."));
         if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         return errors.ToArray();
     }
+
 }
