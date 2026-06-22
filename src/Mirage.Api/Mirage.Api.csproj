@@ -6,6 +6,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
     <UserSecretsId>mirage-api-local-development</UserSecretsId>
+    <Authors>Mirage Contributors</Authors>
+    <Copyright>Copyright © 2026 Mirage Contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

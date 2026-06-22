@@ -59,7 +59,10 @@ cd src/Mirage.Api
 dotnet ef database update
 ```
 
-API documentation is available in Development at `/swagger`. Health endpoints:
+API documentation is available at `/swagger`. Health endpoints:
+
+Opening the API root redirects to `/swagger/index.html`. Swagger is enabled by default in every
+environment and can be disabled with `Swagger__Enabled=false`.
 
 - `GET /health/live`
 - `GET /health/ready`

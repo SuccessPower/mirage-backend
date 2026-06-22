@@ -1,0 +1,169 @@
+:root {
+  color-scheme: dark;
+  --mirage-bg: #08090b;
+  --mirage-surface: #111318;
+  --mirage-surface-raised: #181b22;
+  --mirage-border: #2b303a;
+  --mirage-text: #f5f7fa;
+  --mirage-muted: #a7afbd;
+  --mirage-accent: #52d6d3;
+  --mirage-code: #0d1015;
+}
+
+body.swagger-dark {
+  background: var(--mirage-bg);
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui,
+.swagger-dark .swagger-ui .info .title,
+.swagger-dark .swagger-ui .info p,
+.swagger-dark .swagger-ui .info li,
+.swagger-dark .swagger-ui .info table,
+.swagger-dark .swagger-ui .opblock-tag,
+.swagger-dark .swagger-ui .opblock .opblock-summary-description,
+.swagger-dark .swagger-ui .opblock-description-wrapper p,
+.swagger-dark .swagger-ui .parameter__name,
+.swagger-dark .swagger-ui .parameter__type,
+.swagger-dark .swagger-ui .response-col_status,
+.swagger-dark .swagger-ui .response-col_description,
+.swagger-dark .swagger-ui .model-title,
+.swagger-dark .swagger-ui .model,
+.swagger-dark .swagger-ui label,
+.swagger-dark .swagger-ui h1,
+.swagger-dark .swagger-ui h2,
+.swagger-dark .swagger-ui h3,
+.swagger-dark .swagger-ui h4,
+.swagger-dark .swagger-ui h5 {
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui .info .base-url,
+.swagger-dark .swagger-ui .parameter__in,
+.swagger-dark .swagger-ui .prop-format,
+.swagger-dark .swagger-ui .prop-type {
+  color: var(--mirage-muted);
+}
+
+.swagger-dark .swagger-ui .topbar {
+  background: #050607;
+  border-bottom: 1px solid var(--mirage-border);
+}
+
+.swagger-dark .swagger-ui .topbar .download-url-wrapper .select-label {
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui .scheme-container,
+.swagger-dark .swagger-ui .models,
+.swagger-dark .swagger-ui .model-container,
+.swagger-dark .swagger-ui section.models {
+  background: var(--mirage-surface);
+  border-color: var(--mirage-border);
+  box-shadow: none;
+}
+
+.swagger-dark .swagger-ui .opblock {
+  background: var(--mirage-surface);
+  border-color: var(--mirage-border);
+  box-shadow: none;
+}
+
+.swagger-dark .swagger-ui .opblock .opblock-summary {
+  border-color: var(--mirage-border);
+}
+
+.swagger-dark .swagger-ui .opblock-body,
+.swagger-dark .swagger-ui .responses-inner,
+.swagger-dark .swagger-ui .opblock-section-header {
+  background: var(--mirage-surface);
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui .opblock-section-header {
+  box-shadow: none;
+  border-bottom: 1px solid var(--mirage-border);
+}
+
+.swagger-dark .swagger-ui table thead tr td,
+.swagger-dark .swagger-ui table thead tr th,
+.swagger-dark .swagger-ui .response-col_links {
+  color: var(--mirage-muted);
+  border-color: var(--mirage-border);
+}
+
+.swagger-dark .swagger-ui input,
+.swagger-dark .swagger-ui select,
+.swagger-dark .swagger-ui textarea {
+  background: var(--mirage-surface-raised);
+  border-color: var(--mirage-border);
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui textarea.curl,
+.swagger-dark .swagger-ui .highlight-code,
+.swagger-dark .swagger-ui .microlight,
+.swagger-dark .swagger-ui pre {
+  background: var(--mirage-code) !important;
+  color: #d8dee9 !important;
+}
+
+.swagger-dark .swagger-ui .btn {
+  border-color: var(--mirage-muted);
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui .btn.authorize {
+  border-color: var(--mirage-accent);
+  color: var(--mirage-accent);
+}
+
+.swagger-dark .swagger-ui .btn.authorize svg {
+  fill: var(--mirage-accent);
+}
+
+.swagger-dark .swagger-ui svg {
+  fill: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui a,
+.swagger-dark .swagger-ui .info a {
+  color: var(--mirage-accent);
+}
+
+.swagger-dark .swagger-ui .dialog-ux .modal-ux {
+  background: var(--mirage-surface);
+  border-color: var(--mirage-border);
+  color: var(--mirage-text);
+}
+
+.swagger-dark .swagger-ui .dialog-ux .modal-ux-header {
+  border-color: var(--mirage-border);
+}
+
+#mirage-theme-toggle {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10000;
+  min-width: 118px;
+  padding: 10px 14px;
+  border: 1px solid var(--mirage-border);
+  border-radius: 999px;
+  background: var(--mirage-surface-raised);
+  color: var(--mirage-text);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 35%);
+  cursor: pointer;
+  font: 600 13px/1 system-ui, sans-serif;
+}
+
+body:not(.swagger-dark) #mirage-theme-toggle {
+  border-color: #d8dde6;
+  background: #fff;
+  color: #1f2937;
+}
+
+#mirage-theme-toggle:focus-visible {
+  outline: 3px solid rgb(82 214 211 / 45%);
+  outline-offset: 3px;
+}

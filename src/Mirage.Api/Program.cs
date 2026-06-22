@@ -157,7 +157,13 @@ builder.Services.AddCors(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Mirage API", Version = "v1" });
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Mirage API",
+        Version = "v1",
+        Description = "Backend API for the Mirage relationship platform.",
+        License = new OpenApiLicense { Name = "MIT" }
+    });
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Type = SecuritySchemeType.Http,
@@ -174,6 +180,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 
 var app = builder.Build();
+var swaggerEnabled = app.Configuration.GetValue("Swagger:Enabled", true);
 
 if (args.Contains("--migrate", StringComparer.OrdinalIgnoreCase))
 {
@@ -219,12 +226,24 @@ app.UseSerilogRequestLogging(options =>
 });
 app.UseExceptionHandler();
 app.UseStatusCodePages();
-if (app.Environment.IsDevelopment())
+if (swaggerEnabled)
 {
+    app.UseStaticFiles();
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        options.DocumentTitle = "Mirage API";
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Mirage API v1");
+        options.InjectStylesheet("/swagger-ui/theme.css");
+        options.InjectJavascript("/swagger-ui/theme.js");
+        options.DisplayRequestDuration();
+        options.EnableDeepLinking();
+        options.EnablePersistAuthorization();
+        options.DocExpansion(Swashbuckle.AspNetCore.SwaggerUI.DocExpansion.List);
+    });
 }
-else
+
+if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
 }
@@ -241,6 +260,11 @@ app.UseAuthorization();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 app.MapMirageEndpoints();
+if (swaggerEnabled)
+{
+    app.MapGet("/", () => Results.Redirect("/swagger/index.html", permanent: false))
+        .ExcludeFromDescription();
+}
 
 await app.InitialiseDatabaseAsync();
 await app.RunAsync();
