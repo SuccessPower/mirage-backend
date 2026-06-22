@@ -20,6 +20,8 @@ using Serilog.Formatting.Compact;
 var builder = WebApplication.CreateBuilder(args);
 var isMigrationCommand = args.Contains("--migrate", StringComparer.OrdinalIgnoreCase);
 
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
 {
     loggerConfiguration
