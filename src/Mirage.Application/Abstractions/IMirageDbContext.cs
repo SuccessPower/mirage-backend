@@ -16,5 +16,13 @@ public interface IMirageDbContext
     DbSet<CounsellingSession> CounsellingSessions { get; }
     DbSet<AnonymityAuditLog> AnonymityAuditLogs { get; }
     DbSet<RefreshToken> RefreshTokens { get; }
+    DbSet<CounsellorInvite> CounsellorInvites { get; }
+    DbSet<MentorProfile> Mentors { get; }
+    DbSet<MentorRequest> MentorRequests { get; }
+    DbSet<SessionNote> SessionNotes { get; }
+    DbSet<SessionRating> SessionRatings { get; }
+    DbSet<MilestoneLog> MilestoneLogs { get; }
+    DbSet<DateFeedback> DateFeedbacks { get; }
+    DbSet<ContentReport> ContentReports { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

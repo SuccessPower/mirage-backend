@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260627210929_AddCounsellorInvitesAndMentorProfiles")]
+    partial class AddCounsellorInvitesAndMentorProfiles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -185,52 +188,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("anonymity_audit_logs", "mirage");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.ContentReport", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Details")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<int>("Reason")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ReportedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Resolution")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("TargetId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("TargetType")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReportedByUserId");
-
-                    b.HasIndex("Status", "CreatedAt");
-
-                    b.HasIndex("TargetType", "TargetId");
-
-                    b.ToTable("content_reports", "mirage");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellingSession", b =>
                 {
                     b.Property<Guid>("Id")
@@ -374,46 +331,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("counsellors", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.DateFeedback", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("DateRequestId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Rating")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ReviewedUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ReviewerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReviewedUserId");
-
-                    b.HasIndex("ReviewerUserId");
-
-                    b.HasIndex("DateRequestId", "ReviewerUserId")
-                        .IsUnique();
-
-                    b.ToTable("date_feedbacks", "mirage");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.DateRequest", b =>
@@ -584,78 +501,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("mentors", "mirage");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.MentorRequest", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("MenteeUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("MentorProfileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MenteeUserId");
-
-                    b.HasIndex("Status");
-
-                    b.HasIndex("MentorProfileId", "MenteeUserId")
-                        .IsUnique();
-
-                    b.ToTable("mentor_requests", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.MilestoneLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<Guid?>("PartnerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PartnerId");
-
-                    b.HasIndex("UserId", "Type");
-
-                    b.ToTable("milestone_logs", "mirage");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.Organisation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -781,73 +626,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasIndex("UserId", "ExpiresAt");
 
                     b.ToTable("refresh_tokens", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.SessionNote", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AuthorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(5000)
-                        .HasColumnType("character varying(5000)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AuthorUserId");
-
-                    b.HasIndex("SessionId");
-
-                    b.ToTable("session_notes", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.SessionRating", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Rating")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("ReviewerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReviewerUserId");
-
-                    b.HasIndex("SessionId", "ReviewerUserId")
-                        .IsUnique();
-
-                    b.ToTable("session_ratings", "mirage");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.UserLike", b =>
@@ -1081,15 +859,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.ContentReport", b =>
-                {
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ReportedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellingSession", b =>
                 {
                     b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
@@ -1136,27 +905,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Organisation");
 
                     b.Navigation("UserProfile");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.DateFeedback", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.DateRequest", null)
-                        .WithMany()
-                        .HasForeignKey("DateRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ReviewedUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ReviewerUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.DateRequest", b =>
@@ -1217,37 +965,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("UserProfile");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.MentorRequest", b =>
-                {
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("MenteeUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Domain.Entities.MentorProfile", "Mentor")
-                        .WithMany()
-                        .HasForeignKey("MentorProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Mentor");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.MilestoneLog", b =>
-                {
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("PartnerId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.Organisation", b =>
                 {
                     b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
@@ -1284,36 +1001,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.SessionNote", b =>
-                {
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("AuthorUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Domain.Entities.CounsellingSession", null)
-                        .WithMany()
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.SessionRating", b =>
-                {
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ReviewerUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Domain.Entities.CounsellingSession", null)
-                        .WithMany()
-                        .HasForeignKey("SessionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

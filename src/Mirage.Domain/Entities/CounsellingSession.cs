@@ -32,6 +32,42 @@ public sealed class CounsellingSession : Entity
     public bool CounsellorConsentedToReveal { get; private set; }
     public CounsellorProfile Counsellor { get; private set; } = null!;
 
+    public void Accept()
+    {
+        if (Status != SessionStatus.Requested) throw new InvalidOperationException("Only requested sessions can be accepted.");
+        Status = SessionStatus.Scheduled;
+        Touch();
+    }
+
+    public void Decline()
+    {
+        if (Status != SessionStatus.Requested) throw new InvalidOperationException("Only requested sessions can be declined.");
+        Status = SessionStatus.Declined;
+        Touch();
+    }
+
+    public void Start()
+    {
+        if (Status != SessionStatus.Scheduled) throw new InvalidOperationException("Only scheduled sessions can be started.");
+        Status = SessionStatus.InProgress;
+        Touch();
+    }
+
+    public void Complete()
+    {
+        if (Status != SessionStatus.InProgress) throw new InvalidOperationException("Only in-progress sessions can be completed.");
+        Status = SessionStatus.Completed;
+        Touch();
+    }
+
+    public void Cancel()
+    {
+        if (Status is SessionStatus.Completed or SessionStatus.Cancelled or SessionStatus.Declined)
+            throw new InvalidOperationException("Session cannot be cancelled in its current state.");
+        Status = SessionStatus.Cancelled;
+        Touch();
+    }
+
     public void ConsentToReveal(bool isClient)
     {
         if (isClient) ClientConsentedToReveal = true;

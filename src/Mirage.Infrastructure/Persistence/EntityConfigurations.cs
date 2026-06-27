@@ -133,6 +133,108 @@ public sealed class AnonymityAuditLogConfiguration : IEntityTypeConfiguration<An
     }
 }
 
+public sealed class MentorRequestConfiguration : IEntityTypeConfiguration<MentorRequest>
+{
+    public void Configure(EntityTypeBuilder<MentorRequest> b)
+    {
+        b.ToTable("mentor_requests");
+        b.HasIndex(x => new { x.MentorProfileId, x.MenteeUserId }).IsUnique();
+        b.HasIndex(x => x.Status);
+        b.Property(x => x.Message).HasMaxLength(1000);
+        b.HasOne(x => x.Mentor).WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.MenteeUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class SessionNoteConfiguration : IEntityTypeConfiguration<SessionNote>
+{
+    public void Configure(EntityTypeBuilder<SessionNote> b)
+    {
+        b.ToTable("session_notes");
+        b.HasIndex(x => x.SessionId);
+        b.Property(x => x.Content).HasMaxLength(5000);
+        b.HasOne<CounsellingSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class SessionRatingConfiguration : IEntityTypeConfiguration<SessionRating>
+{
+    public void Configure(EntityTypeBuilder<SessionRating> b)
+    {
+        b.ToTable("session_ratings");
+        b.HasIndex(x => new { x.SessionId, x.ReviewerUserId }).IsUnique();
+        b.Property(x => x.Comment).HasMaxLength(1000);
+        b.HasOne<CounsellingSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ReviewerUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class MilestoneLogConfiguration : IEntityTypeConfiguration<MilestoneLog>
+{
+    public void Configure(EntityTypeBuilder<MilestoneLog> b)
+    {
+        b.ToTable("milestone_logs");
+        b.HasIndex(x => new { x.UserId, x.Type });
+        b.Property(x => x.Note).HasMaxLength(500);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PartnerId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class DateFeedbackConfiguration : IEntityTypeConfiguration<DateFeedback>
+{
+    public void Configure(EntityTypeBuilder<DateFeedback> b)
+    {
+        b.ToTable("date_feedbacks");
+        b.HasIndex(x => new { x.DateRequestId, x.ReviewerUserId }).IsUnique();
+        b.HasIndex(x => x.ReviewedUserId);
+        b.Property(x => x.Comment).HasMaxLength(1000);
+        b.HasOne<DateRequest>().WithMany().HasForeignKey(x => x.DateRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ReviewerUserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ReviewedUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class ContentReportConfiguration : IEntityTypeConfiguration<ContentReport>
+{
+    public void Configure(EntityTypeBuilder<ContentReport> b)
+    {
+        b.ToTable("content_reports");
+        b.HasIndex(x => new { x.Status, x.CreatedAt });
+        b.HasIndex(x => new { x.TargetType, x.TargetId });
+        b.Property(x => x.Details).HasMaxLength(2000);
+        b.Property(x => x.Resolution).HasMaxLength(2000);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ReportedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CounsellorInviteConfiguration : IEntityTypeConfiguration<CounsellorInvite>
+{
+    public void Configure(EntityTypeBuilder<CounsellorInvite> b)
+    {
+        b.ToTable("counsellor_invites");
+        b.HasIndex(x => x.TokenHash).IsUnique();
+        b.HasIndex(x => new { x.OrganisationId, x.Email });
+        b.Property(x => x.Email).HasMaxLength(256);
+        b.Property(x => x.TokenHash).HasMaxLength(64);
+        b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class MentorProfileConfiguration : IEntityTypeConfiguration<MentorProfile>
+{
+    public void Configure(EntityTypeBuilder<MentorProfile> b)
+    {
+        b.ToTable("mentors");
+        b.HasIndex(x => x.UserId).IsUnique();
+        b.Property(x => x.Testimony).HasMaxLength(2000);
+        b.Property(x => x.AreasOfGuidance).HasColumnType("text[]");
+        b.Property(x => x.Languages).HasColumnType("text[]");
+        b.HasOne(x => x.UserProfile).WithMany().HasForeignKey(x => x.UserId).HasPrincipalKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 {
     public void Configure(EntityTypeBuilder<RefreshToken> b)
