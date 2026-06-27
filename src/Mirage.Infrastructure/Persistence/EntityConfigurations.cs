@@ -133,6 +133,19 @@ public sealed class AnonymityAuditLogConfiguration : IEntityTypeConfiguration<An
     }
 }
 
+public sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
+{
+    public void Configure(EntityTypeBuilder<Message> b)
+    {
+        b.ToTable("messages");
+        b.HasIndex(x => new { x.MatchId, x.CreatedAt });
+        b.HasIndex(x => new { x.MatchId, x.IsRead }).HasFilter("\"IsRead\" = false");
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.HasOne(x => x.Match).WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class MentorRequestConfiguration : IEntityTypeConfiguration<MentorRequest>
 {
     public void Configure(EntityTypeBuilder<MentorRequest> b)

@@ -3,6 +3,7 @@ using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
+using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Endpoints;
 
@@ -15,6 +16,11 @@ internal static class MatchingEndpoints
         group.MapGet("/matches", GetMatches);
         group.MapGet("/matches/{id:guid}", GetMatch);
         group.MapDelete("/matches/{id:guid}", CloseMatch);
+        group.MapPost("/matches/{id:guid}/block", BlockMatch);
+
+        // Chat — REST fallback alongside SignalR hub
+        group.MapGet("/matches/{id:guid}/messages", GetMessages);
+        group.MapPatch("/matches/{id:guid}/messages/read", MarkRead);
         return api;
     }
 
@@ -71,10 +77,80 @@ internal static class MatchingEndpoints
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
-        if (match.Status != Mirage.Domain.Enums.MatchStatus.Active)
+        if (match.Status != MatchStatus.Active)
             return EndpointHelpers.Conflict(context, "Match is already closed.");
         match.Close();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { match.Id, match.Status }, "Match closed successfully.");
+    }
+
+    private static async Task<IResult> BlockMatch(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+        if (match.Status == MatchStatus.Blocked)
+            return EndpointHelpers.Conflict(context, "Match is already blocked.");
+        match.Block();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { match.Id, match.Status }, "Match blocked successfully.");
+    }
+
+    // Cursor-based pagination: pass the CreatedAt of the oldest message in the current
+    // view as `before` to load earlier messages (standard chat scroll-back pattern).
+    private static async Task<IResult> GetMessages(Guid id, HttpContext context, IMirageDbContext db,
+        DateTimeOffset? before, int pageSize = 50, CancellationToken cancellationToken = default)
+    {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var userId = context.User.GetUserId();
+        var inMatch = await db.Matches.AsNoTracking()
+            .AnyAsync(x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (!inMatch) return EndpointHelpers.Forbidden(context);
+
+        var query = db.Messages.AsNoTracking().Where(x => x.MatchId == id);
+        if (before.HasValue) query = query.Where(x => x.CreatedAt < before.Value);
+
+        var messages = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(pageSize)
+            .Select(x => new
+            {
+                x.Id,
+                x.SenderId,
+                x.Content,
+                SentAt = x.CreatedAt,
+                x.IsRead,
+                x.ReadAt
+            })
+            .ToListAsync(cancellationToken);
+
+        // Return in chronological order for the client to append
+        return ApiResults.Ok(context, new
+        {
+            Messages = Enumerable.Reverse(messages),
+            HasMore = messages.Count == pageSize
+        }, "Messages retrieved successfully.");
+    }
+
+    private static async Task<IResult> MarkRead(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var inMatch = await db.Matches.AsNoTracking()
+            .AnyAsync(x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (!inMatch) return EndpointHelpers.Forbidden(context);
+
+        var unread = await db.Messages
+            .Where(x => x.MatchId == id && x.SenderId != userId && !x.IsRead)
+            .ToListAsync(cancellationToken);
+
+        if (unread.Count == 0)
+            return ApiResults.Ok(context, new { marked = 0 }, "No unread messages.");
+
+        foreach (var msg in unread) msg.MarkRead();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { marked = unread.Count }, "Messages marked as read.");
     }
 }

@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Mirage.Api;
 using Mirage.Api.Endpoints;
+using Mirage.Api.Hubs;
 using Mirage.Api.Middleware;
 using Mirage.Api.Security;
 using Mirage.Infrastructure.Identity;
@@ -100,6 +101,12 @@ if (Encoding.UTF8.GetByteCount(jwt.SigningKey) < 32)
     throw new InvalidOperationException("Jwt:SigningKey must be at least 32 bytes.");
 }
 
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
+    options.MaximumReceiveMessageSize = 8 * 1024; // 8 KB cap per message
+});
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -119,6 +126,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.Events = new JwtBearerEvents
         {
+            // SignalR WebSocket connections send the JWT in the query string
+            // because browsers cannot set custom headers on WebSocket upgrades.
+            OnMessageReceived = context =>
+            {
+                var token = context.Request.Query["access_token"].ToString();
+                if (!string.IsNullOrEmpty(token) &&
+                    context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = token;
+                }
+                return Task.CompletedTask;
+            },
             OnTokenValidated = context =>
             {
                 var logger = context.HttpContext.RequestServices
@@ -325,6 +344,7 @@ app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+app.MapHub<ChatHub>("/hubs/chat");
 app.MapMirageEndpoints();
 if (swaggerEnabled)
 {
