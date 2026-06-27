@@ -11,6 +11,9 @@ public static class MirageEndpointExtensions
         api.MapMatchingEndpoints();
         api.MapDateRequestEndpoints();
         api.MapCounsellingEndpoints();
+        api.MapMentorEndpoints();
+        api.MapMilestoneEndpoints();
+        api.MapAdminEndpoints();
         return endpoints;
     }
 }

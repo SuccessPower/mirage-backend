@@ -21,6 +21,7 @@ internal static class DateRequestEndpoints
         group.MapDelete("/{id:guid}/accept", WithdrawAcceptance);
         group.MapPost("/{id:guid}/select/{userId:guid}", Select);
         group.MapDelete("/{id:guid}", Cancel);
+        group.MapPost("/{id:guid}/feedback", SubmitFeedback);
         return api;
     }
 
@@ -175,5 +176,40 @@ internal static class DateRequestEndpoints
         request.Cancel();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { request.Id, request.Status }, "Date request cancelled successfully.");
+    }
+
+    private static async Task<IResult> SubmitFeedback(Guid id, SubmitDateFeedbackRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.Rating is < 1 or > 5)
+            return EndpointHelpers.ValidationProblem(context, ("rating", "Rating must be between 1 and 5."));
+
+        var userId = context.User.GetUserId();
+        var dateRequest = await db.DateRequests.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (dateRequest is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
+        if (dateRequest.Status != DateRequestStatus.Confirmed)
+            return EndpointHelpers.Conflict(context, "Feedback can only be submitted for confirmed date requests.");
+
+        var isParticipant = dateRequest.RequestorUserId == userId || dateRequest.SelectedUserId == userId;
+        if (!isParticipant) return EndpointHelpers.Forbidden(context);
+
+        if (await db.DateFeedbacks.AnyAsync(
+                x => x.DateRequestId == id && x.ReviewerUserId == userId, cancellationToken))
+            return EndpointHelpers.Conflict(context, "Feedback has already been submitted.");
+
+        var reviewedUserId = dateRequest.RequestorUserId == userId
+            ? dateRequest.SelectedUserId!.Value
+            : dateRequest.RequestorUserId;
+
+        if (request.ReviewedUserId != reviewedUserId)
+            return EndpointHelpers.ValidationProblem(context,
+                ("reviewedUserId", "The reviewed user does not match the date request participant."));
+
+        var feedback = new DateFeedback(id, userId, reviewedUserId, request.Rating, request.Comment);
+        db.DateFeedbacks.Add(feedback);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Created(context, $"/api/v1/date-requests/{id}/feedback",
+            new { feedback.Id }, "Date feedback submitted successfully.");
     }
 }

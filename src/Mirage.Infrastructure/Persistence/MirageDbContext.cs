@@ -21,6 +21,14 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CounsellingSession> CounsellingSessions => Set<CounsellingSession>();
     public DbSet<AnonymityAuditLog> AnonymityAuditLogs => Set<AnonymityAuditLog>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<CounsellorInvite> CounsellorInvites => Set<CounsellorInvite>();
+    public DbSet<MentorProfile> Mentors => Set<MentorProfile>();
+    public DbSet<MentorRequest> MentorRequests => Set<MentorRequest>();
+    public DbSet<SessionNote> SessionNotes => Set<SessionNote>();
+    public DbSet<SessionRating> SessionRatings => Set<SessionRating>();
+    public DbSet<MilestoneLog> MilestoneLogs => Set<MilestoneLog>();
+    public DbSet<DateFeedback> DateFeedbacks => Set<DateFeedback>();
+    public DbSet<ContentReport> ContentReports => Set<ContentReport>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

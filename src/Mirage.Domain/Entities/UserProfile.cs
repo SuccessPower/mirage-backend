@@ -46,4 +46,6 @@ public sealed class UserProfile : Entity
         Interests = interests.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         Touch();
     }
+
+    public void Verify() { IsVerified = true; Touch(); }
 }
