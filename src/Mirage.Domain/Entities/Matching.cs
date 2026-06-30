@@ -38,4 +38,11 @@ public sealed class Match : Entity
         LastActivityAt = DateTimeOffset.UtcNow;
         Touch();
     }
+
+    public void Block()
+    {
+        Status = MatchStatus.Blocked;
+        LastActivityAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
 }

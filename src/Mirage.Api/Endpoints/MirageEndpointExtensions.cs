@@ -13,6 +13,7 @@ public static class MirageEndpointExtensions
         api.MapCounsellingEndpoints();
         api.MapMentorEndpoints();
         api.MapMilestoneEndpoints();
+        api.MapUploadEndpoints();
         api.MapAdminEndpoints();
         return endpoints;
     }
