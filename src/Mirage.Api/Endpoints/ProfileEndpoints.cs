@@ -87,7 +87,7 @@ internal static class ProfileEndpoints
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         profile.Update(request.DisplayName, request.City, request.Country, request.Denomination, request.Intent,
-            request.Bio, request.AnonymityEnabled, request.Interests);
+            request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }

@@ -32,9 +32,10 @@ public sealed class UserProfile : Entity
     public bool AnonymityEnabled { get; private set; }
     public SubscriptionTier SubscriptionTier { get; private set; } = SubscriptionTier.Free;
     public string[] Interests { get; private set; } = [];
+    public string? AvatarUrl { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
-        RelationshipIntent intent, string bio, bool anonymityEnabled, string[] interests)
+        RelationshipIntent intent, string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null)
     {
         DisplayName = displayName.Trim();
         City = city.Trim();
@@ -44,6 +45,7 @@ public sealed class UserProfile : Entity
         Bio = bio.Trim();
         AnonymityEnabled = anonymityEnabled;
         Interests = interests.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (avatarUrl is not null) AvatarUrl = avatarUrl;
         Touch();
     }
 

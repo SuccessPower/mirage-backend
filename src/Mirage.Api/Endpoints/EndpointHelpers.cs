@@ -31,7 +31,7 @@ internal static class EndpointHelpers
     public static ProfileResponse ToResponse(this UserProfile profile, bool isRecommended) =>
         new(profile.UserId, profile.DisplayName, Age(profile.DateOfBirth), profile.City, profile.Country,
             profile.Denomination, profile.Intent, profile.Bio, profile.IsVerified, isRecommended,
-            profile.SubscriptionTier, profile.Interests);
+            profile.SubscriptionTier, profile.Interests, profile.AvatarUrl);
 
     public static IResult ValidationProblem(HttpContext context, params (string Field, string Error)[] errors) =>
         ValidationProblem(context,

@@ -25,7 +25,8 @@ public sealed record UpdateProfileRequest(
     RelationshipIntent Intent,
     string Bio,
     bool AnonymityEnabled,
-    string[] Interests);
+    string[] Interests,
+    string? AvatarUrl = null);
 public sealed record CreateOrganisationRequest(string Name, string Denomination, string Country, string RegistrationNumber);
 public sealed record CreateRecommendationRequest(Guid RecommendedUserId, Guid? OrganisationId, string? Note);
 public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type);

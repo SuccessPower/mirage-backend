@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -84,6 +85,9 @@ if (missingConfiguration.Count > 0)
         $"Missing or invalid required configuration: {string.Join(", ", missingConfiguration)}. " +
         "Set these as environment variables or in appsettings.Local.json (gitignored).");
 }
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: true)));
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);

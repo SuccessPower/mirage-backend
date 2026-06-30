@@ -31,4 +31,5 @@ public sealed record ProfileResponse(
     bool IsVerified,
     bool IsRecommended,
     SubscriptionTier SubscriptionTier,
-    string[] Interests);
+    string[] Interests,
+    string? AvatarUrl);
