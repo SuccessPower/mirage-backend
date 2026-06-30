@@ -10,6 +10,7 @@ using Mirage.Api;
 using Mirage.Api.Endpoints;
 using Mirage.Api.Middleware;
 using Mirage.Api.Security;
+using Mirage.Infrastructure.Identity;
 using Mirage.Application;
 using Mirage.Infrastructure;
 using Mirage.Infrastructure.Persistence;
@@ -173,7 +174,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(MiragePolicy.PlatformAdmin,
+        p => p.RequireRole(MirageRoles.PlatformAdmin));
+    options.AddPolicy(MiragePolicy.ChurchAdmin,
+        p => p.RequireRole(MirageRoles.ChurchAdmin, MirageRoles.PlatformAdmin));
+    options.AddPolicy(MiragePolicy.Counsellor,
+        p => p.RequireRole(MirageRoles.Counsellor, MirageRoles.ChurchAdmin, MirageRoles.PlatformAdmin));
+    options.AddPolicy(MiragePolicy.Mentor,
+        p => p.RequireRole(MirageRoles.Mentor, MirageRoles.PlatformAdmin));
+});
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;

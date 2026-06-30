@@ -23,4 +23,8 @@ public sealed class Organisation : Entity
     public string RegistrationNumber { get; private set; } = string.Empty;
     public OrganisationStatus Status { get; private set; } = OrganisationStatus.Pending;
     public bool OffersFreeSessions { get; private set; }
+
+    public void Approve() { Status = OrganisationStatus.Approved; Touch(); }
+    public void Reject() { Status = OrganisationStatus.Rejected; Touch(); }
+    public void Suspend() { Status = OrganisationStatus.Suspended; Touch(); }
 }
