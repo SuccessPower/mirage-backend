@@ -35,7 +35,11 @@ public sealed record CreateDateRequestRequest(
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     string LocationArea,
-    string? Note);
+    string? Note,
+    RelationshipIntent Intent = RelationshipIntent.Dating,
+    int Capacity = 1,
+    string? ItemsToBring = null);
+public sealed record SendChatMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record RegisterCounsellorRequest(
     string InviteToken,
     string Email,

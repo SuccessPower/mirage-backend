@@ -1,6 +1,9 @@
 using CloudinaryDotNet;
+using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Application.Abstractions;
+using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Endpoints;
 
@@ -13,14 +16,30 @@ internal static class UploadEndpoints
         return api;
     }
 
-    private static IResult Sign(HttpContext context, IConfiguration configuration)
+    private static async Task<IResult> Sign(HttpContext context, IConfiguration configuration, IMirageDbContext db,
+        string? uploadContext, Guid? matchId, CancellationToken cancellationToken)
     {
+        var userId = context.User.GetUserId();
+
+        string folder;
+        if (uploadContext == "chat")
+        {
+            if (matchId is null)
+                return EndpointHelpers.ValidationProblem(context, ("matchId", "matchId is required for chat uploads."));
+            var inMatch = await db.Matches.AsNoTracking().AnyAsync(x => x.Id == matchId
+                && (x.User1Id == userId || x.User2Id == userId) && x.Status == MatchStatus.Active, cancellationToken);
+            if (!inMatch) return EndpointHelpers.Forbidden(context);
+            folder = $"mirage/chat/{matchId}";
+        }
+        else
+        {
+            folder = $"mirage/avatars/{userId}";
+        }
+
         var cloudName = configuration["Cloudinary:CloudName"]!;
         var apiKey = configuration["Cloudinary:ApiKey"]!;
         var apiSecret = configuration["Cloudinary:ApiSecret"]!;
-        var userId = context.User.GetUserId();
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var folder = $"mirage/avatars/{userId}";
         var paramsToSign = new SortedDictionary<string, object>
             { { "folder", folder }, { "timestamp", timestamp } };
         var cloudinary = new Cloudinary(new Account(cloudName, apiKey, apiSecret));

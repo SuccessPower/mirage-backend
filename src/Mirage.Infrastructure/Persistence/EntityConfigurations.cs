@@ -93,6 +93,8 @@ public sealed class DateRequestConfiguration : IEntityTypeConfiguration<DateRequ
         b.Property(x => x.Activity).HasMaxLength(200);
         b.Property(x => x.LocationArea).HasMaxLength(200);
         b.Property(x => x.Note).HasMaxLength(1000);
+        b.Property(x => x.ItemsToBring).HasMaxLength(500);
+        b.HasIndex(x => new { x.Intent, x.Status, x.StartsAt });
         b.HasMany(x => x.Acceptances).WithOne(x => x.DateRequest).HasForeignKey(x => x.DateRequestId);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RequestorUserId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SelectedUserId).OnDelete(DeleteBehavior.Restrict);
@@ -141,6 +143,7 @@ public sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         b.HasIndex(x => new { x.MatchId, x.CreatedAt });
         b.HasIndex(x => new { x.MatchId, x.IsRead }).HasFilter("\"IsRead\" = false");
         b.Property(x => x.Content).HasMaxLength(2000);
+        b.Property(x => x.AttachmentUrl).HasMaxLength(1000);
         b.HasOne(x => x.Match).WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
     }

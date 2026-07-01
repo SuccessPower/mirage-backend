@@ -8,6 +8,7 @@ public enum DateAcceptanceStatus { Pending = 1, Selected = 2, Declined = 3, With
 public enum SessionType { Group = 1, Personal = 2 }
 public enum SessionStatus { Requested = 1, Scheduled = 2, InProgress = 3, Completed = 4, Cancelled = 5, Declined = 6 }
 public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3 }
+public enum MessageType { Text = 1, Image = 2 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }
 public enum LikeType { Like = 1, SuperLike = 2 }
 public enum TrustUnlockStatus { NotRequested = 1, Pending = 2, Unlocked = 3, Declined = 4 }

@@ -61,4 +61,55 @@ public sealed class DomainInvariantTests
         Assert.Equal(DateRequestStatus.Cancelled, request.Status);
         Assert.Throws<InvalidOperationException>(request.Cancel);
     }
+
+    [Fact]
+    public void Single_capacity_select_matches_legacy_one_to_one_behavior()
+    {
+        var winner = Guid.NewGuid();
+        var loser = Guid.NewGuid();
+        var request = new DateRequest(Guid.NewGuid(), "Coffee", DateTimeOffset.UtcNow.AddDays(1),
+            DateTimeOffset.UtcNow.AddDays(1).AddHours(1), "Lagos", null);
+        request.Acceptances.Add(new DateRequestAcceptance(request.Id, winner));
+        request.Acceptances.Add(new DateRequestAcceptance(request.Id, loser));
+
+        request.Select(winner);
+
+        Assert.Equal(DateRequestStatus.Confirmed, request.Status);
+        Assert.Equal(winner, request.SelectedUserId);
+        Assert.Equal(DateAcceptanceStatus.Selected, request.Acceptances.Single(x => x.AcceptorUserId == winner).Status);
+        Assert.Equal(DateAcceptanceStatus.Declined, request.Acceptances.Single(x => x.AcceptorUserId == loser).Status);
+    }
+
+    [Fact]
+    public void Group_gathering_confirms_once_capacity_is_filled_and_declines_the_rest()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var third = Guid.NewGuid();
+        var request = new DateRequest(Guid.NewGuid(), "Picnic", DateTimeOffset.UtcNow.AddDays(1),
+            DateTimeOffset.UtcNow.AddDays(1).AddHours(2), "Lagos", null,
+            RelationshipIntent.Friendship, capacity: 2, itemsToBring: "Drinks");
+        request.Acceptances.Add(new DateRequestAcceptance(request.Id, first));
+        request.Acceptances.Add(new DateRequestAcceptance(request.Id, second));
+        request.Acceptances.Add(new DateRequestAcceptance(request.Id, third));
+
+        request.Select(first);
+        Assert.Equal(DateRequestStatus.Open, request.Status);
+
+        request.Select(second);
+
+        Assert.Equal(DateRequestStatus.Confirmed, request.Status);
+        Assert.Equal(DateAcceptanceStatus.Selected, request.Acceptances.Single(x => x.AcceptorUserId == first).Status);
+        Assert.Equal(DateAcceptanceStatus.Selected, request.Acceptances.Single(x => x.AcceptorUserId == second).Status);
+        Assert.Equal(DateAcceptanceStatus.Declined, request.Acceptances.Single(x => x.AcceptorUserId == third).Status);
+        Assert.Throws<InvalidOperationException>(() => request.Select(third));
+    }
+
+    [Fact]
+    public void Capacity_must_be_at_least_one()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new DateRequest(Guid.NewGuid(), "Coffee", DateTimeOffset.UtcNow.AddDays(1),
+                DateTimeOffset.UtcNow.AddDays(1).AddHours(1), "Lagos", null, capacity: 0));
+    }
 }
