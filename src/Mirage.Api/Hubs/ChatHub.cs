@@ -28,10 +28,12 @@ public sealed class ChatHub(MirageDbContext db) : Hub
     }
 
     // Client → Hub: send a message to a match
-    public async Task SendMessage(Guid matchId, string content)
+    public async Task SendMessage(Guid matchId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null)
     {
         content = (content ?? string.Empty).Trim();
-        if (content.Length == 0 || content.Length > 2000) return;
+        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
+        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
 
         var userId = GetUserId();
         var match = await db.Matches.AsNoTracking()
@@ -41,7 +43,7 @@ public sealed class ChatHub(MirageDbContext db) : Hub
 
         if (match is null) return;
 
-        var message = new Message(matchId, userId, content);
+        var message = new Message(matchId, userId, content, type, attachmentUrl);
         db.Messages.Add(message);
         await db.SaveChangesAsync();
 
@@ -51,6 +53,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
             message.MatchId,
             message.SenderId,
             message.Content,
+            message.Type,
+            message.AttachmentUrl,
             SentAt = message.CreatedAt,
             message.IsRead
         });

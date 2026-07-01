@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
+using Mirage.Api.Hubs;
 using Mirage.Api.Security;
 using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
@@ -22,6 +24,7 @@ internal static class MatchingEndpoints
 
         // Chat — REST fallback alongside SignalR hub
         group.MapGet("/matches/{id:guid}/messages", GetMessages);
+        group.MapPost("/matches/{id:guid}/messages", SendMessage);
         group.MapPatch("/matches/{id:guid}/messages/read", MarkRead);
         return api;
     }
@@ -151,6 +154,8 @@ internal static class MatchingEndpoints
                 x.Id,
                 x.SenderId,
                 x.Content,
+                x.Type,
+                x.AttachmentUrl,
                 SentAt = x.CreatedAt,
                 x.IsRead,
                 x.ReadAt
@@ -163,6 +168,44 @@ internal static class MatchingEndpoints
             Messages = Enumerable.Reverse(messages),
             HasMore = messages.Count == pageSize
         }, "Messages retrieved successfully.");
+    }
+
+    // REST fallback for sending messages (e.g. image messages after a Cloudinary upload
+    // completes) — mirrors ChatHub.SendMessage and broadcasts through the same hub group
+    // so connected SignalR clients still receive it in real time.
+    private static async Task<IResult> SendMessage(Guid id, SendChatMessageRequest request, HttpContext context,
+        IMirageDbContext db, IHubContext<ChatHub> hub, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id
+                && (x.User1Id == userId || x.User2Id == userId)
+                && x.Status == MatchStatus.Active, cancellationToken);
+        if (match is null) return EndpointHelpers.Forbidden(context);
+
+        if (request.Type == MessageType.Image && string.IsNullOrWhiteSpace(request.AttachmentUrl))
+            return EndpointHelpers.ValidationProblem(context, ("attachmentUrl", "Image messages require an attachment URL."));
+        if (request.Type == MessageType.Text && string.IsNullOrWhiteSpace(request.Content))
+            return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
+
+        var message = new Message(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        db.Messages.Add(message);
+        await db.SaveChangesAsync(cancellationToken);
+
+        await hub.Clients.Group($"match:{id}").SendAsync("ReceiveMessage", new
+        {
+            message.Id,
+            message.MatchId,
+            message.SenderId,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt,
+            message.IsRead
+        }, cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/matching/matches/{id}/messages", new { message.Id },
+            "Message sent successfully.");
     }
 
     private static async Task<IResult> MarkRead(Guid id, HttpContext context, IMirageDbContext db,

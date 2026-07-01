@@ -27,12 +27,14 @@ internal static class DateRequestEndpoints
     }
 
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db,
-        string? location, int page = 1, int pageSize = 20,
+        string? location, RelationshipIntent? intent, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         var query = db.DateRequests.AsNoTracking().Where(x => x.Status == DateRequestStatus.Open && x.EndsAt > DateTimeOffset.UtcNow);
         if (!string.IsNullOrWhiteSpace(location))
             query = query.Where(x => EF.Functions.ILike(x.LocationArea, $"%{location.Trim()}%"));
+        if (intent.HasValue)
+            query = query.Where(x => x.Intent == intent.Value);
         return ApiResults.Ok(context,
             await query.OrderBy(x => x.StartsAt).ToPagedResultAsync(page, pageSize, cancellationToken),
             "Date requests retrieved successfully.");
@@ -49,8 +51,10 @@ internal static class DateRequestEndpoints
             return EndpointHelpers.Forbidden(context, "Only verified or recommended users can post date requests.");
         if (request.StartsAt <= DateTimeOffset.UtcNow || request.EndsAt <= request.StartsAt)
             return EndpointHelpers.ValidationProblem(context, ("schedule", "Provide a valid future time window."));
+        if (request.Capacity < 1)
+            return EndpointHelpers.ValidationProblem(context, ("capacity", "Capacity must be at least 1."));
         var entity = new DateRequest(userId, request.Activity, request.StartsAt, request.EndsAt,
-            request.LocationArea, request.Note);
+            request.LocationArea, request.Note, request.Intent, request.Capacity, request.ItemsToBring);
         db.DateRequests.Add(entity);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/date-requests/{entity.Id}", entity,
@@ -83,9 +87,13 @@ internal static class DateRequestEndpoints
                 x.EndsAt,
                 x.LocationArea,
                 x.Note,
+                x.Intent,
+                x.Capacity,
+                x.ItemsToBring,
                 x.Status,
                 x.SelectedUserId,
                 AcceptanceCount = x.Acceptances.Count,
+                SelectedCount = x.Acceptances.Count(a => a.Status == DateAcceptanceStatus.Selected),
                 x.CreatedAt
             }).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         return request is null
@@ -157,7 +165,14 @@ internal static class DateRequestEndpoints
         if (request.RequestorUserId != actor) return EndpointHelpers.Forbidden(context);
         if (!request.Acceptances.Any(x => x.AcceptorUserId == userId))
             return EndpointHelpers.NotFound(context, "Date request acceptance was not found.");
-        request.Select(userId);
+        try
+        {
+            request.Select(userId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return EndpointHelpers.Conflict(context, ex.Message);
+        }
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(userId, NotificationType.DateRequestSelected,
