@@ -28,6 +28,8 @@ internal static class ProfileEndpoints
                 ("age", "Age filters must be between 18 and 100, with minAge not exceeding maxAge."));
 
         var query = db.Profiles.AsNoTracking().AsQueryable();
+        var currentUserId = context.User.TryGetUserId();
+        if (currentUserId.HasValue) query = query.Where(x => x.UserId != currentUserId.Value);
         if (intent.HasValue) query = query.Where(x => x.Intent == intent);
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))

@@ -11,4 +11,10 @@ public static class ClaimsPrincipalExtensions
             ? id
             : throw new UnauthorizedAccessException("Authenticated user identifier is missing.");
     }
+
+    public static Guid? TryGetUserId(this ClaimsPrincipal principal)
+    {
+        var value = principal.FindFirstValue("sub");
+        return Guid.TryParse(value, out var id) ? id : null;
+    }
 }

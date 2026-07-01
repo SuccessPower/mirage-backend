@@ -44,35 +44,50 @@ internal static class MatchingEndpoints
             return EndpointHelpers.Conflict(context, "Like already recorded.");
 
         db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
-        var mutual = await db.Likes.AnyAsync(x => x.SourceUserId == request.TargetUserId && x.TargetUserId == sourceUserId,
-            cancellationToken);
-        Match? match = null;
-        if (mutual)
-        {
-            match = new Match(sourceUserId, request.TargetUserId);
-            db.Matches.Add(match);
-        }
-        await db.SaveChangesAsync(cancellationToken);
+
+        var user1Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? sourceUserId : request.TargetUserId;
+        var user2Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? request.TargetUserId : sourceUserId;
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.User1Id == user1Id && x.User2Id == user2Id, cancellationToken);
 
         var sourceName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
-        if (match is not null)
+
+        var justMatched = false;
+        if (match is null)
         {
-            var targetName = await db.Profiles.AsNoTracking()
-                .Where(x => x.UserId == request.TargetUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
-            await notifications.NotifyAsync(sourceUserId, NotificationType.NewMatch, "It's a match!",
-                $"You matched with {targetName}. Send a chat request to start talking.", match.Id, "Match", cancellationToken);
-            await notifications.NotifyAsync(request.TargetUserId, NotificationType.NewMatch, "It's a match!",
-                $"You matched with {sourceName}. Send a chat request to start talking.", match.Id, "Match", cancellationToken);
+            // First like between this pair immediately raises a visible chat request to the target,
+            // instead of requiring a reciprocal like before either party sees anything.
+            match = new Match(sourceUserId, request.TargetUserId);
+            db.Matches.Add(match);
+            match.RequestChat(sourceUserId);
+            await db.SaveChangesAsync(cancellationToken);
+            await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
+                "New chat request", $"{sourceName} liked your profile and wants to start chatting.",
+                match.Id, "Match", cancellationToken);
+        }
+        else if (match.Status == MatchStatus.PendingRequest && match.ChatRequestedByUserId != sourceUserId)
+        {
+            // The other party already has a pending request out (from their own like) — liking them
+            // back approves it immediately, mirroring "mutual like = instant match".
+            var requesterId = match.ChatRequestedByUserId!.Value;
+            match.ApproveChat(sourceUserId);
+            justMatched = true;
+            await db.SaveChangesAsync(cancellationToken);
+            await notifications.NotifyAsync(requesterId, NotificationType.ChatRequestApproved,
+                "It's a match!", $"{sourceName} liked you back — you can start chatting now.",
+                match.Id, "Match", cancellationToken);
         }
         else
         {
-            await notifications.NotifyAsync(request.TargetUserId, NotificationType.NewLike, "You have a new like!",
-                $"{sourceName} liked your profile.", sourceUserId, "Profile", cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
         }
 
-        return ApiResults.Ok(context, new { isMatch = match is not null, matchId = match?.Id },
-            match is null ? "Like recorded successfully." : "It is a match.");
+        return ApiResults.Ok(context,
+            new { isMatch = match.Status == MatchStatus.Active, matchId = match.Id, status = match.Status.ToString() },
+            justMatched ? "It's a match!"
+                : match.Status == MatchStatus.Active ? "You are already connected."
+                : "Like sent — chat request delivered.");
     }
 
     private static async Task<IResult> GetMyLikes(HttpContext context, IMirageDbContext db,
