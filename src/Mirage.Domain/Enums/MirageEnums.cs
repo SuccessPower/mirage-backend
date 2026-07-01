@@ -7,7 +7,7 @@ public enum DateRequestStatus { Open = 1, Confirmed = 2, Completed = 3, Cancelle
 public enum DateAcceptanceStatus { Pending = 1, Selected = 2, Declined = 3, Withdrawn = 4 }
 public enum SessionType { Group = 1, Personal = 2 }
 public enum SessionStatus { Requested = 1, Scheduled = 2, InProgress = 3, Completed = 4, Cancelled = 5, Declined = 6 }
-public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3 }
+public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3, PendingRequest = 4 }
 public enum MessageType { Text = 1, Image = 2 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }
 public enum LikeType { Like = 1, SuperLike = 2 }
@@ -29,5 +29,7 @@ public enum NotificationType
     SessionBooked = 8,
     SessionAccepted = 9,
     SessionDeclined = 10,
-    NewMessage = 11
+    NewMessage = 11,
+    ChatRequestReceived = 12,
+    ChatRequestApproved = 13
 }
