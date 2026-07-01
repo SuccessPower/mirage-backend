@@ -81,6 +81,7 @@ public sealed class MatchConfiguration : IEntityTypeConfiguration<Match>
         b.HasIndex(x => new { x.User1Id, x.User2Id }).IsUnique();
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User1Id).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User2Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ChatRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

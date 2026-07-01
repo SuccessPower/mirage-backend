@@ -28,9 +28,32 @@ public sealed class Match : Entity
     }
     public Guid User1Id { get; private set; }
     public Guid User2Id { get; private set; }
-    public MatchStatus Status { get; private set; } = MatchStatus.Active;
+    // A match starts gated: chat only opens once one party requests it and the
+    // other approves — this is the pre-chat "request/approve or cancel" handshake.
+    public MatchStatus Status { get; private set; } = MatchStatus.PendingRequest;
+    public Guid? ChatRequestedByUserId { get; private set; }
     public DateTimeOffset MatchedAt { get; private set; }
     public DateTimeOffset? LastActivityAt { get; private set; }
+
+    public void RequestChat(Guid userId)
+    {
+        if (Status != MatchStatus.PendingRequest)
+            throw new InvalidOperationException("A chat request can only be sent while the match is pending.");
+        if (ChatRequestedByUserId == userId) return; // idempotent resend
+        ChatRequestedByUserId = userId;
+        Touch();
+    }
+
+    public void ApproveChat(Guid userId)
+    {
+        if (Status != MatchStatus.PendingRequest || ChatRequestedByUserId is null)
+            throw new InvalidOperationException("There is no pending chat request to approve.");
+        if (ChatRequestedByUserId == userId)
+            throw new InvalidOperationException("You cannot approve your own chat request.");
+        Status = MatchStatus.Active;
+        LastActivityAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
 
     public void Close()
     {

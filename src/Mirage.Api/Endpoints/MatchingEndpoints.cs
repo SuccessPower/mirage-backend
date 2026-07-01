@@ -21,6 +21,8 @@ internal static class MatchingEndpoints
         group.MapGet("/matches/{id:guid}", GetMatch);
         group.MapDelete("/matches/{id:guid}", CloseMatch);
         group.MapPost("/matches/{id:guid}/block", BlockMatch);
+        group.MapPost("/matches/{id:guid}/chat-request", RequestChat);
+        group.MapPost("/matches/{id:guid}/chat-request/approve", ApproveChatRequest);
 
         // Chat — REST fallback alongside SignalR hub
         group.MapGet("/matches/{id:guid}/messages", GetMessages);
@@ -59,9 +61,9 @@ internal static class MatchingEndpoints
             var targetName = await db.Profiles.AsNoTracking()
                 .Where(x => x.UserId == request.TargetUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
             await notifications.NotifyAsync(sourceUserId, NotificationType.NewMatch, "It's a match!",
-                $"You matched with {targetName}.", match.Id, "Match", cancellationToken);
+                $"You matched with {targetName}. Send a chat request to start talking.", match.Id, "Match", cancellationToken);
             await notifications.NotifyAsync(request.TargetUserId, NotificationType.NewMatch, "It's a match!",
-                $"You matched with {sourceName}.", match.Id, "Match", cancellationToken);
+                $"You matched with {sourceName}. Send a chat request to start talking.", match.Id, "Match", cancellationToken);
         }
         else
         {
@@ -111,11 +113,68 @@ internal static class MatchingEndpoints
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
-        if (match.Status != MatchStatus.Active)
+        if (match.Status is MatchStatus.Closed or MatchStatus.Blocked)
             return EndpointHelpers.Conflict(context, "Match is already closed.");
         match.Close();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { match.Id, match.Status }, "Match closed successfully.");
+    }
+
+    // Either party can send the first chat request; the other party then approves
+    // (opens the thread) or declines by closing the match via the existing Close endpoint.
+    private static async Task<IResult> RequestChat(Guid id, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+
+        try
+        {
+            match.RequestChat(userId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return EndpointHelpers.Conflict(context, ex.Message);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        var requesterName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(otherUserId, NotificationType.ChatRequestReceived, "New chat request",
+            $"{requesterName} wants to start chatting with you.", match.Id, "Match", cancellationToken);
+
+        return ApiResults.Ok(context, new { match.Id, match.Status, match.ChatRequestedByUserId },
+            "Chat request sent successfully.");
+    }
+
+    private static async Task<IResult> ApproveChatRequest(Guid id, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+
+        try
+        {
+            match.ApproveChat(userId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return EndpointHelpers.Conflict(context, ex.Message);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var approverName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(match.ChatRequestedByUserId!.Value, NotificationType.ChatRequestApproved,
+            "Chat request approved", $"{approverName} approved your chat request. You can start chatting now.",
+            match.Id, "Match", cancellationToken);
+
+        return ApiResults.Ok(context, new { match.Id, match.Status }, "Chat request approved successfully.");
     }
 
     private static async Task<IResult> BlockMatch(Guid id, HttpContext context, IMirageDbContext db,
