@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -124,7 +125,7 @@ internal static class DateRequestEndpoints
     }
 
     private static async Task<IResult> Accept(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var request = await db.DateRequests.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -136,11 +137,18 @@ internal static class DateRequestEndpoints
             return EndpointHelpers.Conflict(context, "Date request already accepted.");
         db.DateRequestAcceptances.Add(new DateRequestAcceptance(id, userId));
         await db.SaveChangesAsync(cancellationToken);
+
+        var acceptorName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(request.RequestorUserId, NotificationType.DateRequestAccepted,
+            "New date request response", $"{acceptorName} accepted your date request for \"{request.Activity}\".",
+            request.Id, "DateRequest", cancellationToken);
+
         return ApiResults.Ok(context, new { dateRequestId = id }, "Date request accepted successfully.");
     }
 
     private static async Task<IResult> Select(Guid id, Guid userId, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var actor = context.User.GetUserId();
         var request = await db.DateRequests.Include(x => x.Acceptances)
@@ -151,6 +159,11 @@ internal static class DateRequestEndpoints
             return EndpointHelpers.NotFound(context, "Date request acceptance was not found.");
         request.Select(userId);
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(userId, NotificationType.DateRequestSelected,
+            "You've been selected!", $"You were selected for the date request \"{request.Activity}\".",
+            request.Id, "DateRequest", cancellationToken);
+
         return ApiResults.Ok(context, new { dateRequestId = id, selectedUserId = userId },
             "Date request participant selected successfully.");
     }

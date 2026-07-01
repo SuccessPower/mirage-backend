@@ -12,6 +12,7 @@ using Mirage.Api.Endpoints;
 using Mirage.Api.Hubs;
 using Mirage.Api.Middleware;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Infrastructure.Identity;
 using Mirage.Application;
 using Mirage.Infrastructure;
@@ -94,6 +95,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddMemoryCache();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<NotificationService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()
@@ -349,6 +351,7 @@ app.UseAuthorization();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 app.MapHub<ChatHub>("/hubs/chat");
+app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapMirageEndpoints();
 if (swaggerEnabled)
 {

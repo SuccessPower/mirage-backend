@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -13,6 +14,7 @@ internal static class MatchingEndpoints
     {
         var group = api.MapGroup("/matching").WithTags("Matching").RequireAuthorization();
         group.MapPost("/likes", Like);
+        group.MapGet("/likes/mine", GetMyLikes);
         group.MapGet("/matches", GetMatches);
         group.MapGet("/matches/{id:guid}", GetMatch);
         group.MapDelete("/matches/{id:guid}", CloseMatch);
@@ -25,7 +27,7 @@ internal static class MatchingEndpoints
     }
 
     private static async Task<IResult> Like(LikeProfileRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         var sourceUserId = context.User.GetUserId();
         if (sourceUserId == request.TargetUserId)
@@ -46,8 +48,37 @@ internal static class MatchingEndpoints
             db.Matches.Add(match);
         }
         await db.SaveChangesAsync(cancellationToken);
+
+        var sourceName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == sourceUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        if (match is not null)
+        {
+            var targetName = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == request.TargetUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+            await notifications.NotifyAsync(sourceUserId, NotificationType.NewMatch, "It's a match!",
+                $"You matched with {targetName}.", match.Id, "Match", cancellationToken);
+            await notifications.NotifyAsync(request.TargetUserId, NotificationType.NewMatch, "It's a match!",
+                $"You matched with {sourceName}.", match.Id, "Match", cancellationToken);
+        }
+        else
+        {
+            await notifications.NotifyAsync(request.TargetUserId, NotificationType.NewLike, "You have a new like!",
+                $"{sourceName} liked your profile.", sourceUserId, "Profile", cancellationToken);
+        }
+
         return ApiResults.Ok(context, new { isMatch = match is not null, matchId = match?.Id },
             match is null ? "Like recorded successfully." : "It is a match.");
+    }
+
+    private static async Task<IResult> GetMyLikes(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var targetUserIds = await db.Likes.AsNoTracking()
+            .Where(x => x.SourceUserId == userId)
+            .Select(x => x.TargetUserId)
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, targetUserIds, "Your likes were retrieved successfully.");
     }
 
     private static async Task<IResult> GetMatches(HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)

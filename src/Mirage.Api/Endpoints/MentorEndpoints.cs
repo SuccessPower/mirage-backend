@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -115,13 +116,17 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> SendRequest(Guid mentorId, RequestMentorRequest request,
-        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+        HttpContext context, IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Message))
             return EndpointHelpers.ValidationProblem(context, ("message", "A message is required."));
 
         var userId = context.User.GetUserId();
-        if (!await db.Mentors.AnyAsync(x => x.Id == mentorId && x.IsApproved, cancellationToken))
+        var mentor = await db.Mentors.AsNoTracking()
+            .Where(x => x.Id == mentorId && x.IsApproved)
+            .Select(x => new { x.UserId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (mentor is null)
             return EndpointHelpers.NotFound(context, "Approved mentor was not found.");
 
         if (await db.MentorRequests.AnyAsync(
@@ -132,6 +137,13 @@ internal static class MentorEndpoints
         var mentorRequest = new MentorRequest(mentorId, userId, request.Message);
         db.MentorRequests.Add(mentorRequest);
         await db.SaveChangesAsync(cancellationToken);
+
+        var menteeName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(mentor.UserId, NotificationType.MentorRequestReceived,
+            "New mentorship request", $"{menteeName} requested your mentorship.",
+            mentorRequest.Id, "MentorRequest", cancellationToken);
+
         return ApiResults.Created(context, $"/api/v1/mentorship/requests/{mentorRequest.Id}",
             new { mentorRequest.Id, mentorRequest.Status }, "Mentor request sent successfully.");
     }
@@ -188,7 +200,7 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> AcceptRequest(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var mentorProfileId = await db.Mentors.AsNoTracking()
@@ -201,11 +213,16 @@ internal static class MentorEndpoints
             return EndpointHelpers.Conflict(context, "Only pending requests can be accepted.");
         request.Accept();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(request.MenteeUserId, NotificationType.MentorRequestAccepted,
+            "Mentorship request accepted", "Your mentorship request was accepted.",
+            request.Id, "MentorRequest", cancellationToken);
+
         return ApiResults.Ok(context, new { request.Id, request.Status }, "Mentor request accepted.");
     }
 
     private static async Task<IResult> DeclineRequest(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var mentorProfileId = await db.Mentors.AsNoTracking()
@@ -218,6 +235,11 @@ internal static class MentorEndpoints
             return EndpointHelpers.Conflict(context, "Only pending requests can be declined.");
         request.Decline();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(request.MenteeUserId, NotificationType.MentorRequestDeclined,
+            "Mentorship request declined", "Your mentorship request was declined.",
+            request.Id, "MentorRequest", cancellationToken);
+
         return ApiResults.Ok(context, new { request.Id, request.Status }, "Mentor request declined.");
     }
 

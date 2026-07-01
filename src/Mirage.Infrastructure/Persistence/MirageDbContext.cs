@@ -30,6 +30,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<DateFeedback> DateFeedbacks => Set<DateFeedback>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
