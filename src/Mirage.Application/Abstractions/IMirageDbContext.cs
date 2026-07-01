@@ -25,5 +25,6 @@ public interface IMirageDbContext
     DbSet<DateFeedback> DateFeedbacks { get; }
     DbSet<ContentReport> ContentReports { get; }
     DbSet<Message> Messages { get; }
+    DbSet<Notification> Notifications { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

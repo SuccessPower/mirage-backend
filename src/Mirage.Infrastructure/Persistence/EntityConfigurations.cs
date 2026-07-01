@@ -222,6 +222,20 @@ public sealed class ContentReportConfiguration : IEntityTypeConfiguration<Conten
     }
 }
 
+public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>
+{
+    public void Configure(EntityTypeBuilder<Notification> b)
+    {
+        b.ToTable("notifications");
+        b.HasIndex(x => new { x.UserId, x.CreatedAt });
+        b.HasIndex(x => new { x.UserId, x.IsRead }).HasFilter("\"IsRead\" = false");
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.Body).HasMaxLength(1000);
+        b.Property(x => x.ReferenceType).HasMaxLength(100);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CounsellorInviteConfiguration : IEntityTypeConfiguration<CounsellorInvite>
 {
     public void Configure(EntityTypeBuilder<CounsellorInvite> b)

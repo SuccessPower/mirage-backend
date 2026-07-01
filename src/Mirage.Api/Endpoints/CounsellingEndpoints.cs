@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -78,19 +79,28 @@ internal static class CounsellingEndpoints
     }
 
     private static async Task<IResult> Book(BookSessionRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         if (request.ScheduledAt <= DateTimeOffset.UtcNow)
             return EndpointHelpers.ValidationProblem(context,
                 ("scheduledAt", "Session must be scheduled in the future."));
-        if (!await db.Counsellors.AnyAsync(x => x.Id == request.CounsellorId && x.IsApproved, cancellationToken))
-            return EndpointHelpers.NotFound(context, "Approved counsellor was not found.");
-        var session = new CounsellingSession(request.CounsellorId, context.User.GetUserId(), request.Type,
+        var counsellor = await db.Counsellors.AsNoTracking()
+            .Where(x => x.Id == request.CounsellorId && x.IsApproved)
+            .Select(x => new { x.UserId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Approved counsellor was not found.");
+        var userId = context.User.GetUserId();
+        var session = new CounsellingSession(request.CounsellorId, userId, request.Type,
             request.ScheduledAt, request.Topic, request.CounsellorAnonymous, request.ClientAnonymous);
         db.CounsellingSessions.Add(session);
-        db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, context.User.GetUserId(),
+        db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, userId,
             $"Session requested; clientAnonymous={request.ClientAnonymous}; counsellorAnonymous={request.CounsellorAnonymous}"));
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(counsellor.UserId, NotificationType.SessionBooked,
+            "New session request", $"A new {request.Type.ToString().ToLowerInvariant()} session was requested.",
+            session.Id, "CounsellingSession", cancellationToken);
+
         return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
             new { session.Id, session.Status }, "Counselling session requested successfully.");
     }
@@ -192,7 +202,7 @@ internal static class CounsellingEndpoints
     }
 
     private static async Task<IResult> AcceptSession(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var session = await db.CounsellingSessions.Include(x => x.Counsellor)
@@ -203,11 +213,16 @@ internal static class CounsellingEndpoints
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(id, userId, "SessionAccepted"));
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(session.ClientUserId, NotificationType.SessionAccepted,
+            "Session accepted", "Your counselling session request was accepted.",
+            session.Id, "CounsellingSession", cancellationToken);
+
         return ApiResults.Ok(context, new { session.Id, session.Status }, "Session accepted.");
     }
 
     private static async Task<IResult> DeclineSession(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var session = await db.CounsellingSessions.Include(x => x.Counsellor)
@@ -217,6 +232,11 @@ internal static class CounsellingEndpoints
         try { session.Decline(); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(session.ClientUserId, NotificationType.SessionDeclined,
+            "Session declined", "Your counselling session request was declined.",
+            session.Id, "CounsellingSession", cancellationToken);
+
         return ApiResults.Ok(context, new { session.Id, session.Status }, "Session declined.");
     }
 
