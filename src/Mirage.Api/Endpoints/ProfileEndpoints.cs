@@ -30,9 +30,8 @@ internal static class ProfileEndpoints
         var query = db.Profiles.AsNoTracking().AsQueryable();
 
         // Approved couples are off the market entirely, for everyone.
-        var coupledIds = db.Couples.Where(x => x.Status == CoupleStatus.Approved)
-            .SelectMany(x => new[] { x.User1Id, x.User2Id });
-        query = query.Where(x => !coupledIds.Contains(x.UserId));
+        query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
+            && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
 
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
