@@ -47,42 +47,52 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                 type: "integer",
                 nullable: true);
 
-            migrationBuilder.AddColumn<Guid>(
-                name: "ChatRequestedByUserId",
-                schema: "mirage",
-                table: "matches",
-                type: "uuid",
-                nullable: true);
+            // ChatRequestedByUserId (column/index/FK) was already applied to production directly
+            // by an earlier deploy that never got recorded in __EFMigrationsHistory, so the plain
+            // AddColumn/CreateIndex/AddForeignKey calls collide there. Guard each with an existence
+            // check so this migration is safe to run whether or not that drift is present.
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'matches' AND column_name = 'ChatRequestedByUserId'
+                    ) THEN
+                        ALTER TABLE mirage.matches ADD ""ChatRequestedByUserId"" uuid;
+                    END IF;
+                END $$;
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_matches_ChatRequestedByUserId",
-                schema: "mirage",
-                table: "matches",
-                column: "ChatRequestedByUserId");
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_indexes
+                        WHERE schemaname = 'mirage' AND tablename = 'matches' AND indexname = 'IX_matches_ChatRequestedByUserId'
+                    ) THEN
+                        CREATE INDEX ""IX_matches_ChatRequestedByUserId"" ON mirage.matches (""ChatRequestedByUserId"");
+                    END IF;
+                END $$;
+            ");
 
-            migrationBuilder.AddForeignKey(
-                name: "FK_matches_AspNetUsers_ChatRequestedByUserId",
-                schema: "mirage",
-                table: "matches",
-                column: "ChatRequestedByUserId",
-                principalSchema: "mirage",
-                principalTable: "AspNetUsers",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+            migrationBuilder.Sql(@"
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint WHERE conname = 'FK_matches_AspNetUsers_ChatRequestedByUserId'
+                    ) THEN
+                        ALTER TABLE mirage.matches ADD CONSTRAINT ""FK_matches_AspNetUsers_ChatRequestedByUserId""
+                            FOREIGN KEY (""ChatRequestedByUserId"") REFERENCES mirage.""AspNetUsers"" (""Id"") ON DELETE RESTRICT;
+                    END IF;
+                END $$;
+            ");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_matches_AspNetUsers_ChatRequestedByUserId",
-                schema: "mirage",
-                table: "matches");
-
-            migrationBuilder.DropIndex(
-                name: "IX_matches_ChatRequestedByUserId",
-                schema: "mirage",
-                table: "matches");
+            migrationBuilder.Sql(@"ALTER TABLE mirage.matches DROP CONSTRAINT IF EXISTS ""FK_matches_AspNetUsers_ChatRequestedByUserId"";");
+            migrationBuilder.Sql(@"DROP INDEX IF EXISTS mirage.""IX_matches_ChatRequestedByUserId"";");
 
             migrationBuilder.DropColumn(
                 name: "HeightInches",
