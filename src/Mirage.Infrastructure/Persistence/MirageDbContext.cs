@@ -31,6 +31,16 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<OrganisationBranch> OrganisationBranches => Set<OrganisationBranch>();
+    public DbSet<OrganisationMember> OrganisationMembers => Set<OrganisationMember>();
+    public DbSet<OrgEvent> OrgEvents => Set<OrgEvent>();
+    public DbSet<EventTicket> EventTickets => Set<EventTicket>();
+    public DbSet<MentorPost> MentorPosts => Set<MentorPost>();
+    public DbSet<MentorGroupMessage> MentorGroupMessages => Set<MentorGroupMessage>();
+    public DbSet<MentorMeeting> MentorMeetings => Set<MentorMeeting>();
+    public DbSet<Couple> Couples => Set<Couple>();
+    public DbSet<CounsellingMessage> CounsellingMessages => Set<CounsellingMessage>();
+    public DbSet<CounsellingMeeting> CounsellingMeetings => Set<CounsellingMeeting>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

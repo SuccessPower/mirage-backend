@@ -35,6 +35,21 @@ public sealed record UpdateProfileRequest(
     SkinTone? SkinTone = null,
     string? PreferredLanguage = null);
 public sealed record CreateOrganisationRequest(string Name, string Denomination, string Country, string RegistrationNumber);
+public sealed record JoinOrganisationRequest(Guid? BranchId);
+public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
+public sealed record CreateBranchRequest(string Name, string City, string Country, string? Address);
+public sealed record CreateMentorPostRequest(string Content, string? ImageUrl);
+public sealed record SendMentorGroupMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
+public sealed record ScheduleMentorMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);
+
+public sealed record CreateEventRequest(
+    string Title,
+    string? Description,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Location,
+    int? Capacity,
+    Guid? BranchId);
 public sealed record CreateRecommendationRequest(Guid RecommendedUserId, Guid? OrganisationId, string? Note);
 public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type);
 public sealed record CreateDateRequestRequest(
@@ -60,6 +75,26 @@ public sealed record RegisterCounsellorRequest(
     int YearsExperience,
     string[] Specialisations,
     string[] Languages);
+
+public sealed record RegisterIndependentCounsellorRequest(
+    string Email,
+    string Password,
+    string DisplayName,
+    DateOnly DateOfBirth,
+    string City,
+    string Country,
+    string Denomination,
+    string Bio,
+    int YearsExperience,
+    string[] Specialisations,
+    string[] Languages,
+    string[]? VerificationDocumentUrls = null);
+
+public sealed record UpdateVerificationDocumentsRequest(string[] DocumentUrls);
+public sealed record RejectCounsellorRequest(string Reason);
+public sealed record InviteCoupleRequest(string PartnerEmail);
+public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
+public sealed record ScheduleCounsellingMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);
 
 public sealed record RegisterMentorRequest(
     string Email,

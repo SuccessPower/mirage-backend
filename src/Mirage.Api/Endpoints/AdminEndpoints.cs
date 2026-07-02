@@ -29,6 +29,11 @@ internal static class AdminEndpoints
         admin.MapPatch("/reports/{id:guid}/action", TakeAction);
         admin.MapPatch("/reports/{id:guid}/dismiss", DismissReport);
 
+        // Independent counsellor verification (self-signup, no organisation)
+        admin.MapGet("/counsellors/pending", ListPendingIndependentCounsellors);
+        admin.MapPatch("/counsellors/{id:guid}/approve", ApproveIndependentCounsellor);
+        admin.MapPatch("/counsellors/{id:guid}/reject", RejectIndependentCounsellor);
+
         // Content reports can also be submitted by any authenticated user
         var reports = api.MapGroup("/reports").WithTags("Reports").RequireAuthorization();
         reports.MapPost("/", SubmitReport);
@@ -215,5 +220,53 @@ internal static class AdminEndpoints
         return ApiResults.Ok(context,
             await query.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Your reports retrieved successfully.");
+    }
+
+    // --- Independent counsellor verification ---
+
+    private static async Task<IResult> ListPendingIndependentCounsellors(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var counsellors = await db.Counsellors.AsNoTracking()
+            .Where(x => x.OrganisationId == null && !x.IsApproved && !x.IsRejected)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.UserId,
+                DisplayName = x.UserProfile.DisplayName,
+                x.UserProfile.City,
+                x.UserProfile.Country,
+                x.YearsExperience,
+                x.Specialisations,
+                x.Languages,
+                x.VerificationDocumentUrls,
+                x.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, counsellors, "Pending independent counsellors retrieved successfully.");
+    }
+
+    private static async Task<IResult> ApproveIndependentCounsellor(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor was not found.");
+        if (counsellor.IsApproved) return EndpointHelpers.Conflict(context, "Counsellor is already approved.");
+        counsellor.Approve();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsApproved }, "Counsellor approved successfully.");
+    }
+
+    private static async Task<IResult> RejectIndependentCounsellor(Guid id, RejectCounsellorRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason))
+            return EndpointHelpers.ValidationProblem(context, ("reason", "A rejection reason is required."));
+        var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor was not found.");
+        counsellor.Reject(request.Reason);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsRejected }, "Counsellor rejected.");
     }
 }

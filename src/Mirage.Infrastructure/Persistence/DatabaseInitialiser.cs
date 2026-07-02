@@ -37,6 +37,7 @@ public static class DatabaseInitialiser
             await db.Database.MigrateAsync(cancellationToken);
 
             await SeedRolesAsync(scope.ServiceProvider, cancellationToken);
+            await SeedSuperAdminAsync(scope.ServiceProvider, configuration, cancellationToken);
             logger.LogInformation("Database migration and role initialization completed.");
         }
         finally
@@ -67,6 +68,23 @@ public static class DatabaseInitialiser
                 .Select(role => role.Id)
                 .SingleAsync(cancellationToken);
         });
+    }
+
+    // Promotes an already-registered account to PlatformAdmin on startup, driven by config
+    // (e.g. SuperAdmin__Email env var) rather than any seeded/default credentials — there is
+    // no built-in admin account. Register normally first, then set this to your own email.
+    private static async Task SeedSuperAdminAsync(IServiceProvider services, IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var email = configuration["SuperAdmin:Email"];
+        if (string.IsNullOrWhiteSpace(email)) return;
+
+        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+        var user = await userManager.FindByEmailAsync(email.Trim());
+        if (user is null) return;
+
+        if (!await userManager.IsInRoleAsync(user, MirageRoles.PlatformAdmin))
+            await userManager.AddToRoleAsync(user, MirageRoles.PlatformAdmin);
     }
 
     private static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken)

@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
+using Mirage.Api.Hubs;
 using Mirage.Api.Security;
 using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
@@ -25,7 +27,145 @@ internal static class MentorEndpoints
         requests.MapPatch("/{id:guid}/accept", AcceptRequest);
         requests.MapPatch("/{id:guid}/decline", DeclineRequest);
         requests.MapDelete("/{id:guid}", WithdrawRequest);
+
+        // Broadcast group: posts, group chat, and meetings shared between a mentor and their
+        // accepted mentees.
+        mentors.MapGet("/{id:guid}/posts", ListPosts).RequireAuthorization();
+        mentors.MapPost("/{id:guid}/posts", CreatePost).RequireAuthorization(MiragePolicy.Mentor);
+        mentors.MapGet("/{id:guid}/group-messages", ListGroupMessages).RequireAuthorization();
+        mentors.MapPost("/{id:guid}/group-messages", SendGroupMessage).RequireAuthorization();
+        mentors.MapGet("/{id:guid}/meetings", ListMeetings).RequireAuthorization();
+        mentors.MapPost("/{id:guid}/meetings", ScheduleMeeting).RequireAuthorization(MiragePolicy.Mentor);
         return api;
+    }
+
+    // A user belongs to a mentor's broadcast group if they own the mentor profile,
+    // or have an Accepted MentorRequest against it.
+    private static async Task<bool> IsGroupMemberAsync(Guid mentorProfileId, Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var isMentor = await db.Mentors.AsNoTracking()
+            .AnyAsync(x => x.Id == mentorProfileId && x.UserId == userId, cancellationToken);
+        if (isMentor) return true;
+        return await db.MentorRequests.AsNoTracking().AnyAsync(
+            x => x.MentorProfileId == mentorProfileId && x.MenteeUserId == userId &&
+                 x.Status == MentorRequestStatus.Accepted, cancellationToken);
+    }
+
+    private static async Task<IResult> ListPosts(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var posts = await db.MentorPosts.AsNoTracking()
+            .Where(x => x.MentorProfileId == id)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new MentorPostResponse(x.Id, x.MentorProfileId, x.Content, x.ImageUrl, x.CreatedAt))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, posts, "Posts retrieved successfully.");
+    }
+
+    private static async Task<IResult> CreatePost(Guid id, CreateMentorPostRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var isMentor = await db.Mentors.AsNoTracking().AnyAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+        if (!isMentor) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return EndpointHelpers.ValidationProblem(context, ("content", "Post content is required."));
+
+        var post = new MentorPost(id, request.Content, request.ImageUrl);
+        db.MentorPosts.Add(post);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Created(context, $"/api/v1/mentors/{id}/posts/{post.Id}", new { post.Id }, "Post published successfully.");
+    }
+
+    private static async Task<IResult> ListGroupMessages(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var messages = await db.MentorGroupMessages.AsNoTracking()
+            .Where(x => x.MentorProfileId == id)
+            .OrderBy(x => x.CreatedAt)
+            .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new MentorGroupMessageResponse(
+                m.Id, m.MentorProfileId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, messages, "Group messages retrieved successfully.");
+    }
+
+    private static async Task<IResult> SendGroupMessage(Guid id, SendMentorGroupMessageRequest request,
+        HttpContext context, IMirageDbContext db, IHubContext<ChatHub> hub,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
+
+        var message = new MentorGroupMessage(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        db.MentorGroupMessages.Add(message);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await hub.Clients.Group($"mentorgroup:{id}").SendAsync("ReceiveMentorGroupMessage", new
+        {
+            message.Id,
+            MentorProfileId = id,
+            message.SenderId,
+            SenderName = senderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
+        }, cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/mentors/{id}/group-messages/{message.Id}",
+            new { message.Id }, "Message sent successfully.");
+    }
+
+    private static async Task<IResult> ListMeetings(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var meetings = await db.MentorMeetings.AsNoTracking()
+            .Where(x => x.MentorProfileId == id)
+            .OrderBy(x => x.ScheduledAt)
+            .Select(x => new MentorMeetingResponse(x.Id, x.MentorProfileId, x.ScheduledByUserId, x.Title,
+                x.MeetingLink, x.ScheduledAt, x.DurationMinutes))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, meetings, "Meetings retrieved successfully.");
+    }
+
+    private static async Task<IResult> ScheduleMeeting(Guid id, ScheduleMentorMeetingRequest request,
+        HttpContext context, IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var isMentor = await db.Mentors.AsNoTracking().AnyAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+        if (!isMentor) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.MeetingLink))
+            return EndpointHelpers.ValidationProblem(context, ("meeting", "Title and meeting link are required."));
+
+        var meeting = new MentorMeeting(id, userId, request.Title, request.MeetingLink, request.ScheduledAt, request.DurationMinutes);
+        db.MentorMeetings.Add(meeting);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var menteeIds = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == id && x.Status == MentorRequestStatus.Accepted)
+            .Select(x => x.MenteeUserId)
+            .ToListAsync(cancellationToken);
+        foreach (var menteeId in menteeIds)
+            await notifications.NotifyAsync(menteeId, NotificationType.SessionBooked, "New meeting scheduled",
+                $"{request.Title} was scheduled for {request.ScheduledAt:MMM d, h:mm tt}.", meeting.Id, "MentorMeeting",
+                cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/mentors/{id}/meetings/{meeting.Id}", new { meeting.Id },
+            "Meeting scheduled successfully.");
     }
 
     private static async Task<IResult> ListMentors(HttpContext context, IMirageDbContext db,

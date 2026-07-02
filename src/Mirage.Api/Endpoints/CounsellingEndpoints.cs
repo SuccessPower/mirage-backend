@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
+using Mirage.Api.Hubs;
 using Mirage.Api.Security;
 using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
@@ -18,6 +20,7 @@ internal static class CounsellingEndpoints
         counsellors.MapGet("/{id:guid}", GetCounsellor);
         counsellors.MapGet("/me", GetMyCounsellorProfile).RequireAuthorization(MiragePolicy.Counsellor);
         counsellors.MapPut("/me", UpdateMyCounsellorProfile).RequireAuthorization(MiragePolicy.Counsellor);
+        counsellors.MapPut("/me/verification-documents", UpdateVerificationDocuments).RequireAuthorization(MiragePolicy.Counsellor);
 
         var sessions = api.MapGroup("/sessions").WithTags("Counselling").RequireAuthorization();
         sessions.MapGet("/", ListSessions);
@@ -32,7 +35,103 @@ internal static class CounsellingEndpoints
         sessions.MapPost("/{id:guid}/notes", AddNote);
         sessions.MapGet("/{id:guid}/notes", GetNotes);
         sessions.MapPost("/{id:guid}/rating", RateSession);
+
+        // Private channel: messages + follow-up meetings between counsellor and client
+        sessions.MapGet("/{id:guid}/messages", ListMessages);
+        sessions.MapPost("/{id:guid}/messages", SendMessage);
+        sessions.MapGet("/{id:guid}/meetings", ListMeetings);
+        sessions.MapPost("/{id:guid}/meetings", ScheduleMeeting);
         return api;
+    }
+
+    private static async Task<bool> IsSessionPartyAsync(Guid sessionId, Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken) =>
+        await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
+            && (x.ClientUserId == userId || x.Counsellor.UserId == userId)
+            && x.Status != SessionStatus.Requested && x.Status != SessionStatus.Declined, cancellationToken);
+
+    private static async Task<IResult> ListMessages(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var messages = await db.CounsellingMessages.AsNoTracking()
+            .Where(x => x.SessionId == id)
+            .OrderBy(x => x.CreatedAt)
+            .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new CounsellingMessageResponse(
+                m.Id, m.SessionId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, messages, "Messages retrieved successfully.");
+    }
+
+    private static async Task<IResult> SendMessage(Guid id, SendCounsellingMessageRequest request, HttpContext context,
+        IMirageDbContext db, IHubContext<ChatHub> hub, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
+
+        var message = new CounsellingMessage(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        db.CounsellingMessages.Add(message);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await hub.Clients.Group($"counsellingsession:{id}").SendAsync("ReceiveCounsellingMessage", new
+        {
+            message.Id,
+            SessionId = id,
+            message.SenderId,
+            SenderName = senderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
+        }, cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/sessions/{id}/messages/{message.Id}", new { message.Id },
+            "Message sent successfully.");
+    }
+
+    private static async Task<IResult> ListMeetings(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var meetings = await db.CounsellingMeetings.AsNoTracking()
+            .Where(x => x.SessionId == id)
+            .OrderBy(x => x.ScheduledAt)
+            .Select(x => new CounsellingMeetingResponse(x.Id, x.SessionId, x.ScheduledByUserId, x.Title,
+                x.MeetingLink, x.ScheduledAt, x.DurationMinutes))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, meetings, "Meetings retrieved successfully.");
+    }
+
+    private static async Task<IResult> ScheduleMeeting(Guid id, ScheduleCounsellingMeetingRequest request,
+        HttpContext context, IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.MeetingLink))
+            return EndpointHelpers.ValidationProblem(context, ("meeting", "Title and meeting link are required."));
+
+        var meeting = new CounsellingMeeting(id, userId, request.Title, request.MeetingLink, request.ScheduledAt,
+            request.DurationMinutes);
+        db.CounsellingMeetings.Add(meeting);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var session = await db.CounsellingSessions.AsNoTracking().Include(x => x.Counsellor)
+            .SingleAsync(x => x.Id == id, cancellationToken);
+        var otherUserId = session.ClientUserId == userId ? session.Counsellor.UserId : session.ClientUserId;
+        await notifications.NotifyAsync(otherUserId, NotificationType.SessionBooked, "New meeting scheduled",
+            $"{request.Title} was scheduled for {request.ScheduledAt:MMM d, h:mm tt}.", meeting.Id, "CounsellingMeeting",
+            cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/sessions/{id}/meetings/{meeting.Id}", new { meeting.Id },
+            "Meeting scheduled successfully.");
     }
 
     private static async Task<IResult> ListCounsellors(HttpContext context, IMirageDbContext db,
@@ -51,7 +150,7 @@ internal static class CounsellingEndpoints
             x.Id,
             DisplayName = x.IsAnonymous ? MaskName(x.UserProfile.DisplayName) : x.UserProfile.DisplayName,
             x.UserProfile.Denomination,
-            Organisation = x.Organisation.Name,
+            Organisation = x.Organisation != null ? x.Organisation.Name : null,
             x.YearsExperience,
             x.IsAnonymous,
             x.AcceptsFreeSessions,
@@ -131,7 +230,7 @@ internal static class CounsellingEndpoints
                 x.Id,
                 DisplayName = x.IsAnonymous ? MaskName(x.UserProfile.DisplayName) : x.UserProfile.DisplayName,
                 x.UserProfile.Denomination,
-                Organisation = x.Organisation.Name,
+                Organisation = x.Organisation != null ? x.Organisation.Name : null,
                 x.YearsExperience,
                 x.IsAnonymous,
                 x.AcceptsFreeSessions,
@@ -155,7 +254,7 @@ internal static class CounsellingEndpoints
                 x.Id,
                 x.UserId,
                 x.OrganisationId,
-                Organisation = x.Organisation.Name,
+                Organisation = x.Organisation != null ? x.Organisation.Name : null,
                 x.YearsExperience,
                 x.IsApproved,
                 x.IsAnonymous,
@@ -181,6 +280,20 @@ internal static class CounsellingEndpoints
         profile.ToggleAnonymity(request.IsAnonymous);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Counsellor profile updated successfully.");
+    }
+
+    private static async Task<IResult> UpdateVerificationDocuments(UpdateVerificationDocumentsRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.DocumentUrls is null || request.DocumentUrls.Length == 0)
+            return EndpointHelpers.ValidationProblem(context, ("documentUrls", "At least one document is required."));
+        var userId = context.User.GetUserId();
+        var profile = await db.Counsellors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
+        profile.SetVerificationDocuments(request.DocumentUrls);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { profile.Id, profile.VerificationDocumentUrls },
+            "Verification documents submitted successfully.");
     }
 
     private static async Task<IResult> GetSession(Guid id, HttpContext context, IMirageDbContext db,

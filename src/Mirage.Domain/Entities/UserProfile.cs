@@ -65,4 +65,6 @@ public sealed class UserProfile : Entity
     }
 
     public void Verify() { IsVerified = true; Touch(); }
+
+    public void MarkMarried() { RelationshipStatus = Mirage.Domain.Enums.RelationshipStatus.Married; Touch(); }
 }

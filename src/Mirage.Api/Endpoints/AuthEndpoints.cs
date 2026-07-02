@@ -22,6 +22,7 @@ internal static class AuthEndpoints
         var group = api.MapGroup("/auth").WithTags("Authentication");
         group.MapPost("/register", Register);
         group.MapPost("/register/counsellor", RegisterCounsellor);
+        group.MapPost("/register/counsellor/independent", RegisterIndependentCounsellor);
         group.MapPost("/register/mentor", RegisterMentor);
         group.MapPost("/login", Login);
         group.MapPost("/refresh", Refresh);
@@ -225,6 +226,90 @@ internal static class AuthEndpoints
                 return ApiResults.Ok(context,
                     new AuthResponse(accessToken.Token, accessToken.ExpiresAt, refreshValue),
                     "Counsellor registration completed successfully.");
+            });
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is NpgsqlException
+                                                  { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            return EndpointHelpers.ValidationProblem(context,
+                new Dictionary<string, string[]>
+                {
+                    ["DuplicateUserName"] = ["An account with this email already exists."]
+                },
+                "Registration validation failed.");
+        }
+    }
+
+    // Open self-signup for counsellors not affiliated with any organisation — no invite token,
+    // but requires verification documents and stays unapproved until a PlatformAdmin reviews them.
+    private static async Task<IResult> RegisterIndependentCounsellor(RegisterIndependentCounsellorRequest request,
+        HttpContext context, UserManager<ApplicationUser> userManager, IPasswordHasher<ApplicationUser> passwordHasher,
+        MirageDbContext db, TokenService tokens, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return EndpointHelpers.ValidationProblem(context, ("email", "Email is required."));
+        if (!new EmailAddressAttribute().IsValid(request.Email))
+            return EndpointHelpers.ValidationProblem(context, ("email", "A valid email address is required."));
+        if (string.IsNullOrWhiteSpace(request.DisplayName))
+            return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
+        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Counsellors must be at least 18 years old."));
+        if (request.YearsExperience < 0)
+            return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
+
+        var normalizedEmail = userManager.NormalizeEmail(request.Email.Trim());
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            Email = request.Email.Trim(),
+            NormalizedEmail = normalizedEmail,
+            UserName = request.Email.Trim(),
+            NormalizedUserName = userManager.NormalizeName(request.Email.Trim()),
+            EmailConfirmed = false,
+            LockoutEnabled = true,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+
+        var passwordErrors = new List<IdentityError>();
+        foreach (var validator in userManager.PasswordValidators)
+        {
+            var result = await validator.ValidateAsync(userManager, user, request.Password);
+            if (!result.Succeeded) passwordErrors.AddRange(result.Errors);
+        }
+        if (passwordErrors.Count > 0)
+            return EndpointHelpers.ValidationProblem(context,
+                passwordErrors.GroupBy(x => x.Code)
+                    .ToDictionary(x => x.Key, x => x.Select(e => e.Description).ToArray()),
+                "Registration validation failed.");
+
+        user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
+
+        var counsellorRoleId = await db.Roles.AsNoTracking()
+            .Where(x => x.NormalizedName == MirageRoles.Counsellor.ToUpperInvariant())
+            .Select(x => x.Id)
+            .SingleAsync(cancellationToken);
+
+        var refreshValue = tokens.CreateRefreshToken();
+        var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
+            {
+                db.Users.Add(user);
+                db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = counsellorRoleId });
+                db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
+                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                db.Counsellors.Add(new CounsellorProfile(user.Id, null, request.YearsExperience,
+                    request.Specialisations, request.Languages, request.VerificationDocumentUrls));
+                db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
+                await db.SaveChangesAsync(cancellationToken);
+                var accessToken = tokens.CreateAccessToken(user, [MirageRoles.Counsellor]);
+                return ApiResults.Ok(context,
+                    new AuthResponse(accessToken.Token, accessToken.ExpiresAt, refreshValue),
+                    "Registration submitted — your account will be reviewed by an administrator before you appear publicly.");
             });
         }
         catch (DbUpdateException exception) when (exception.InnerException is NpgsqlException

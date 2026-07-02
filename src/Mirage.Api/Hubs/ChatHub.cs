@@ -24,6 +24,26 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         foreach (var matchId in matchIds)
             await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(matchId));
 
+        var ownMentorProfileId = await db.Mentors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync();
+        var acceptedMentorProfileIds = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted)
+            .Select(x => x.MentorProfileId)
+            .ToListAsync();
+
+        var mentorGroupIds = acceptedMentorProfileIds.ToList();
+        if (ownMentorProfileId.HasValue) mentorGroupIds.Add(ownMentorProfileId.Value);
+        foreach (var mentorProfileId in mentorGroupIds.Distinct())
+            await Groups.AddToGroupAsync(Context.ConnectionId, MentorGroup(mentorProfileId));
+
+        var sessionIds = await db.CounsellingSessions.AsNoTracking()
+            .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId)
+                && x.Status != SessionStatus.Requested && x.Status != SessionStatus.Declined)
+            .Select(x => x.Id)
+            .ToListAsync();
+        foreach (var sessionId in sessionIds)
+            await Groups.AddToGroupAsync(Context.ConnectionId, CounsellingGroup(sessionId));
+
         await base.OnConnectedAsync();
     }
 
@@ -57,6 +77,74 @@ public sealed class ChatHub(MirageDbContext db) : Hub
             message.AttachmentUrl,
             SentAt = message.CreatedAt,
             message.IsRead
+        });
+    }
+
+    // Client → Hub: send a message to a mentor's broadcast group (mentor + accepted mentees)
+    public async Task SendMentorGroupMessage(Guid mentorProfileId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null)
+    {
+        content = (content ?? string.Empty).Trim();
+        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
+        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
+
+        var userId = GetUserId();
+        var isMember = await db.Mentors.AsNoTracking().AnyAsync(x => x.Id == mentorProfileId && x.UserId == userId)
+            || await db.MentorRequests.AsNoTracking().AnyAsync(x => x.MentorProfileId == mentorProfileId
+                && x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted);
+        if (!isMember) return;
+
+        var message = new MentorGroupMessage(mentorProfileId, userId, content, type, attachmentUrl);
+        db.MentorGroupMessages.Add(message);
+        await db.SaveChangesAsync();
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
+
+        await Clients.Group(MentorGroup(mentorProfileId)).SendAsync("ReceiveMentorGroupMessage", new
+        {
+            message.Id,
+            MentorProfileId = mentorProfileId,
+            message.SenderId,
+            SenderName = senderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
+        });
+    }
+
+    // Client → Hub: send a message on a counselling session's private channel
+    public async Task SendCounsellingMessage(Guid sessionId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null)
+    {
+        content = (content ?? string.Empty).Trim();
+        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
+        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
+
+        var userId = GetUserId();
+        var isParty = await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
+            && (x.ClientUserId == userId || x.Counsellor.UserId == userId)
+            && x.Status != SessionStatus.Requested && x.Status != SessionStatus.Declined);
+        if (!isParty) return;
+
+        var message = new CounsellingMessage(sessionId, userId, content, type, attachmentUrl);
+        db.CounsellingMessages.Add(message);
+        await db.SaveChangesAsync();
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
+
+        await Clients.Group(CounsellingGroup(sessionId)).SendAsync("ReceiveCounsellingMessage", new
+        {
+            message.Id,
+            SessionId = sessionId,
+            message.SenderId,
+            SenderName = senderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
         });
     }
 
@@ -112,4 +200,6 @@ public sealed class ChatHub(MirageDbContext db) : Hub
             ?? throw new InvalidOperationException("User ID claim is missing."));
 
     private static string MatchGroup(Guid matchId) => $"match:{matchId}";
+    private static string MentorGroup(Guid mentorProfileId) => $"mentorgroup:{mentorProfileId}";
+    private static string CounsellingGroup(Guid sessionId) => $"counsellingsession:{sessionId}";
 }

@@ -39,6 +39,90 @@ public sealed record ProfileResponse(
     SkinTone? SkinTone,
     string? PreferredLanguage);
 
+public sealed record OrganisationMemberResponse(
+    Guid Id,
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    Guid? BranchId,
+    OrganisationMemberStatus Status,
+    Guid? AssignedMentorUserId,
+    Guid? AssignedCounsellorUserId,
+    DateTimeOffset CreatedAt);
+
+public sealed record OrganisationBranchResponse(Guid Id, string Name, string City, string Country, string? Address);
+
+public sealed record OrgEventResponse(
+    Guid Id,
+    Guid OrganisationId,
+    Guid? BranchId,
+    string Title,
+    string? Description,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Location,
+    int? Capacity,
+    int TicketsIssued);
+
+public sealed record EventTicketResponse(Guid Id, Guid EventId, string EventTitle, DateTimeOffset StartsAt, string Code, DateTimeOffset? CheckedInAt);
+
+public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl, DateTimeOffset CreatedAt);
+
+public sealed record MentorGroupMessageResponse(
+    Guid Id,
+    Guid MentorProfileId,
+    Guid SenderId,
+    string SenderName,
+    string Content,
+    MessageType Type,
+    string? AttachmentUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record MentorMeetingResponse(
+    Guid Id,
+    Guid MentorProfileId,
+    Guid ScheduledByUserId,
+    string Title,
+    string MeetingLink,
+    DateTimeOffset ScheduledAt,
+    int? DurationMinutes);
+
+public sealed record CalendarItemResponse(
+    string Source,
+    Guid SourceId,
+    string Title,
+    DateTimeOffset StartsAt,
+    DateTimeOffset? EndsAt,
+    string? Link,
+    string? Location);
+
+public sealed record CoupleResponse(
+    Guid Id,
+    Guid OtherUserId,
+    string OtherDisplayName,
+    Guid RequestedByUserId,
+    CoupleStatus Status,
+    DateTimeOffset CreatedAt);
+
+public sealed record CounsellingMessageResponse(
+    Guid Id,
+    Guid SessionId,
+    Guid SenderId,
+    string SenderName,
+    string Content,
+    MessageType Type,
+    string? AttachmentUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record CounsellingMeetingResponse(
+    Guid Id,
+    Guid SessionId,
+    Guid ScheduledByUserId,
+    string Title,
+    string MeetingLink,
+    DateTimeOffset ScheduledAt,
+    int? DurationMinutes);
+
 public sealed record MatchResponse(
     Guid Id,
     Guid OtherUserId,

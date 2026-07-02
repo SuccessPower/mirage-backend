@@ -12,6 +12,8 @@ public static class MirageEndpointExtensions
         api.MapDateRequestEndpoints();
         api.MapCounsellingEndpoints();
         api.MapMentorEndpoints();
+        api.MapCoupleEndpoints();
+        api.MapCalendarEndpoints();
         api.MapNotificationEndpoints();
         api.MapMilestoneEndpoints();
         api.MapUploadEndpoints();

@@ -37,6 +37,135 @@ public sealed class OrganisationConfiguration : IEntityTypeConfiguration<Organis
     }
 }
 
+public sealed class OrganisationBranchConfiguration : IEntityTypeConfiguration<OrganisationBranch>
+{
+    public void Configure(EntityTypeBuilder<OrganisationBranch> b)
+    {
+        b.ToTable("organisation_branches");
+        b.HasIndex(x => x.OrganisationId);
+        b.Property(x => x.Name).HasMaxLength(200);
+        b.Property(x => x.City).HasMaxLength(100);
+        b.Property(x => x.Country).HasMaxLength(100);
+        b.Property(x => x.Address).HasMaxLength(300);
+        b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class OrganisationMemberConfiguration : IEntityTypeConfiguration<OrganisationMember>
+{
+    public void Configure(EntityTypeBuilder<OrganisationMember> b)
+    {
+        b.ToTable("organisation_members");
+        b.HasIndex(x => new { x.OrganisationId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedMentorUserId).OnDelete(DeleteBehavior.SetNull);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedCounsellorUserId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class OrgEventConfiguration : IEntityTypeConfiguration<OrgEvent>
+{
+    public void Configure(EntityTypeBuilder<OrgEvent> b)
+    {
+        b.ToTable("org_events");
+        b.HasIndex(x => x.OrganisationId);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.Location).HasMaxLength(300);
+        b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class EventTicketConfiguration : IEntityTypeConfiguration<EventTicket>
+{
+    public void Configure(EntityTypeBuilder<EventTicket> b)
+    {
+        b.ToTable("event_tickets");
+        b.HasIndex(x => new { x.EventId, x.UserId }).IsUnique();
+        b.HasIndex(x => x.Code).IsUnique();
+        b.Property(x => x.Code).HasMaxLength(40);
+        b.HasOne(x => x.Event).WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class MentorPostConfiguration : IEntityTypeConfiguration<MentorPost>
+{
+    public void Configure(EntityTypeBuilder<MentorPost> b)
+    {
+        b.ToTable("mentor_posts");
+        b.HasIndex(x => x.MentorProfileId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.HasOne<MentorProfile>().WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class MentorGroupMessageConfiguration : IEntityTypeConfiguration<MentorGroupMessage>
+{
+    public void Configure(EntityTypeBuilder<MentorGroupMessage> b)
+    {
+        b.ToTable("mentor_group_messages");
+        b.HasIndex(x => x.MentorProfileId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.HasOne<MentorProfile>().WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class MentorMeetingConfiguration : IEntityTypeConfiguration<MentorMeeting>
+{
+    public void Configure(EntityTypeBuilder<MentorMeeting> b)
+    {
+        b.ToTable("mentor_meetings");
+        b.HasIndex(x => x.MentorProfileId);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.MeetingLink).HasMaxLength(500);
+        b.HasOne<MentorProfile>().WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ScheduledByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CoupleConfiguration : IEntityTypeConfiguration<Couple>
+{
+    public void Configure(EntityTypeBuilder<Couple> b)
+    {
+        b.ToTable("couples");
+        b.HasIndex(x => new { x.User1Id, x.User2Id }).IsUnique();
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User1Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User2Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CounsellingMessageConfiguration : IEntityTypeConfiguration<CounsellingMessage>
+{
+    public void Configure(EntityTypeBuilder<CounsellingMessage> b)
+    {
+        b.ToTable("counselling_messages");
+        b.HasIndex(x => x.SessionId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.HasOne<CounsellingSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CounsellingMeetingConfiguration : IEntityTypeConfiguration<CounsellingMeeting>
+{
+    public void Configure(EntityTypeBuilder<CounsellingMeeting> b)
+    {
+        b.ToTable("counselling_meetings");
+        b.HasIndex(x => x.SessionId);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.MeetingLink).HasMaxLength(500);
+        b.HasOne<CounsellingSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ScheduledByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class CounsellorConfiguration : IEntityTypeConfiguration<CounsellorProfile>
 {
     public void Configure(EntityTypeBuilder<CounsellorProfile> b)
@@ -45,6 +174,8 @@ public sealed class CounsellorConfiguration : IEntityTypeConfiguration<Counsello
         b.HasIndex(x => x.UserId).IsUnique();
         b.Property(x => x.Specialisations).HasColumnType("text[]");
         b.Property(x => x.Languages).HasColumnType("text[]");
+        b.Property(x => x.VerificationDocumentUrls).HasColumnType("text[]");
+        b.Property(x => x.RejectionReason).HasMaxLength(500);
         b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.UserProfile).WithMany().HasForeignKey(x => x.UserId).HasPrincipalKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
     }

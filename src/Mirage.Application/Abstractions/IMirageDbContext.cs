@@ -26,5 +26,15 @@ public interface IMirageDbContext
     DbSet<ContentReport> ContentReports { get; }
     DbSet<Message> Messages { get; }
     DbSet<Notification> Notifications { get; }
+    DbSet<OrganisationBranch> OrganisationBranches { get; }
+    DbSet<OrganisationMember> OrganisationMembers { get; }
+    DbSet<OrgEvent> OrgEvents { get; }
+    DbSet<EventTicket> EventTickets { get; }
+    DbSet<MentorPost> MentorPosts { get; }
+    DbSet<MentorGroupMessage> MentorGroupMessages { get; }
+    DbSet<MentorMeeting> MentorMeetings { get; }
+    DbSet<Couple> Couples { get; }
+    DbSet<CounsellingMessage> CounsellingMessages { get; }
+    DbSet<CounsellingMeeting> CounsellingMeetings { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
