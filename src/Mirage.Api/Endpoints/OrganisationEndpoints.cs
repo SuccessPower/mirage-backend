@@ -18,7 +18,7 @@ internal static class OrganisationEndpoints
         var organisations = api.MapGroup("/organisations").WithTags("Organisations");
         organisations.MapGet("/", async (HttpContext context, IMirageDbContext db, CancellationToken ct) =>
             ApiResults.Ok(context,
-                await db.Organisations.AsNoTracking().Where(x => x.Status == OrganisationStatus.Approved)
+                await db.Organisations.AsNoTracking()
                     .OrderBy(x => x.Name).ToListAsync(ct),
                 "Organisations retrieved successfully."));
         organisations.MapPost("/", Create).RequireAuthorization();
@@ -452,7 +452,7 @@ internal static class OrganisationEndpoints
         var events = await db.OrgEvents.AsNoTracking()
             .Where(x => x.OrganisationId == id)
             .OrderBy(x => x.StartsAt)
-            .Select(x => new OrgEventResponse(x.Id, x.OrganisationId, x.BranchId, x.Title, x.Description,
+            .Select(x => new OrgEventResponse(x.Id, x.OrganisationId, x.BranchId, x.Title, x.Description, x.ImageUrl,
                 x.StartsAt, x.EndsAt, x.Location, x.Capacity, db.EventTickets.Count(t => t.EventId == x.Id)))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, events, "Events retrieved successfully.");
@@ -469,6 +469,7 @@ internal static class OrganisationEndpoints
             return EndpointHelpers.ValidationProblem(context, ("endsAt", "End time must be after the start time."));
 
         var evt = new OrgEvent(id, request.BranchId, context.User.GetUserId(), request.Title, request.Description,
+            request.ImageUrl,
             request.StartsAt, request.EndsAt, request.Location, request.Capacity);
         db.OrgEvents.Add(evt);
         await db.SaveChangesAsync(cancellationToken);
@@ -532,7 +533,7 @@ internal static class OrganisationEndpoints
             .Join(db.OrgEvents.AsNoTracking(), t => t.EventId, e => e.Id, (t, e) => new { Ticket = t, Event = e })
             .OrderBy(x => x.Event.StartsAt)
             .Select(x => new EventTicketResponse(
-                x.Ticket.Id, x.Event.Id, x.Event.Title, x.Event.StartsAt, x.Ticket.Code, x.Ticket.CheckedInAt))
+                x.Ticket.Id, x.Event.Id, x.Event.Title, x.Event.ImageUrl, x.Event.StartsAt, x.Ticket.Code, x.Ticket.CheckedInAt))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, tickets, "Your tickets were retrieved successfully.");
     }

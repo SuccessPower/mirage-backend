@@ -50,6 +50,11 @@ internal static class CalendarEndpoints
             .Select(e => new CalendarItemResponse("OrgEvent", e.Id, e.Title, e.StartsAt, e.EndsAt, null, e.Location))
             .ToListAsync(cancellationToken);
 
+        var createdEvents = await db.OrgEvents.AsNoTracking()
+            .Where(x => x.CreatedByUserId == userId)
+            .Select(e => new CalendarItemResponse("OrgEvent", e.Id, e.Title, e.StartsAt, e.EndsAt, null, e.Location))
+            .ToListAsync(cancellationToken);
+
         var counsellingMeetings = await db.CounsellingMeetings.AsNoTracking()
             .Where(x => db.CounsellingSessions.Any(s => s.Id == x.SessionId
                 && (s.ClientUserId == userId || s.Counsellor.UserId == userId)))
@@ -58,7 +63,9 @@ internal static class CalendarEndpoints
                 x.MeetingLink, null))
             .ToListAsync(cancellationToken);
 
-        var items = meetings.Concat(sessions).Concat(events).Concat(counsellingMeetings)
+        var items = meetings.Concat(sessions).Concat(events).Concat(createdEvents).Concat(counsellingMeetings)
+            .GroupBy(x => new { x.Source, x.SourceId })
+            .Select(x => x.First())
             .OrderBy(x => x.StartsAt)
             .ToList();
 

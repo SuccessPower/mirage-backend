@@ -9,7 +9,7 @@ public sealed class UserProfile : Entity
 
     public UserProfile(Guid userId, string displayName, DateOnly dateOfBirth, string city, string country,
         string denomination, RelationshipIntent intent, string bio, Sex? sex = null,
-        RelationshipStatus? relationshipStatus = null)
+        RelationshipStatus? relationshipStatus = null, string? occupation = null)
     {
         UserId = userId;
         DisplayName = displayName.Trim();
@@ -21,6 +21,7 @@ public sealed class UserProfile : Entity
         Bio = bio.Trim();
         Sex = sex;
         RelationshipStatus = relationshipStatus;
+        Occupation = occupation?.Trim();
     }
 
     public Guid UserId { get; private set; }
@@ -41,11 +42,12 @@ public sealed class UserProfile : Entity
     public int? HeightInches { get; private set; }
     public SkinTone? SkinTone { get; private set; }
     public string? PreferredLanguage { get; private set; }
+    public string? Occupation { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
         RelationshipIntent intent, string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null,
         Sex? sex = null, RelationshipStatus? relationshipStatus = null, int? heightInches = null,
-        SkinTone? skinTone = null, string? preferredLanguage = null)
+        SkinTone? skinTone = null, string? preferredLanguage = null, string? occupation = null)
     {
         DisplayName = displayName.Trim();
         City = city.Trim();
@@ -61,6 +63,7 @@ public sealed class UserProfile : Entity
         if (heightInches is not null) HeightInches = heightInches;
         if (skinTone is not null) SkinTone = skinTone;
         if (preferredLanguage is not null) PreferredLanguage = preferredLanguage.Trim();
+        if (occupation is not null) Occupation = occupation.Trim();
         Touch();
     }
 

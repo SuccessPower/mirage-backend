@@ -14,7 +14,8 @@ public sealed record RegisterRequest(
     RelationshipIntent Intent,
     string Bio,
     Sex? Sex = null,
-    RelationshipStatus? RelationshipStatus = null);
+    RelationshipStatus? RelationshipStatus = null,
+    string? Occupation = null);
 
 public sealed record LoginRequest(string Email, string Password);
 public sealed record RefreshRequest(string RefreshToken);
@@ -33,7 +34,8 @@ public sealed record UpdateProfileRequest(
     RelationshipStatus? RelationshipStatus = null,
     int? HeightInches = null,
     SkinTone? SkinTone = null,
-    string? PreferredLanguage = null);
+    string? PreferredLanguage = null,
+    string? Occupation = null);
 public sealed record CreateOrganisationRequest(
     string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null);
 public sealed record InviteOrganisationAdminRequest(string Email);
@@ -50,6 +52,7 @@ public sealed record CreateEventRequest(
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     string Location,
+    string? ImageUrl,
     int? Capacity,
     Guid? BranchId);
 public sealed record CreateRecommendationRequest(Guid RecommendedUserId, Guid? OrganisationId, string? Note);
@@ -62,7 +65,8 @@ public sealed record CreateDateRequestRequest(
     string? Note,
     RelationshipIntent Intent = RelationshipIntent.Dating,
     int Capacity = 1,
-    string? ItemsToBring = null);
+    string? ItemsToBring = null,
+    string? ImageUrl = null);
 public sealed record SendChatMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record RegisterCounsellorRequest(
     string InviteToken,
@@ -145,4 +149,5 @@ public sealed record BookSessionRequest(
     DateTimeOffset ScheduledAt,
     bool CounsellorAnonymous,
     bool ClientAnonymous,
-    string Topic);
+    string Topic,
+    string? PartnerEmail = null);

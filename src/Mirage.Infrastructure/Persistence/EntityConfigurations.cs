@@ -20,6 +20,7 @@ public sealed class UserProfileConfiguration : IEntityTypeConfiguration<UserProf
         b.Property(x => x.Bio).HasMaxLength(1000);
         b.Property(x => x.Interests).HasColumnType("text[]");
         b.Property(x => x.PreferredLanguage).HasMaxLength(60);
+        b.Property(x => x.Occupation).HasMaxLength(160);
         b.HasOne<ApplicationUser>().WithOne().HasForeignKey<UserProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
@@ -73,6 +74,7 @@ public sealed class OrgEventConfiguration : IEntityTypeConfiguration<OrgEvent>
         b.HasIndex(x => x.OrganisationId);
         b.Property(x => x.Title).HasMaxLength(200);
         b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.Property(x => x.Location).HasMaxLength(300);
         b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
@@ -239,6 +241,7 @@ public sealed class DateRequestConfiguration : IEntityTypeConfiguration<DateRequ
         b.Property(x => x.LocationArea).HasMaxLength(200);
         b.Property(x => x.Note).HasMaxLength(1000);
         b.Property(x => x.ItemsToBring).HasMaxLength(500);
+        b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.HasIndex(x => new { x.Intent, x.Status, x.StartsAt });
         b.HasMany(x => x.Acceptances).WithOne(x => x.DateRequest).HasForeignKey(x => x.DateRequestId);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RequestorUserId).OnDelete(DeleteBehavior.Restrict);

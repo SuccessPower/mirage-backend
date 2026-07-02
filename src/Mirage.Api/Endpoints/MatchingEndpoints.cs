@@ -37,8 +37,14 @@ internal static class MatchingEndpoints
         var sourceUserId = context.User.GetUserId();
         if (sourceUserId == request.TargetUserId)
             return EndpointHelpers.ValidationProblem(context, ("targetUserId", "A user cannot like themselves."));
-        if (!await db.Profiles.AnyAsync(x => x.UserId == request.TargetUserId, cancellationToken))
+        var profileStatuses = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == sourceUserId || x.UserId == request.TargetUserId)
+            .Select(x => new { x.UserId, x.RelationshipStatus })
+            .ToListAsync(cancellationToken);
+        if (!profileStatuses.Any(x => x.UserId == request.TargetUserId))
             return EndpointHelpers.NotFound(context, "Target profile was not found.");
+        if (profileStatuses.Any(x => x.RelationshipStatus == RelationshipStatus.Married))
+            return EndpointHelpers.Forbidden(context, "Married users can view and share profiles, but cannot engage in matching.");
         if (await db.Likes.AnyAsync(x => x.SourceUserId == sourceUserId && x.TargetUserId == request.TargetUserId,
                 cancellationToken))
             return EndpointHelpers.Conflict(context, "Like already recorded.");
@@ -129,16 +135,18 @@ internal static class MatchingEndpoints
     {
         var otherIds = matches.Select(m => m.User1Id == userId ? m.User2Id : m.User1Id).Distinct().ToList();
         var profiles = await db.Profiles.AsNoTracking()
-            .Where(p => otherIds.Contains(p.UserId))
+            .Where(p => otherIds.Contains(p.UserId) && p.RelationshipStatus != RelationshipStatus.Married)
             .ToDictionaryAsync(p => p.UserId, cancellationToken);
 
         return matches.Select(m =>
         {
             var otherId = m.User1Id == userId ? m.User2Id : m.User1Id;
             profiles.TryGetValue(otherId, out var profile);
+            if (profile is null) return null;
             return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
-                profile?.IsVerified ?? false, m.Status, m.ChatRequestedByUserId, m.MatchedAt, m.LastActivityAt);
-        }).ToList();
+                profile?.IsVerified ?? false, profile?.RelationshipStatus, m.Status, m.ChatRequestedByUserId,
+                m.MatchedAt, m.LastActivityAt);
+        }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
     private static async Task<IResult> CloseMatch(Guid id, HttpContext context, IMirageDbContext db,

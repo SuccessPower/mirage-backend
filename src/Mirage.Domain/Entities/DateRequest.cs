@@ -9,7 +9,8 @@ public sealed class DateRequest : Entity
 
     public DateRequest(Guid requestorUserId, string activity, DateTimeOffset startsAt, DateTimeOffset endsAt,
         string locationArea, string? note, RelationshipIntent intent = RelationshipIntent.Dating,
-        int capacity = 1, string? itemsToBring = null)
+        int capacity = 1, string? itemsToBring = null, string? imageUrl = null,
+        bool requestorIsVerified = false, bool requestorIsRecommended = false)
     {
         if (endsAt <= startsAt) throw new ArgumentException("Date request end time must be after its start time.");
         if (capacity < 1) throw new ArgumentException("Capacity must be at least 1.");
@@ -22,6 +23,9 @@ public sealed class DateRequest : Entity
         Intent = intent;
         Capacity = capacity;
         ItemsToBring = itemsToBring?.Trim();
+        ImageUrl = imageUrl?.Trim();
+        RequestorIsVerified = requestorIsVerified;
+        RequestorIsRecommended = requestorIsRecommended;
     }
 
     public Guid RequestorUserId { get; private set; }
@@ -33,6 +37,9 @@ public sealed class DateRequest : Entity
     public RelationshipIntent Intent { get; private set; } = RelationshipIntent.Dating;
     public int Capacity { get; private set; } = 1;
     public string? ItemsToBring { get; private set; }
+    public string? ImageUrl { get; private set; }
+    public bool RequestorIsVerified { get; private set; }
+    public bool RequestorIsRecommended { get; private set; }
     public DateRequestStatus Status { get; private set; } = DateRequestStatus.Open;
     public Guid? SelectedUserId { get; private set; }
     public List<DateRequestAcceptance> Acceptances { get; private set; } = [];

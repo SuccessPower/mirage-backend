@@ -574,6 +574,10 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("LocationArea")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -585,6 +589,12 @@ namespace Mirage.Infrastructure.Persistence.Migrations
 
                     b.Property<Guid>("RequestorUserId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("RequestorIsRecommended")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequestorIsVerified")
+                        .HasColumnType("boolean");
 
                     b.Property<Guid?>("SelectedUserId")
                         .HasColumnType("uuid");
@@ -1078,6 +1088,10 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("EndsAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
                     b.Property<string>("Location")
                         .IsRequired()
                         .HasMaxLength(300)
@@ -1516,6 +1530,10 @@ namespace Mirage.Infrastructure.Persistence.Migrations
 
                     b.Property<bool>("IsVerified")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Occupation")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
 
                     b.Property<string>("PreferredLanguage")
                         .HasMaxLength(60)

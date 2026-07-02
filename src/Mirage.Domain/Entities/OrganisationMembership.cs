@@ -78,13 +78,14 @@ public sealed class OrgEvent : Entity
     private OrgEvent() { }
 
     public OrgEvent(Guid organisationId, Guid? branchId, Guid createdByUserId, string title, string? description,
-        DateTimeOffset startsAt, DateTimeOffset endsAt, string location, int? capacity)
+        string? imageUrl, DateTimeOffset startsAt, DateTimeOffset endsAt, string location, int? capacity)
     {
         OrganisationId = organisationId;
         BranchId = branchId;
         CreatedByUserId = createdByUserId;
         Title = title.Trim();
         Description = description?.Trim();
+        ImageUrl = imageUrl?.Trim();
         StartsAt = startsAt;
         EndsAt = endsAt;
         Location = location.Trim();
@@ -97,6 +98,7 @@ public sealed class OrgEvent : Entity
     public Guid CreatedByUserId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public string? Description { get; private set; }
+    public string? ImageUrl { get; private set; }
     public DateTimeOffset StartsAt { get; private set; }
     public DateTimeOffset EndsAt { get; private set; }
     public string Location { get; private set; } = string.Empty;

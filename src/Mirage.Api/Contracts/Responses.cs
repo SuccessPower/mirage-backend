@@ -23,6 +23,7 @@ public sealed record ProfileResponse(
     Guid UserId,
     string DisplayName,
     int Age,
+    DateOnly DateOfBirth,
     string City,
     string Country,
     string Denomination,
@@ -37,7 +38,8 @@ public sealed record ProfileResponse(
     RelationshipStatus? RelationshipStatus,
     int? HeightInches,
     SkinTone? SkinTone,
-    string? PreferredLanguage);
+    string? PreferredLanguage,
+    string? Occupation);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,
@@ -58,13 +60,14 @@ public sealed record OrgEventResponse(
     Guid? BranchId,
     string Title,
     string? Description,
+    string? ImageUrl,
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     string Location,
     int? Capacity,
     int TicketsIssued);
 
-public sealed record EventTicketResponse(Guid Id, Guid EventId, string EventTitle, DateTimeOffset StartsAt, string Code, DateTimeOffset? CheckedInAt);
+public sealed record EventTicketResponse(Guid Id, Guid EventId, string EventTitle, string? EventImageUrl, DateTimeOffset StartsAt, string Code, DateTimeOffset? CheckedInAt);
 
 public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl, DateTimeOffset CreatedAt);
 
@@ -129,6 +132,7 @@ public sealed record MatchResponse(
     string OtherDisplayName,
     string? OtherAvatarUrl,
     bool OtherIsVerified,
+    RelationshipStatus? OtherRelationshipStatus,
     MatchStatus Status,
     Guid? ChatRequestedByUserId,
     DateTimeOffset MatchedAt,

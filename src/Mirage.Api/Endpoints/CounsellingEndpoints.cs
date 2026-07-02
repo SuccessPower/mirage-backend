@@ -7,6 +7,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Persistence;
 // ReSharper disable once RedundantUsingDirective
 
 namespace Mirage.Api.Endpoints;
@@ -178,7 +179,7 @@ internal static class CounsellingEndpoints
     }
 
     private static async Task<IResult> Book(BookSessionRequest request, HttpContext context,
-        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+        MirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         if (request.ScheduledAt <= DateTimeOffset.UtcNow)
             return EndpointHelpers.ValidationProblem(context,
@@ -190,7 +191,7 @@ internal static class CounsellingEndpoints
         if (counsellor is null) return EndpointHelpers.NotFound(context, "Approved counsellor was not found.");
         var userId = context.User.GetUserId();
         var session = new CounsellingSession(request.CounsellorId, userId, request.Type,
-            request.ScheduledAt, request.Topic, request.CounsellorAnonymous, request.ClientAnonymous);
+            request.ScheduledAt, request.Topic, false, request.ClientAnonymous);
         db.CounsellingSessions.Add(session);
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, userId,
             $"Session requested; clientAnonymous={request.ClientAnonymous}; counsellorAnonymous={request.CounsellorAnonymous}"));
@@ -199,6 +200,19 @@ internal static class CounsellingEndpoints
         await notifications.NotifyAsync(counsellor.UserId, NotificationType.SessionBooked,
             "New session request", $"A new {request.Type.ToString().ToLowerInvariant()} session was requested.",
             session.Id, "CounsellingSession", cancellationToken);
+
+        if (request.Type == SessionType.Couples && !string.IsNullOrWhiteSpace(request.PartnerEmail))
+        {
+            var partnerUserId = await db.Users.AsNoTracking()
+                .Where(x => x.Email != null && x.Email.ToLower() == request.PartnerEmail.Trim().ToLower())
+                .Select(x => (Guid?)x.Id)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (partnerUserId.HasValue)
+                await notifications.NotifyAsync(partnerUserId.Value, NotificationType.SessionBooked,
+                    "Couples counselling invitation",
+                    "Your partner invited you to a couples counselling session.",
+                    session.Id, "CounsellingSession", cancellationToken);
+        }
 
         return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
             new { session.Id, session.Status }, "Counselling session requested successfully.");

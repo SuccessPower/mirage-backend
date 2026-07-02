@@ -118,7 +118,8 @@ internal static class ProfileEndpoints
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         profile.Update(request.DisplayName, request.City, request.Country, request.Denomination, request.Intent,
             request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
-            request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage);
+            request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage,
+            request.Occupation);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }
