@@ -19,6 +19,7 @@ public sealed class UserProfileConfiguration : IEntityTypeConfiguration<UserProf
         b.Property(x => x.Denomination).HasMaxLength(100);
         b.Property(x => x.Bio).HasMaxLength(1000);
         b.Property(x => x.Interests).HasColumnType("text[]");
+        b.Property(x => x.PreferredLanguage).HasMaxLength(60);
         b.HasOne<ApplicationUser>().WithOne().HasForeignKey<UserProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

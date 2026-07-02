@@ -101,7 +101,8 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
-                    request.Country, request.Denomination, request.Intent, request.Bio));
+                    request.Country, request.Denomination, request.Intent, request.Bio, request.Sex,
+                    request.RelationshipStatus));
                 db.RefreshTokens.Add(refreshToken);
                 await db.SaveChangesAsync(cancellationToken);
 

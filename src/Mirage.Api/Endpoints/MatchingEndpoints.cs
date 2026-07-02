@@ -107,7 +107,8 @@ internal static class MatchingEndpoints
         var matches = await db.Matches.AsNoTracking()
             .Where(x => x.User1Id == userId || x.User2Id == userId)
             .OrderByDescending(x => x.MatchedAt).ToListAsync(cancellationToken);
-        return ApiResults.Ok(context, matches, "Matches retrieved successfully.");
+        var response = await ToMatchResponsesAsync(matches, userId, db, cancellationToken);
+        return ApiResults.Ok(context, response, "Matches retrieved successfully.");
     }
 
     private static async Task<IResult> GetMatch(Guid id, HttpContext context, IMirageDbContext db,
@@ -116,9 +117,28 @@ internal static class MatchingEndpoints
         var userId = context.User.GetUserId();
         var match = await db.Matches.AsNoTracking().SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
-        return match is null
-            ? EndpointHelpers.NotFound(context, "Match was not found.")
-            : ApiResults.Ok(context, match, "Match retrieved successfully.");
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+        var response = (await ToMatchResponsesAsync([match], userId, db, cancellationToken)).Single();
+        return ApiResults.Ok(context, response, "Match retrieved successfully.");
+    }
+
+    // Matches carry only the two user ids — enrich with the other party's display name/avatar
+    // so the client doesn't have to fan out N extra profile lookups per match list render.
+    private static async Task<List<MatchResponse>> ToMatchResponsesAsync(List<Match> matches, Guid userId,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var otherIds = matches.Select(m => m.User1Id == userId ? m.User2Id : m.User1Id).Distinct().ToList();
+        var profiles = await db.Profiles.AsNoTracking()
+            .Where(p => otherIds.Contains(p.UserId))
+            .ToDictionaryAsync(p => p.UserId, cancellationToken);
+
+        return matches.Select(m =>
+        {
+            var otherId = m.User1Id == userId ? m.User2Id : m.User1Id;
+            profiles.TryGetValue(otherId, out var profile);
+            return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
+                profile?.IsVerified ?? false, m.Status, m.ChatRequestedByUserId, m.MatchedAt, m.LastActivityAt);
+        }).ToList();
     }
 
     private static async Task<IResult> CloseMatch(Guid id, HttpContext context, IMirageDbContext db,

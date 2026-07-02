@@ -12,7 +12,9 @@ public sealed record RegisterRequest(
     string Country,
     string Denomination,
     RelationshipIntent Intent,
-    string Bio);
+    string Bio,
+    Sex? Sex = null,
+    RelationshipStatus? RelationshipStatus = null);
 
 public sealed record LoginRequest(string Email, string Password);
 public sealed record RefreshRequest(string RefreshToken);
@@ -26,7 +28,12 @@ public sealed record UpdateProfileRequest(
     string Bio,
     bool AnonymityEnabled,
     string[] Interests,
-    string? AvatarUrl = null);
+    string? AvatarUrl = null,
+    Sex? Sex = null,
+    RelationshipStatus? RelationshipStatus = null,
+    int? HeightInches = null,
+    SkinTone? SkinTone = null,
+    string? PreferredLanguage = null);
 public sealed record CreateOrganisationRequest(string Name, string Denomination, string Country, string RegistrationNumber);
 public sealed record CreateRecommendationRequest(Guid RecommendedUserId, Guid? OrganisationId, string? Note);
 public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type);

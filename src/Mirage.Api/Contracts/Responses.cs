@@ -32,4 +32,20 @@ public sealed record ProfileResponse(
     bool IsRecommended,
     SubscriptionTier SubscriptionTier,
     string[] Interests,
-    string? AvatarUrl);
+    string? AvatarUrl,
+    Sex? Sex,
+    RelationshipStatus? RelationshipStatus,
+    int? HeightInches,
+    SkinTone? SkinTone,
+    string? PreferredLanguage);
+
+public sealed record MatchResponse(
+    Guid Id,
+    Guid OtherUserId,
+    string OtherDisplayName,
+    string? OtherAvatarUrl,
+    bool OtherIsVerified,
+    MatchStatus Status,
+    Guid? ChatRequestedByUserId,
+    DateTimeOffset MatchedAt,
+    DateTimeOffset? LastActivityAt);

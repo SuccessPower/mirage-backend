@@ -29,7 +29,25 @@ internal static class ProfileEndpoints
 
         var query = db.Profiles.AsNoTracking().AsQueryable();
         var currentUserId = context.User.TryGetUserId();
-        if (currentUserId.HasValue) query = query.Where(x => x.UserId != currentUserId.Value);
+        string? myCity = null;
+        string? myCountry = null;
+        if (currentUserId.HasValue)
+        {
+            var me = currentUserId.Value;
+            query = query.Where(x => x.UserId != me);
+
+            // Once you've liked or matched someone, they drop out of discovery for good —
+            // no re-surfacing people you've already acted on.
+            var likedIds = db.Likes.Where(x => x.SourceUserId == me).Select(x => x.TargetUserId);
+            var matchedIds = db.Matches.Where(x => x.User1Id == me || x.User2Id == me)
+                .Select(x => x.User1Id == me ? x.User2Id : x.User1Id);
+            query = query.Where(x => !likedIds.Contains(x.UserId) && !matchedIds.Contains(x.UserId));
+
+            var mine = await db.Profiles.AsNoTracking().Where(x => x.UserId == me)
+                .Select(x => new { x.City, x.Country }).SingleOrDefaultAsync(cancellationToken);
+            myCity = mine?.City;
+            myCountry = mine?.Country;
+        }
         if (intent.HasValue) query = query.Where(x => x.Intent == intent);
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))
@@ -47,7 +65,12 @@ internal static class ProfileEndpoints
         }
         var recommendedIds = db.Recommendations.AsNoTracking()
             .Where(x => x.Status == RecommendationStatus.Active).Select(x => x.RecommendedUserId);
-        var pagedProfiles = await query.OrderByDescending(x => x.IsVerified).ThenByDescending(x => x.CreatedAt)
+        // Nearest-first: same city, then same country, before falling back to verified/recency.
+        var pagedProfiles = await query
+            .OrderByDescending(x => myCity != null && x.City == myCity)
+            .ThenByDescending(x => myCountry != null && x.Country == myCountry)
+            .ThenByDescending(x => x.IsVerified)
+            .ThenByDescending(x => x.CreatedAt)
             .ToPagedResultAsync(page, pageSize, cancellationToken);
         var recommendedUserIds = await recommendedIds
             .Where(userId => pagedProfiles.Items.Select(profile => profile.UserId).Contains(userId))
@@ -89,7 +112,8 @@ internal static class ProfileEndpoints
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         profile.Update(request.DisplayName, request.City, request.Country, request.Denomination, request.Intent,
-            request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl);
+            request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
+            request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }
