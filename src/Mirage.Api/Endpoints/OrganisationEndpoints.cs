@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -173,7 +174,7 @@ internal static class OrganisationEndpoints
     }
 
     private static async Task<IResult> ApproveOrg(Guid id, HttpContext context, MirageDbContext db,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, NotificationService notifications, CancellationToken cancellationToken)
     {
         var org = await db.Organisations.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
@@ -189,11 +190,15 @@ internal static class OrganisationEndpoints
         if (!await userManager.IsInRoleAsync(admin, MirageRoles.ChurchAdmin))
             await userManager.AddToRoleAsync(admin, MirageRoles.ChurchAdmin);
 
+        await notifications.NotifyAsync(org.AdminUserId, NotificationType.OrganisationApproved,
+            "Organisation approved", $"{org.Name} has been approved. You are now a ChurchAdmin.",
+            org.Id, "Organisation", cancellationToken);
+
         return ApiResults.Ok(context, new { org.Id, org.Status }, "Organisation approved and admin granted ChurchAdmin role.");
     }
 
     private static async Task<IResult> RejectOrg(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var org = await db.Organisations.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
@@ -201,6 +206,11 @@ internal static class OrganisationEndpoints
             return EndpointHelpers.Conflict(context, $"Organisation is already {org.Status.ToString().ToLower()}.");
         org.Reject();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(org.AdminUserId, NotificationType.OrganisationRejected,
+            "Organisation rejected", $"{org.Name} was not approved.",
+            org.Id, "Organisation", cancellationToken);
+
         return ApiResults.Ok(context, new { org.Id, org.Status }, "Organisation rejected.");
     }
 
@@ -267,7 +277,7 @@ internal static class OrganisationEndpoints
     }
 
     private static async Task<IResult> ApproveCounsellor(Guid id, Guid counsellorId, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var org = await db.Organisations.AsNoTracking()
@@ -284,6 +294,11 @@ internal static class OrganisationEndpoints
 
         counsellor.Approve();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(counsellor.UserId, NotificationType.CounsellorApproved,
+            "Counsellor approval", $"You have been approved as a counsellor for {org.Name}.",
+            counsellor.Id, "Counsellor", cancellationToken);
+
         return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsApproved }, "Counsellor approved successfully.");
     }
 
@@ -354,7 +369,7 @@ internal static class OrganisationEndpoints
     }
 
     private static async Task<IResult> ApproveMember(Guid id, Guid memberId, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
         if (forbidden is not null) return forbidden;
@@ -366,11 +381,16 @@ internal static class OrganisationEndpoints
             return EndpointHelpers.Conflict(context, "Member is already approved.");
         member.Approve();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(member.UserId, NotificationType.MembershipApproved,
+            "Membership approved", "Your membership request has been approved.",
+            member.Id, "OrganisationMember", cancellationToken);
+
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member approved successfully.");
     }
 
     private static async Task<IResult> RejectMember(Guid id, Guid memberId, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
         if (forbidden is not null) return forbidden;
@@ -380,6 +400,11 @@ internal static class OrganisationEndpoints
         if (member is null) return EndpointHelpers.NotFound(context, "Member was not found.");
         member.Reject();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(member.UserId, NotificationType.MembershipRejected,
+            "Membership rejected", "Your membership request was not approved.",
+            member.Id, "OrganisationMember", cancellationToken);
+
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member rejected successfully.");
     }
 

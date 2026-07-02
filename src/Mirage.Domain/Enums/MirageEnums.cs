@@ -36,5 +36,10 @@ public enum NotificationType
     SessionDeclined = 10,
     NewMessage = 11,
     ChatRequestReceived = 12,
-    ChatRequestApproved = 13
+    ChatRequestApproved = 13,
+    OrganisationApproved = 14,
+    OrganisationRejected = 15,
+    CounsellorApproved = 16,
+    MembershipApproved = 17,
+    MembershipRejected = 18
 }
