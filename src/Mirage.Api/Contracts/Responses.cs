@@ -32,6 +32,7 @@ public sealed record ProfileResponse(
     bool IsVerified,
     bool IsRecommended,
     SubscriptionTier SubscriptionTier,
+    bool AnonymityEnabled,
     string[] Interests,
     string? AvatarUrl,
     Sex? Sex,

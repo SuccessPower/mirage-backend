@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.Extensions.Configuration;
 
 namespace Mirage.Infrastructure.Persistence;
 
@@ -7,9 +8,11 @@ public sealed class MirageDbContextFactory : IDesignTimeDbContextFactory<MirageD
 {
     public MirageDbContext CreateDbContext(string[] args)
     {
-        var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL");
-        if (string.IsNullOrWhiteSpace(connectionString))
-            connectionString = "Host=localhost;Port=5432;Database=mirage;Username=mirage;Password=mirage";
+        var configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .Build();
+
+        var connectionString = PostgresConnectionString.FromConfiguration(configuration);
 
         var options = new DbContextOptionsBuilder<MirageDbContext>()
             .UseNpgsql(PostgresConnectionString.Build(connectionString))
