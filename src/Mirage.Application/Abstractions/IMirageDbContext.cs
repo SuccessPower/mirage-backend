@@ -34,6 +34,7 @@ public interface IMirageDbContext
     DbSet<MentorGroupMessage> MentorGroupMessages { get; }
     DbSet<MentorMeeting> MentorMeetings { get; }
     DbSet<Couple> Couples { get; }
+    DbSet<OrganisationAdminInvite> OrganisationAdminInvites { get; }
     DbSet<CounsellingMessage> CounsellingMessages { get; }
     DbSet<CounsellingMeeting> CounsellingMeetings { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
@@ -34,6 +35,12 @@ internal static class AdminEndpoints
         admin.MapPatch("/counsellors/{id:guid}/approve", ApproveIndependentCounsellor);
         admin.MapPatch("/counsellors/{id:guid}/reject", RejectIndependentCounsellor);
 
+        // Couples overview
+        admin.MapGet("/couples", ListCouples);
+
+        // Organisation admin invites — skips the Pending review queue when redeemed
+        admin.MapPost("/organisations/invite", InviteOrganisationAdmin);
+
         // Content reports can also be submitted by any authenticated user
         var reports = api.MapGroup("/reports").WithTags("Reports").RequireAuthorization();
         reports.MapPost("/", SubmitReport);
@@ -62,7 +69,11 @@ internal static class AdminEndpoints
                 x.Email,
                 x.IsActive,
                 x.EmailConfirmed,
-                x.CreatedAt
+                x.CreatedAt,
+                DisplayName = db.Profiles.Where(p => p.UserId == x.Id).Select(p => p.DisplayName).FirstOrDefault(),
+                Roles = db.UserRoles.Where(ur => ur.UserId == x.Id)
+                    .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
+                    .ToList()
             });
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
@@ -268,5 +279,52 @@ internal static class AdminEndpoints
         counsellor.Reject(request.Reason);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsRejected }, "Counsellor rejected.");
+    }
+
+    // --- Couples overview ---
+
+    private static async Task<IResult> ListCouples(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var couples = await db.Couples.AsNoTracking()
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.Status,
+                x.RequestedByUserId,
+                x.CreatedAt,
+                x.ReviewedAt,
+                User1Name = db.Profiles.Where(p => p.UserId == x.User1Id).Select(p => p.DisplayName).FirstOrDefault(),
+                User2Name = db.Profiles.Where(p => p.UserId == x.User2Id).Select(p => p.DisplayName).FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, couples, "Couples retrieved successfully.");
+    }
+
+    // --- Organisation admin invites ---
+
+    private static async Task<IResult> InviteOrganisationAdmin(InviteOrganisationAdminRequest request,
+        HttpContext context, IMirageDbContext db, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(request.Email))
+            return EndpointHelpers.ValidationProblem(context, ("email", "A valid email address is required."));
+
+        var normalizedEmail = request.Email.ToLowerInvariant().Trim();
+        var existingPending = await db.OrganisationAdminInvites.AnyAsync(
+            x => x.Email == normalizedEmail && x.RedeemedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow,
+            cancellationToken);
+        if (existingPending)
+            return EndpointHelpers.Conflict(context, "An active invite already exists for this email address.");
+
+        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
+        var expiryDays = configuration.GetValue("OrganisationAdminInvite:ExpiryDays", 14);
+        db.OrganisationAdminInvites.Add(new OrganisationAdminInvite(normalizedEmail, rawToken,
+            DateTimeOffset.UtcNow.AddDays(expiryDays)));
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Ok(context,
+            new { Email = normalizedEmail, InviteToken = rawToken, ExpiresInDays = expiryDays },
+            "Organisation admin invite created. Share the token with the invitee — their organisation will be pre-approved.");
     }
 }

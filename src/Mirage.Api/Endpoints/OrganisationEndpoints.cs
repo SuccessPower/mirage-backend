@@ -61,13 +61,41 @@ internal static class OrganisationEndpoints
     }
 
     private static async Task<IResult> Create(CreateOrganisationRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        MirageDbContext db, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.RegistrationNumber))
             return EndpointHelpers.ValidationProblem(context,
                 ("organisation", "Name and registration number are required."));
-        var organisation = new Organisation(context.User.GetUserId(), request.Name, request.Denomination,
+
+        var userId = context.User.GetUserId();
+        var organisation = new Organisation(userId, request.Name, request.Denomination,
             request.Country, request.RegistrationNumber);
+
+        // A PlatformAdmin-issued invite lets this org skip the Pending review queue entirely.
+        if (!string.IsNullOrWhiteSpace(request.InviteToken))
+        {
+            var tokenHash = OrganisationAdminInvite.ComputeHash(request.InviteToken);
+            var invite = await db.OrganisationAdminInvites.SingleOrDefaultAsync(
+                x => x.TokenHash == tokenHash, cancellationToken);
+            var user = await userManager.FindByIdAsync(userId.ToString());
+            if (invite is null || !invite.IsValid || user is null ||
+                !invite.Email.Equals(user.Email, StringComparison.OrdinalIgnoreCase))
+                return EndpointHelpers.Problem(context, StatusCodes.Status400BadRequest,
+                    "Invalid invite", "This invite token is invalid, expired, or does not match your account email.");
+
+            organisation.Approve();
+            invite.Redeem();
+            db.Organisations.Add(organisation);
+            await db.SaveChangesAsync(cancellationToken);
+
+            if (!await userManager.IsInRoleAsync(user, MirageRoles.ChurchAdmin))
+                await userManager.AddToRoleAsync(user, MirageRoles.ChurchAdmin);
+
+            return ApiResults.Created(context, $"/api/v1/organisations/{organisation.Id}",
+                new { organisation.Id, organisation.Status },
+                "Organisation created and approved successfully. You are now a ChurchAdmin.");
+        }
+
         db.Organisations.Add(organisation);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/organisations/{organisation.Id}",
@@ -501,9 +529,10 @@ internal static class OrganisationEndpoints
         var userId = context.User.GetUserId();
         var tickets = await db.EventTickets.AsNoTracking()
             .Where(x => x.UserId == userId)
-            .Join(db.OrgEvents.AsNoTracking(), t => t.EventId, e => e.Id, (t, e) => new EventTicketResponse(
-                t.Id, e.Id, e.Title, e.StartsAt, t.Code, t.CheckedInAt))
-            .OrderBy(x => x.StartsAt)
+            .Join(db.OrgEvents.AsNoTracking(), t => t.EventId, e => e.Id, (t, e) => new { Ticket = t, Event = e })
+            .OrderBy(x => x.Event.StartsAt)
+            .Select(x => new EventTicketResponse(
+                x.Ticket.Id, x.Event.Id, x.Event.Title, x.Event.StartsAt, x.Ticket.Code, x.Ticket.CheckedInAt))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, tickets, "Your tickets were retrieved successfully.");
     }

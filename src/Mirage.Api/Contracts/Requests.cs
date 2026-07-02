@@ -34,7 +34,9 @@ public sealed record UpdateProfileRequest(
     int? HeightInches = null,
     SkinTone? SkinTone = null,
     string? PreferredLanguage = null);
-public sealed record CreateOrganisationRequest(string Name, string Denomination, string Country, string RegistrationNumber);
+public sealed record CreateOrganisationRequest(
+    string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null);
+public sealed record InviteOrganisationAdminRequest(string Email);
 public sealed record JoinOrganisationRequest(Guid? BranchId);
 public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
 public sealed record CreateBranchRequest(string Name, string City, string Country, string? Address);

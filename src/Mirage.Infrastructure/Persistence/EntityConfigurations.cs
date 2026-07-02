@@ -129,6 +129,18 @@ public sealed class MentorMeetingConfiguration : IEntityTypeConfiguration<Mentor
     }
 }
 
+public sealed class OrganisationAdminInviteConfiguration : IEntityTypeConfiguration<OrganisationAdminInvite>
+{
+    public void Configure(EntityTypeBuilder<OrganisationAdminInvite> b)
+    {
+        b.ToTable("organisation_admin_invites");
+        b.HasIndex(x => x.TokenHash).IsUnique();
+        b.HasIndex(x => x.Email);
+        b.Property(x => x.Email).HasMaxLength(256);
+        b.Property(x => x.TokenHash).HasMaxLength(64);
+    }
+}
+
 public sealed class CoupleConfiguration : IEntityTypeConfiguration<Couple>
 {
     public void Configure(EntityTypeBuilder<Couple> b)
