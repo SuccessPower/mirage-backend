@@ -95,6 +95,44 @@ public sealed class EventTicketConfiguration : IEntityTypeConfiguration<EventTic
     }
 }
 
+public sealed class CommunityConfiguration : IEntityTypeConfiguration<Community>
+{
+    public void Configure(EntityTypeBuilder<Community> b)
+    {
+        b.ToTable("communities");
+        b.HasIndex(x => x.Status);
+        b.HasIndex(x => x.Category);
+        b.Property(x => x.Name).HasMaxLength(120);
+        b.Property(x => x.Category).HasMaxLength(80);
+        b.Property(x => x.Description).HasMaxLength(1000);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CommunityMemberConfiguration : IEntityTypeConfiguration<CommunityMember>
+{
+    public void Configure(EntityTypeBuilder<CommunityMember> b)
+    {
+        b.ToTable("community_members");
+        b.HasIndex(x => new { x.CommunityId, x.UserId }).IsUnique();
+        b.HasIndex(x => new { x.UserId, x.LeftAt });
+        b.HasOne(x => x.Community).WithMany(x => x.Members).HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class CommunityPostConfiguration : IEntityTypeConfiguration<CommunityPost>
+{
+    public void Configure(EntityTypeBuilder<CommunityPost> b)
+    {
+        b.ToTable("community_posts");
+        b.HasIndex(x => new { x.CommunityId, x.CreatedAt });
+        b.Property(x => x.Body).HasMaxLength(2000);
+        b.HasOne(x => x.Community).WithMany(x => x.Posts).HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class MentorPostConfiguration : IEntityTypeConfiguration<MentorPost>
 {
     public void Configure(EntityTypeBuilder<MentorPost> b)

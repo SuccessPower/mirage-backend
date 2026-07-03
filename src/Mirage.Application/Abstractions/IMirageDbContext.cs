@@ -30,6 +30,9 @@ public interface IMirageDbContext
     DbSet<OrganisationMember> OrganisationMembers { get; }
     DbSet<OrgEvent> OrgEvents { get; }
     DbSet<EventTicket> EventTickets { get; }
+    DbSet<Community> Communities { get; }
+    DbSet<CommunityMember> CommunityMembers { get; }
+    DbSet<CommunityPost> CommunityPosts { get; }
     DbSet<MentorPost> MentorPosts { get; }
     DbSet<MentorGroupMessage> MentorGroupMessages { get; }
     DbSet<MentorMeeting> MentorMeetings { get; }

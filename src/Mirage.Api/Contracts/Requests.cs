@@ -45,6 +45,8 @@ public sealed record CreateBranchRequest(string Name, string City, string Countr
 public sealed record CreateMentorPostRequest(string Content, string? ImageUrl);
 public sealed record SendMentorGroupMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record ScheduleMentorMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);
+public sealed record CreateCommunityRequest(string Name, string Category, string Description);
+public sealed record CreateCommunityPostRequest(string Body);
 
 public sealed record CreateEventRequest(
     string Title,

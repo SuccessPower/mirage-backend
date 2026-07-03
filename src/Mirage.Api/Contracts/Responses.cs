@@ -70,6 +70,26 @@ public sealed record OrgEventResponse(
 
 public sealed record EventTicketResponse(Guid Id, Guid EventId, string EventTitle, string? EventImageUrl, DateTimeOffset StartsAt, string Code, DateTimeOffset? CheckedInAt);
 
+public sealed record CommunityResponse(
+    Guid Id,
+    string Name,
+    string Category,
+    string Description,
+    Guid CreatedByUserId,
+    CommunityStatus Status,
+    int MemberCount,
+    int PostCount,
+    bool IsMember,
+    DateTimeOffset CreatedAt);
+
+public sealed record CommunityPostResponse(
+    Guid Id,
+    Guid CommunityId,
+    Guid AuthorUserId,
+    string AuthorName,
+    string Body,
+    DateTimeOffset CreatedAt);
+
 public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl, DateTimeOffset CreatedAt);
 
 public sealed record MentorGroupMessageResponse(

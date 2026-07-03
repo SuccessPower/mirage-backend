@@ -8,6 +8,7 @@ public static class MirageEndpointExtensions
         api.MapAuthEndpoints();
         api.MapProfileEndpoints();
         api.MapOrganisationEndpoints();
+        api.MapCommunityEndpoints();
         api.MapMatchingEndpoints();
         api.MapDateRequestEndpoints();
         api.MapCounsellingEndpoints();

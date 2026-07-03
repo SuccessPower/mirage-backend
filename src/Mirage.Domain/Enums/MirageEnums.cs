@@ -8,6 +8,8 @@ public enum SkinTone { Fair = 1, Light = 2, Medium = 3, Tan = 4, Brown = 5, Dark
 public enum SubscriptionTier { Free = 1, Plus = 2, Premium = 3 }
 public enum OrganisationStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
 public enum OrganisationMemberStatus { Pending = 1, Approved = 2, Rejected = 3, Removed = 4 }
+public enum CommunityStatus { Active = 1, Archived = 2 }
+public enum CommunityMemberRole { Owner = 1, Moderator = 2, Member = 3 }
 public enum DateRequestStatus { Open = 1, Confirmed = 2, Completed = 3, Cancelled = 4, Expired = 5 }
 public enum DateAcceptanceStatus { Pending = 1, Selected = 2, Declined = 3, Withdrawn = 4 }
 public enum SessionType { Group = 1, Personal = 2, Couples = 3 }
