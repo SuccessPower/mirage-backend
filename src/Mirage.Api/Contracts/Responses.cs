@@ -77,20 +77,48 @@ public sealed record CommunityResponse(
     string Name,
     string Category,
     string Description,
+    string? AvatarUrl,
+    string? AvatarKey,
     Guid CreatedByUserId,
     CommunityStatus Status,
     int MemberCount,
     int PostCount,
     bool IsMember,
+    CommunityMemberRole? MyRole,
     DateTimeOffset CreatedAt);
+
+public sealed record CommunityMemberResponse(
+    Guid Id,
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    CommunityMemberRole Role,
+    DateTimeOffset JoinedAt);
 
 public sealed record CommunityPostResponse(
     Guid Id,
     Guid CommunityId,
     Guid AuthorUserId,
     string AuthorName,
+    string? AuthorAvatarUrl,
+    string Body,
+    string? ImageUrl,
+    int LikeCount,
+    int CommentCount,
+    bool LikedByMe,
+    DateTimeOffset CreatedAt);
+
+public sealed record CommunityPostCommentResponse(
+    Guid Id,
+    Guid PostId,
+    Guid AuthorUserId,
+    string AuthorName,
+    string? AuthorAvatarUrl,
+    Guid? ParentCommentId,
     string Body,
     DateTimeOffset CreatedAt);
+
+public sealed record CommunityAvatarPresetResponse(string Key, string Label, string Url);
 
 public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl, DateTimeOffset CreatedAt);
 

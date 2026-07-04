@@ -31,6 +31,14 @@ internal static class UploadEndpoints
             if (!inMatch) return EndpointHelpers.Forbidden(context);
             folder = $"mirage/chat/{matchId}";
         }
+        else if (uploadContext == "community-avatar")
+        {
+            folder = $"mirage/community-avatars/{userId}";
+        }
+        else if (uploadContext == "community-post")
+        {
+            folder = $"mirage/community-posts/{userId}";
+        }
         else if (uploadContext == "counsellor-verification")
         {
             folder = $"mirage/counsellor-verification/{userId}";

@@ -105,6 +105,8 @@ public sealed class CommunityConfiguration : IEntityTypeConfiguration<Community>
         b.Property(x => x.Name).HasMaxLength(120);
         b.Property(x => x.Category).HasMaxLength(80);
         b.Property(x => x.Description).HasMaxLength(1000);
+        b.Property(x => x.AvatarUrl).HasMaxLength(1000);
+        b.Property(x => x.AvatarKey).HasMaxLength(80);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -128,7 +130,33 @@ public sealed class CommunityPostConfiguration : IEntityTypeConfiguration<Commun
         b.ToTable("community_posts");
         b.HasIndex(x => new { x.CommunityId, x.CreatedAt });
         b.Property(x => x.Body).HasMaxLength(2000);
+        b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.HasOne(x => x.Community).WithMany(x => x.Posts).HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CommunityPostLikeConfiguration : IEntityTypeConfiguration<CommunityPostLike>
+{
+    public void Configure(EntityTypeBuilder<CommunityPostLike> b)
+    {
+        b.ToTable("community_post_likes");
+        b.HasIndex(x => new { x.PostId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Post).WithMany(x => x.Likes).HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class CommunityPostCommentConfiguration : IEntityTypeConfiguration<CommunityPostComment>
+{
+    public void Configure(EntityTypeBuilder<CommunityPostComment> b)
+    {
+        b.ToTable("community_post_comments");
+        b.HasIndex(x => new { x.PostId, x.CreatedAt });
+        b.HasIndex(x => x.ParentCommentId);
+        b.Property(x => x.Body).HasMaxLength(2000);
+        b.HasOne(x => x.Post).WithMany(x => x.Comments).HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.ParentComment).WithMany(x => x.Replies).HasForeignKey(x => x.ParentCommentId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
