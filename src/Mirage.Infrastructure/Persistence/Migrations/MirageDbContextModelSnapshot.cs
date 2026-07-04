@@ -418,6 +418,9 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<bool>("AcceptsFreeSessions")
                         .HasColumnType("boolean");
 
+                    b.Property<int>("CompletedFreeSessionsCount")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 

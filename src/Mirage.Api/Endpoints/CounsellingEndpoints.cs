@@ -319,6 +319,8 @@ internal static class CounsellingEndpoints
                 x.IsApproved,
                 x.IsAnonymous,
                 x.AcceptsFreeSessions,
+                x.CompletedFreeSessionsCount,
+                IsEligibleToCharge = x.CompletedFreeSessionsCount >= CounsellorProfile.MinimumFreeSessionsBeforeCharging,
                 x.Specialisations,
                 x.Languages
             })
@@ -336,7 +338,8 @@ internal static class CounsellingEndpoints
         var userId = context.User.GetUserId();
         var profile = await db.Counsellors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
-        profile.UpdateProfile(request.YearsExperience, request.Specialisations, request.Languages, request.AcceptsFreeSessions);
+        try { profile.UpdateProfile(request.YearsExperience, request.Specialisations, request.Languages, request.AcceptsFreeSessions); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         profile.ToggleAnonymity(false);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Counsellor profile updated successfully.");
@@ -457,6 +460,7 @@ internal static class CounsellingEndpoints
         if (session.Counsellor.UserId != userId) return EndpointHelpers.Forbidden(context);
         try { session.Complete(); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        session.Counsellor.RecordCompletedFreeSession();
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(id, userId, "SessionCompleted"));
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { session.Id, session.Status }, "Session completed.");
