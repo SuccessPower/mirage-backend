@@ -32,6 +32,7 @@ internal static class CounsellingEndpoints
         sessions.MapPatch("/{id:guid}/start", StartSession);
         sessions.MapPatch("/{id:guid}/complete", CompleteSession);
         sessions.MapPatch("/{id:guid}/cancel", CancelSession);
+        sessions.MapPatch("/{id:guid}/partner-accept", AcceptPartnerInvite);
         sessions.MapPost("/{id:guid}/trust-unlock", ConsentToTrustUnlock);
         sessions.MapPost("/{id:guid}/notes", AddNote);
         sessions.MapGet("/{id:guid}/notes", GetNotes);
@@ -48,7 +49,8 @@ internal static class CounsellingEndpoints
     private static async Task<bool> IsSessionPartyAsync(Guid sessionId, Guid userId, IMirageDbContext db,
         CancellationToken cancellationToken) =>
         await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
-            && (x.ClientUserId == userId || x.Counsellor.UserId == userId)
+            && (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                || (x.PartnerUserId == userId && x.PartnerAccepted))
             && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled, cancellationToken);
 
     private static async Task<IResult> ListMessages(Guid id, HttpContext context, IMirageDbContext db,
@@ -168,7 +170,7 @@ internal static class CounsellingEndpoints
     {
         var userId = context.User.GetUserId();
         var sessions = await db.CounsellingSessions.AsNoTracking()
-            .Where(x => x.ClientUserId == userId || x.Counsellor.UserId == userId)
+            .Where(x => x.ClientUserId == userId || x.Counsellor.UserId == userId || x.PartnerUserId == userId)
             .OrderByDescending(x => x.ScheduledAt)
             .Select(x => new CounsellingSessionResponse(
                 x.Id,
@@ -193,6 +195,8 @@ internal static class CounsellingEndpoints
                 x.Topic,
                 x.ClientAnonymous,
                 x.TrustUnlockStatus,
+                x.PartnerUserId,
+                x.PartnerAccepted,
                 x.CreatedAt,
                 x.UpdatedAt))
             .ToListAsync(cancellationToken);
@@ -229,10 +233,14 @@ internal static class CounsellingEndpoints
                 .Select(x => (Guid?)x.Id)
                 .SingleOrDefaultAsync(cancellationToken);
             if (partnerUserId.HasValue)
+            {
+                session.InvitePartner(partnerUserId.Value);
+                await db.SaveChangesAsync(cancellationToken);
                 await notifications.NotifyAsync(partnerUserId.Value, NotificationType.SessionBooked,
                     "Couples counselling invitation",
                     "Your partner invited you to a couples counselling session.",
                     session.Id, "CounsellingSession", cancellationToken);
+            }
         }
 
         var response = await db.CounsellingSessions.AsNoTracking()
@@ -256,6 +264,8 @@ internal static class CounsellingEndpoints
                 x.Topic,
                 x.ClientAnonymous,
                 x.TrustUnlockStatus,
+                x.PartnerUserId,
+                x.PartnerAccepted,
                 x.CreatedAt,
                 x.UpdatedAt))
             .SingleAsync(cancellationToken);
@@ -364,7 +374,8 @@ internal static class CounsellingEndpoints
     {
         var userId = context.User.GetUserId();
         var session = await db.CounsellingSessions.AsNoTracking()
-            .Where(x => x.Id == id && (x.ClientUserId == userId || x.Counsellor.UserId == userId))
+            .Where(x => x.Id == id && (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                || x.PartnerUserId == userId))
             .Select(x => new CounsellingSessionResponse(
                 x.Id,
                 x.CounsellorId,
@@ -388,6 +399,8 @@ internal static class CounsellingEndpoints
                 x.Topic,
                 x.ClientAnonymous,
                 x.TrustUnlockStatus,
+                x.PartnerUserId,
+                x.PartnerAccepted,
                 x.CreatedAt,
                 x.UpdatedAt))
             .SingleOrDefaultAsync(cancellationToken);
@@ -480,6 +493,19 @@ internal static class CounsellingEndpoints
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(id, userId, "SessionCancelled"));
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { session.Id, session.Status }, "Session cancelled.");
+    }
+
+    private static async Task<IResult> AcceptPartnerInvite(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var session = await db.CounsellingSessions.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (session is null) return EndpointHelpers.NotFound(context, "Session was not found.");
+        if (session.PartnerUserId != userId) return EndpointHelpers.Forbidden(context);
+        try { session.AcceptPartnerInvite(); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { session.Id, session.PartnerAccepted }, "Partner invite accepted.");
     }
 
     private static async Task<IResult> AddNote(Guid id, AddSessionNoteRequest request, HttpContext context,

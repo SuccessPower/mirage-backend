@@ -339,6 +339,12 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("PartnerAccepted")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("PartnerUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTimeOffset>("ScheduledAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1791,6 +1797,11 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CounsellorId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("PartnerUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Counsellor");
                 });

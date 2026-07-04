@@ -30,7 +30,23 @@ public sealed class CounsellingSession : Entity
     public TrustUnlockStatus TrustUnlockStatus { get; private set; }
     public bool ClientConsentedToReveal { get; private set; }
     public bool CounsellorConsentedToReveal { get; private set; }
+    public Guid? PartnerUserId { get; private set; }
+    public bool PartnerAccepted { get; private set; }
     public CounsellorProfile Counsellor { get; private set; } = null!;
+
+    public void InvitePartner(Guid partnerUserId)
+    {
+        PartnerUserId = partnerUserId;
+        PartnerAccepted = false;
+        Touch();
+    }
+
+    public void AcceptPartnerInvite()
+    {
+        if (PartnerUserId is null) throw new InvalidOperationException("This session has no partner invite.");
+        PartnerAccepted = true;
+        Touch();
+    }
 
     public void Accept()
     {

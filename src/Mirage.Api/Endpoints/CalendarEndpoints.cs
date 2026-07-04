@@ -39,8 +39,9 @@ internal static class CalendarEndpoints
             .ToListAsync(cancellationToken);
 
         var sessions = await db.CounsellingSessions.AsNoTracking()
-            .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId)
-                && x.Status == SessionStatus.Scheduled)
+            .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                || (x.PartnerUserId == userId && x.PartnerAccepted))
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
             .Select(x => new CalendarItemResponse("CounsellingSession", x.Id, x.Topic, x.ScheduledAt, null, null, null))
             .ToListAsync(cancellationToken);
 
@@ -57,7 +58,8 @@ internal static class CalendarEndpoints
 
         var counsellingMeetings = await db.CounsellingMeetings.AsNoTracking()
             .Where(x => db.CounsellingSessions.Any(s => s.Id == x.SessionId
-                && (s.ClientUserId == userId || s.Counsellor.UserId == userId)))
+                && (s.ClientUserId == userId || s.Counsellor.UserId == userId
+                    || (s.PartnerUserId == userId && s.PartnerAccepted))))
             .Select(x => new CalendarItemResponse("CounsellingMeeting", x.Id, x.Title, x.ScheduledAt,
                 x.DurationMinutes != null ? x.ScheduledAt.AddMinutes(x.DurationMinutes.Value) : null,
                 x.MeetingLink, null))

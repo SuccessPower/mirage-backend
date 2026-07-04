@@ -232,6 +232,8 @@ public sealed record CounsellingSessionResponse(
     string Topic,
     bool ClientAnonymous,
     TrustUnlockStatus TrustUnlockStatus,
+    Guid? PartnerUserId,
+    bool PartnerAccepted,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 

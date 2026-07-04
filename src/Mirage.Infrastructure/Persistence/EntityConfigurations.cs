@@ -359,6 +359,7 @@ public sealed class CounsellingSessionConfiguration : IEntityTypeConfiguration<C
         b.Property(x => x.Topic).HasMaxLength(1000);
         b.HasOne(x => x.Counsellor).WithMany().HasForeignKey(x => x.CounsellorId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ClientUserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PartnerUserId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 

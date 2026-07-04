@@ -44,7 +44,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
             await Groups.AddToGroupAsync(Context.ConnectionId, MentorRequestGroup(mentorRequestId));
 
         var sessionIds = await db.CounsellingSessions.AsNoTracking()
-            .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId)
+            .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                || (x.PartnerUserId == userId && x.PartnerAccepted))
                 && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
             .Select(x => x.Id)
             .ToListAsync();
@@ -175,7 +176,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
 
         var userId = GetUserId();
         var isParty = await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
-            && (x.ClientUserId == userId || x.Counsellor.UserId == userId)
+            && (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                || (x.PartnerUserId == userId && x.PartnerAccepted))
             && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled);
         if (!isParty) return;
 
