@@ -23,13 +23,20 @@ internal static class MentorEndpoints
         var requests = api.MapGroup("/mentorship/requests").WithTags("Mentorship").RequireAuthorization();
         requests.MapGet("/mine", ListMyRequests);
         requests.MapGet("/incoming", ListIncomingRequests);
+        requests.MapGet("/{id:guid}", GetRequest);
         requests.MapPost("/{mentorId:guid}", SendRequest);
         requests.MapPatch("/{id:guid}/accept", AcceptRequest);
         requests.MapPatch("/{id:guid}/decline", DeclineRequest);
         requests.MapDelete("/{id:guid}", WithdrawRequest);
 
+        // Private channel: 1:1 messages between a mentor and one accepted mentee, keyed by the
+        // MentorRequest that represents their relationship.
+        requests.MapGet("/{id:guid}/messages", ListMentorMessages);
+        requests.MapPost("/{id:guid}/messages", SendMentorMessage);
+
         // Broadcast group: posts, group chat, and meetings shared between a mentor and their
         // accepted mentees.
+        mentors.MapGet("/{id:guid}/mentees", ListMentees).RequireAuthorization();
         mentors.MapGet("/{id:guid}/posts", ListPosts).RequireAuthorization();
         mentors.MapPost("/{id:guid}/posts", CreatePost).RequireAuthorization(MiragePolicy.Mentor);
         mentors.MapGet("/{id:guid}/group-messages", ListGroupMessages).RequireAuthorization();
@@ -50,6 +57,88 @@ internal static class MentorEndpoints
         return await db.MentorRequests.AsNoTracking().AnyAsync(
             x => x.MentorProfileId == mentorProfileId && x.MenteeUserId == userId &&
                  x.Status == MentorRequestStatus.Accepted, cancellationToken);
+    }
+
+    // A user is a party to a MentorRequest's private channel if they are the mentee, or they own
+    // the mentor profile the request was sent to. The channel only opens once the request is accepted.
+    private static async Task<bool> IsMentorRequestPartyAsync(Guid mentorRequestId, Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken) =>
+        await db.MentorRequests.AsNoTracking().AnyAsync(x => x.Id == mentorRequestId
+            && (x.MenteeUserId == userId || x.Mentor.UserId == userId)
+            && x.Status == MentorRequestStatus.Accepted, cancellationToken);
+
+    private static async Task<IResult> ListMentorMessages(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsMentorRequestPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var messages = await db.MentorMessages.AsNoTracking()
+            .Where(x => x.MentorRequestId == id)
+            .OrderBy(x => x.CreatedAt)
+            .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new MentorMessageResponse(
+                m.Id, m.MentorRequestId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, messages, "Messages retrieved successfully.");
+    }
+
+    private static async Task<IResult> SendMentorMessage(Guid id, SendMentorMessageRequest request,
+        HttpContext context, IMirageDbContext db, IHubContext<ChatHub> hub, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsMentorRequestPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Content))
+            return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
+
+        var message = new MentorMessage(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        db.MentorMessages.Add(message);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await hub.Clients.Group($"mentorrequest:{id}").SendAsync("ReceiveMentorMessage", new
+        {
+            message.Id,
+            MentorRequestId = id,
+            message.SenderId,
+            SenderName = senderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
+        }, cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/mentorship/requests/{id}/messages/{message.Id}",
+            new { message.Id }, "Message sent successfully.");
+    }
+
+    private static async Task<IResult> ListMentees(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var isMentor = await db.Mentors.AsNoTracking().AnyAsync(x => x.Id == id && x.UserId == userId, cancellationToken);
+        var allowMenteesToSeeEachOther = await db.Mentors.AsNoTracking()
+            .Where(x => x.Id == id).Select(x => x.AllowMenteesToSeeEachOther).SingleAsync(cancellationToken);
+
+        var mentees = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == id && x.Status == MentorRequestStatus.Accepted)
+            .Join(db.Profiles.AsNoTracking(), r => r.MenteeUserId, p => p.UserId, (r, p) => new
+            {
+                r.Id,
+                r.MenteeUserId,
+                p.DisplayName,
+                p.AvatarUrl,
+                AcceptedAt = r.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var result = mentees.Select(x => isMentor || x.MenteeUserId == userId || allowMenteesToSeeEachOther
+            ? new MentorMenteeResponse(x.Id, x.MenteeUserId, x.DisplayName, x.AvatarUrl, x.AcceptedAt)
+            : new MentorMenteeResponse(x.Id, x.MenteeUserId, "Fellow mentee", null, x.AcceptedAt));
+
+        return ApiResults.Ok(context, result, "Mentees retrieved successfully.");
     }
 
     private static async Task<IResult> ListPosts(Guid id, HttpContext context, IMirageDbContext db,
@@ -87,12 +176,28 @@ internal static class MentorEndpoints
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
 
+        var mentor = await db.Mentors.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new { x.UserId, x.AllowMenteesToSeeEachOther })
+            .SingleAsync(cancellationToken);
+        var isMentor = mentor.UserId == userId;
+
         var messages = await db.MentorGroupMessages.AsNoTracking()
             .Where(x => x.MentorProfileId == id)
             .OrderBy(x => x.CreatedAt)
             .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new MentorGroupMessageResponse(
                 m.Id, m.MentorProfileId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
             .ToListAsync(cancellationToken);
+
+        // Mentees can't see who a fellow mentee is unless the mentor opts in; the mentor and each
+        // mentee's own messages always show their real name.
+        if (!isMentor && !mentor.AllowMenteesToSeeEachOther)
+            messages = messages
+                .Select(m => m.SenderId == userId || m.SenderId == mentor.UserId
+                    ? m
+                    : m with { SenderName = "Fellow mentee" })
+                .ToList();
+
         return ApiResults.Ok(context, messages, "Group messages retrieved successfully.");
     }
 
@@ -182,11 +287,10 @@ internal static class MentorEndpoints
         var result = query.OrderByDescending(x => x.YearsMarried).Select(x => new
         {
             x.Id,
-            DisplayName = x.IsAnonymous ? MaskName(x.UserProfile.DisplayName) : x.UserProfile.DisplayName,
+            DisplayName = x.UserProfile.DisplayName,
             x.UserProfile.Denomination,
             x.UserProfile.City,
             x.YearsMarried,
-            x.IsAnonymous,
             x.AcceptsFreeSessions,
             x.AreasOfGuidance,
             x.Languages
@@ -204,12 +308,11 @@ internal static class MentorEndpoints
             .Select(x => new
             {
                 x.Id,
-                DisplayName = x.IsAnonymous ? MaskName(x.UserProfile.DisplayName) : x.UserProfile.DisplayName,
+                DisplayName = x.UserProfile.DisplayName,
                 x.UserProfile.Denomination,
                 x.UserProfile.City,
                 x.YearsMarried,
-                Testimony = x.IsAnonymous ? null : x.Testimony,
-                x.IsAnonymous,
+                x.Testimony,
                 x.AcceptsFreeSessions,
                 x.AreasOfGuidance,
                 x.Languages
@@ -229,7 +332,7 @@ internal static class MentorEndpoints
             .Select(x => new
             {
                 x.Id, x.UserId, x.YearsMarried, x.Testimony,
-                x.IsApproved, x.IsAnonymous, x.AcceptsFreeSessions,
+                x.IsApproved, x.AcceptsFreeSessions, x.AllowMenteesToSeeEachOther,
                 x.AreasOfGuidance, x.Languages, x.CreatedAt
             })
             .SingleOrDefaultAsync(cancellationToken);
@@ -249,8 +352,8 @@ internal static class MentorEndpoints
         var userId = context.User.GetUserId();
         var profile = await db.Mentors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
-        profile.UpdateProfile(request.YearsMarried, request.Testimony, request.AreasOfGuidance, request.Languages, request.AcceptsFreeSessions);
-        profile.ToggleAnonymity(request.IsAnonymous);
+        profile.UpdateProfile(request.YearsMarried, request.Testimony, request.AreasOfGuidance, request.Languages,
+            request.AcceptsFreeSessions, request.AllowMenteesToSeeEachOther);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Mentor profile updated successfully.");
     }
@@ -299,7 +402,7 @@ internal static class MentorEndpoints
             {
                 x.Id,
                 x.MentorProfileId,
-                MentorName = x.Mentor.IsAnonymous ? MaskName(x.Mentor.UserProfile.DisplayName) : x.Mentor.UserProfile.DisplayName,
+                MentorName = x.Mentor.UserProfile.DisplayName,
                 x.Message,
                 x.Status,
                 x.CreatedAt
@@ -324,19 +427,53 @@ internal static class MentorEndpoints
             .Where(x => x.MentorProfileId == mentorProfile);
         if (status.HasValue) query = query.Where(x => x.Status == status.Value);
 
-        var result = query.OrderByDescending(x => x.CreatedAt)
-            .Select(x => new
+        var result = query
+            .Join(db.Profiles.AsNoTracking(), r => r.MenteeUserId, p => p.UserId, (r, p) => new
             {
-                x.Id,
-                x.MenteeUserId,
-                MenteeName = x.Mentor.UserProfile.DisplayName,
-                x.Message,
-                x.Status,
-                x.CreatedAt
-            });
+                r.Id,
+                r.MenteeUserId,
+                MenteeName = p.DisplayName,
+                MenteeAvatarUrl = p.AvatarUrl,
+                r.Message,
+                r.Status,
+                r.CreatedAt
+            })
+            .OrderByDescending(x => x.CreatedAt);
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Incoming mentor requests retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetRequest(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var request = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.Id == id && (x.MenteeUserId == userId || x.Mentor.UserId == userId))
+            .Select(x => new
+            {
+                x.Id,
+                x.MentorProfileId,
+                MentorUserId = x.Mentor.UserId,
+                MentorName = x.Mentor.UserProfile.DisplayName,
+                MentorAvatarUrl = x.Mentor.UserProfile.AvatarUrl,
+                x.MenteeUserId,
+                x.Message,
+                x.Status,
+                x.CreatedAt
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (request is null) return EndpointHelpers.NotFound(context, "Mentor request was not found.");
+
+        var mentee = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == request.MenteeUserId)
+            .Select(x => new { x.DisplayName, x.AvatarUrl })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        var response = new MentorRequestDetailResponse(request.Id, request.MentorProfileId, request.MentorUserId,
+            request.MentorName, request.MentorAvatarUrl, request.MenteeUserId, mentee?.DisplayName ?? "Mentee",
+            mentee?.AvatarUrl, request.Message, request.Status, request.CreatedAt);
+        return ApiResults.Ok(context, response, "Mentor request retrieved successfully.");
     }
 
     private static async Task<IResult> AcceptRequest(Guid id, HttpContext context, IMirageDbContext db,
@@ -396,8 +533,4 @@ internal static class MentorEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { request.Id, request.Status }, "Mentor request withdrawn.");
     }
-
-    private static string MaskName(string name) => string.Join(' ',
-        name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(part => part.Length <= 2 ? $"{part[0]}*" : $"{part[0]}***{part[^1]}"));
 }

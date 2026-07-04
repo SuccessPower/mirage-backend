@@ -139,8 +139,9 @@ public sealed record UpdateMentorProfileRequest(
     string[] AreasOfGuidance,
     string[] Languages,
     bool AcceptsFreeSessions,
-    bool IsAnonymous);
+    bool AllowMenteesToSeeEachOther);
 public sealed record RequestMentorRequest(string Message);
+public sealed record SendMentorMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record AddSessionNoteRequest(string Content);
 public sealed record RateSessionRequest(int Rating, string? Comment);
 public sealed record LogMilestoneRequest(MilestoneType Type, Guid? PartnerId, string? Note);
@@ -156,7 +157,6 @@ public sealed record BookSessionRequest(
     Guid CounsellorId,
     SessionType Type,
     DateTimeOffset ScheduledAt,
-    bool CounsellorAnonymous,
     bool ClientAnonymous,
     string Topic,
     string? PartnerEmail = null);

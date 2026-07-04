@@ -277,7 +277,8 @@ internal static class OrganisationEndpoints
     }
 
     private static async Task<IResult> ApproveCounsellor(Guid id, Guid counsellorId, HttpContext context,
-        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
+        CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var org = await db.Organisations.AsNoTracking()
@@ -294,6 +295,10 @@ internal static class OrganisationEndpoints
 
         counsellor.Approve();
         await db.SaveChangesAsync(cancellationToken);
+
+        var user = await userManager.FindByIdAsync(counsellor.UserId.ToString());
+        if (user is not null && !await userManager.IsInRoleAsync(user, MirageRoles.Counsellor))
+            await userManager.AddToRoleAsync(user, MirageRoles.Counsellor);
 
         await notifications.NotifyAsync(counsellor.UserId, NotificationType.CounsellorApproved,
             "Counsellor approval", $"You have been approved as a counsellor for {org.Name}.",

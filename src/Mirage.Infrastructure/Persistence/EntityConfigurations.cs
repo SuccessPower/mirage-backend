@@ -197,6 +197,18 @@ public sealed class MentorMeetingConfiguration : IEntityTypeConfiguration<Mentor
     }
 }
 
+public sealed class MentorMessageConfiguration : IEntityTypeConfiguration<MentorMessage>
+{
+    public void Configure(EntityTypeBuilder<MentorMessage> b)
+    {
+        b.ToTable("mentor_messages");
+        b.HasIndex(x => x.MentorRequestId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.HasOne<MentorRequest>().WithMany().HasForeignKey(x => x.MentorRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class OrganisationAdminInviteConfiguration : IEntityTypeConfiguration<OrganisationAdminInvite>
 {
     public void Configure(EntityTypeBuilder<OrganisationAdminInvite> b)

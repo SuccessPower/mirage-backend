@@ -300,13 +300,18 @@ internal static class AdminEndpoints
     }
 
     private static async Task<IResult> ApproveIndependentCounsellor(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor was not found.");
         if (counsellor.IsApproved) return EndpointHelpers.Conflict(context, "Counsellor is already approved.");
         counsellor.Approve();
         await db.SaveChangesAsync(cancellationToken);
+
+        var user = await userManager.FindByIdAsync(counsellor.UserId.ToString());
+        if (user is not null && !await userManager.IsInRoleAsync(user, MirageRoles.Counsellor))
+            await userManager.AddToRoleAsync(user, MirageRoles.Counsellor);
+
         return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsApproved }, "Counsellor approved successfully.");
     }
 
@@ -343,7 +348,6 @@ internal static class AdminEndpoints
                 x.YearsMarried,
                 x.IsApproved,
                 Status = x.IsApproved ? "Approved" : "Pending",
-                x.IsAnonymous,
                 x.AcceptsFreeSessions,
                 x.AreasOfGuidance,
                 x.Languages,

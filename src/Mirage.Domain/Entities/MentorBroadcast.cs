@@ -43,6 +43,28 @@ public sealed class MentorGroupMessage : Entity
     public string? AttachmentUrl { get; private set; }
 }
 
+// A private 1:1 channel between a mentor and one accepted mentee, keyed by the
+// MentorRequest that represents their relationship.
+public sealed class MentorMessage : Entity
+{
+    private MentorMessage() { }
+
+    public MentorMessage(Guid mentorRequestId, Guid senderId, string content, MessageType type, string? attachmentUrl)
+    {
+        MentorRequestId = mentorRequestId;
+        SenderId = senderId;
+        Content = content.Trim();
+        Type = type;
+        AttachmentUrl = attachmentUrl?.Trim();
+    }
+
+    public Guid MentorRequestId { get; private set; }
+    public Guid SenderId { get; private set; }
+    public string Content { get; private set; } = string.Empty;
+    public MessageType Type { get; private set; } = MessageType.Text;
+    public string? AttachmentUrl { get; private set; }
+}
+
 public sealed class MentorMeeting : Entity
 {
     private MentorMeeting() { }

@@ -146,6 +146,36 @@ public sealed record MentorMeetingResponse(
     DateTimeOffset ScheduledAt,
     int? DurationMinutes);
 
+public sealed record MentorMessageResponse(
+    Guid Id,
+    Guid MentorRequestId,
+    Guid SenderId,
+    string SenderName,
+    string Content,
+    MessageType Type,
+    string? AttachmentUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record MentorRequestDetailResponse(
+    Guid Id,
+    Guid MentorProfileId,
+    Guid MentorUserId,
+    string MentorName,
+    string? MentorAvatarUrl,
+    Guid MenteeUserId,
+    string MenteeName,
+    string? MenteeAvatarUrl,
+    string Message,
+    MentorRequestStatus Status,
+    DateTimeOffset CreatedAt);
+
+public sealed record MentorMenteeResponse(
+    Guid MentorRequestId,
+    Guid MenteeUserId,
+    string DisplayName,
+    string? AvatarUrl,
+    DateTimeOffset AcceptedAt);
+
 public sealed record CalendarItemResponse(
     string Source,
     Guid SourceId,
@@ -181,6 +211,24 @@ public sealed record CounsellingMeetingResponse(
     string MeetingLink,
     DateTimeOffset ScheduledAt,
     int? DurationMinutes);
+
+public sealed record CounsellingSessionResponse(
+    Guid Id,
+    Guid CounsellorId,
+    Guid CounsellorUserId,
+    string CounsellorDisplayName,
+    string? CounsellorAvatarUrl,
+    Guid ClientUserId,
+    string ClientDisplayName,
+    string? ClientAvatarUrl,
+    SessionType Type,
+    DateTimeOffset ScheduledAt,
+    SessionStatus Status,
+    string Topic,
+    bool ClientAnonymous,
+    TrustUnlockStatus TrustUnlockStatus,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt);
 
 public sealed record MatchResponse(
     Guid Id,

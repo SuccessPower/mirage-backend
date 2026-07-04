@@ -36,9 +36,16 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         foreach (var mentorProfileId in mentorGroupIds.Distinct())
             await Groups.AddToGroupAsync(Context.ConnectionId, MentorGroup(mentorProfileId));
 
+        var mentorRequestIds = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.Status == MentorRequestStatus.Accepted && (x.MenteeUserId == userId || x.Mentor.UserId == userId))
+            .Select(x => x.Id)
+            .ToListAsync();
+        foreach (var mentorRequestId in mentorRequestIds)
+            await Groups.AddToGroupAsync(Context.ConnectionId, MentorRequestGroup(mentorRequestId));
+
         var sessionIds = await db.CounsellingSessions.AsNoTracking()
             .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId)
-                && x.Status != SessionStatus.Requested && x.Status != SessionStatus.Declined)
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
             .Select(x => x.Id)
             .ToListAsync();
         foreach (var sessionId in sessionIds)
@@ -89,9 +96,15 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
 
         var userId = GetUserId();
-        var isMember = await db.Mentors.AsNoTracking().AnyAsync(x => x.Id == mentorProfileId && x.UserId == userId)
-            || await db.MentorRequests.AsNoTracking().AnyAsync(x => x.MentorProfileId == mentorProfileId
-                && x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted);
+        var mentor = await db.Mentors.AsNoTracking()
+            .Where(x => x.Id == mentorProfileId)
+            .Select(x => new { x.UserId, x.AllowMenteesToSeeEachOther })
+            .SingleOrDefaultAsync();
+        if (mentor is null) return;
+
+        var isMentor = mentor.UserId == userId;
+        var isMember = isMentor || await db.MentorRequests.AsNoTracking().AnyAsync(x => x.MentorProfileId == mentorProfileId
+            && x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted);
         if (!isMember) return;
 
         var message = new MentorGroupMessage(mentorProfileId, userId, content, type, attachmentUrl);
@@ -101,10 +114,48 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         var senderName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
 
+        // Broadcast as one shared payload: fellow mentees' names are only revealed once the
+        // mentor opts in, so a non-mentor sender's name is masked unless that's on.
+        var broadcastSenderName = isMentor || mentor.AllowMenteesToSeeEachOther ? senderName : "Fellow mentee";
+
         await Clients.Group(MentorGroup(mentorProfileId)).SendAsync("ReceiveMentorGroupMessage", new
         {
             message.Id,
             MentorProfileId = mentorProfileId,
+            message.SenderId,
+            SenderName = broadcastSenderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
+        });
+    }
+
+    // Client → Hub: send a message on a mentor↔mentee private 1:1 channel
+    public async Task SendMentorMessage(Guid mentorRequestId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null)
+    {
+        content = (content ?? string.Empty).Trim();
+        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
+        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
+
+        var userId = GetUserId();
+        var isParty = await db.MentorRequests.AsNoTracking().AnyAsync(x => x.Id == mentorRequestId
+            && (x.MenteeUserId == userId || x.Mentor.UserId == userId)
+            && x.Status == MentorRequestStatus.Accepted);
+        if (!isParty) return;
+
+        var message = new MentorMessage(mentorRequestId, userId, content, type, attachmentUrl);
+        db.MentorMessages.Add(message);
+        await db.SaveChangesAsync();
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
+
+        await Clients.Group(MentorRequestGroup(mentorRequestId)).SendAsync("ReceiveMentorMessage", new
+        {
+            message.Id,
+            MentorRequestId = mentorRequestId,
             message.SenderId,
             SenderName = senderName,
             message.Content,
@@ -125,7 +176,7 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         var userId = GetUserId();
         var isParty = await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
             && (x.ClientUserId == userId || x.Counsellor.UserId == userId)
-            && x.Status != SessionStatus.Requested && x.Status != SessionStatus.Declined);
+            && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled);
         if (!isParty) return;
 
         var message = new CounsellingMessage(sessionId, userId, content, type, attachmentUrl);
@@ -201,5 +252,6 @@ public sealed class ChatHub(MirageDbContext db) : Hub
 
     private static string MatchGroup(Guid matchId) => $"match:{matchId}";
     private static string MentorGroup(Guid mentorProfileId) => $"mentorgroup:{mentorProfileId}";
+    private static string MentorRequestGroup(Guid mentorRequestId) => $"mentorrequest:{mentorRequestId}";
     private static string CounsellingGroup(Guid sessionId) => $"counsellingsession:{sessionId}";
 }

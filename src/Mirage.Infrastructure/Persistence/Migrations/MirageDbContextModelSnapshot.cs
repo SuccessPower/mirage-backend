@@ -814,6 +814,44 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("mentor_meetings", "mirage");
                 });
 
+            modelBuilder.Entity("Mirage.Domain.Entities.MentorMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AttachmentUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MentorRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MentorRequestId");
+
+                    b.HasIndex("SenderId");
+
+                    b.ToTable("mentor_messages", "mirage");
+                });
+
             modelBuilder.Entity("Mirage.Domain.Entities.MentorPost", b =>
                 {
                     b.Property<Guid>("Id")
@@ -853,15 +891,15 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<bool>("AcceptsFreeSessions")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("AllowMenteesToSeeEachOther")
+                        .HasColumnType("boolean");
+
                     b.Property<string[]>("AreasOfGuidance")
                         .IsRequired()
                         .HasColumnType("text[]");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsAnonymous")
-                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsApproved")
                         .HasColumnType("boolean");
@@ -1920,6 +1958,21 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("ScheduledByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Mirage.Domain.Entities.MentorMessage", b =>
+                {
+                    b.HasOne("Mirage.Domain.Entities.MentorRequest", null)
+                        .WithMany()
+                        .HasForeignKey("MentorRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("SenderId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

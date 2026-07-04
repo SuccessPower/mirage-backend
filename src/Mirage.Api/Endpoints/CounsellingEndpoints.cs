@@ -49,7 +49,7 @@ internal static class CounsellingEndpoints
         CancellationToken cancellationToken) =>
         await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
             && (x.ClientUserId == userId || x.Counsellor.UserId == userId)
-            && x.Status != SessionStatus.Requested && x.Status != SessionStatus.Declined, cancellationToken);
+            && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled, cancellationToken);
 
     private static async Task<IResult> ListMessages(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
@@ -149,11 +149,11 @@ internal static class CounsellingEndpoints
         var result = query.OrderByDescending(x => x.YearsExperience).Select(x => new
         {
             x.Id,
-            DisplayName = x.IsAnonymous ? MaskName(x.UserProfile.DisplayName) : x.UserProfile.DisplayName,
+            x.UserProfile.DisplayName,
             x.UserProfile.Denomination,
             Organisation = x.Organisation != null ? x.Organisation.Name : null,
             x.YearsExperience,
-            x.IsAnonymous,
+            IsAnonymous = false,
             x.AcceptsFreeSessions,
             x.Specialisations,
             x.Languages
@@ -170,11 +170,32 @@ internal static class CounsellingEndpoints
         var sessions = await db.CounsellingSessions.AsNoTracking()
             .Where(x => x.ClientUserId == userId || x.Counsellor.UserId == userId)
             .OrderByDescending(x => x.ScheduledAt)
-            .Select(x => new
-            {
-                x.Id, x.Type, x.ScheduledAt, x.Status, x.Topic, x.CounsellorAnonymous,
-                x.ClientAnonymous, x.TrustUnlockStatus
-            }).ToListAsync(cancellationToken);
+            .Select(x => new CounsellingSessionResponse(
+                x.Id,
+                x.CounsellorId,
+                x.Counsellor.UserId,
+                x.Counsellor.UserProfile.DisplayName,
+                x.Counsellor.UserProfile.AvatarUrl,
+                x.ClientUserId,
+                x.ClientAnonymous && userId == x.Counsellor.UserId
+                    ? "Anonymous client"
+                    : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                        .Select(profile => profile.DisplayName)
+                        .SingleOrDefault() ?? "Client",
+                x.ClientAnonymous && userId == x.Counsellor.UserId
+                    ? null
+                    : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                        .Select(profile => profile.AvatarUrl)
+                        .SingleOrDefault(),
+                x.Type,
+                x.ScheduledAt,
+                x.Status,
+                x.Topic,
+                x.ClientAnonymous,
+                x.TrustUnlockStatus,
+                x.CreatedAt,
+                x.UpdatedAt))
+            .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, sessions, "Counselling sessions retrieved successfully.");
     }
 
@@ -194,7 +215,7 @@ internal static class CounsellingEndpoints
             request.ScheduledAt, request.Topic, false, request.ClientAnonymous);
         db.CounsellingSessions.Add(session);
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, userId,
-            $"Session requested; clientAnonymous={request.ClientAnonymous}; counsellorAnonymous={request.CounsellorAnonymous}"));
+            $"Session requested; clientAnonymous={request.ClientAnonymous}; counsellorAnonymous=false"));
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(counsellor.UserId, NotificationType.SessionBooked,
@@ -214,8 +235,33 @@ internal static class CounsellingEndpoints
                     session.Id, "CounsellingSession", cancellationToken);
         }
 
-        return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
-            new { session.Id, session.Status }, "Counselling session requested successfully.");
+        var response = await db.CounsellingSessions.AsNoTracking()
+            .Where(x => x.Id == session.Id)
+            .Select(x => new CounsellingSessionResponse(
+                x.Id,
+                x.CounsellorId,
+                x.Counsellor.UserId,
+                x.Counsellor.UserProfile.DisplayName,
+                x.Counsellor.UserProfile.AvatarUrl,
+                x.ClientUserId,
+                db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                    .Select(profile => profile.DisplayName)
+                    .SingleOrDefault() ?? "Client",
+                db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                    .Select(profile => profile.AvatarUrl)
+                    .SingleOrDefault(),
+                x.Type,
+                x.ScheduledAt,
+                x.Status,
+                x.Topic,
+                x.ClientAnonymous,
+                x.TrustUnlockStatus,
+                x.CreatedAt,
+                x.UpdatedAt))
+            .SingleAsync(cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}", response,
+            "Counselling session requested successfully.");
     }
 
     private static async Task<IResult> ConsentToTrustUnlock(Guid id, HttpContext context,
@@ -242,11 +288,11 @@ internal static class CounsellingEndpoints
             .Select(x => new
             {
                 x.Id,
-                DisplayName = x.IsAnonymous ? MaskName(x.UserProfile.DisplayName) : x.UserProfile.DisplayName,
+                x.UserProfile.DisplayName,
                 x.UserProfile.Denomination,
                 Organisation = x.Organisation != null ? x.Organisation.Name : null,
                 x.YearsExperience,
-                x.IsAnonymous,
+                IsAnonymous = false,
                 x.AcceptsFreeSessions,
                 x.Specialisations,
                 x.Languages
@@ -291,7 +337,7 @@ internal static class CounsellingEndpoints
         var profile = await db.Counsellors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
         profile.UpdateProfile(request.YearsExperience, request.Specialisations, request.Languages, request.AcceptsFreeSessions);
-        profile.ToggleAnonymity(request.IsAnonymous);
+        profile.ToggleAnonymity(false);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Counsellor profile updated successfully.");
     }
@@ -316,12 +362,31 @@ internal static class CounsellingEndpoints
         var userId = context.User.GetUserId();
         var session = await db.CounsellingSessions.AsNoTracking()
             .Where(x => x.Id == id && (x.ClientUserId == userId || x.Counsellor.UserId == userId))
-            .Select(x => new
-            {
-                x.Id, x.Type, x.ScheduledAt, x.Status, x.Topic,
-                x.CounsellorAnonymous, x.ClientAnonymous, x.TrustUnlockStatus,
-                x.CreatedAt, x.UpdatedAt
-            })
+            .Select(x => new CounsellingSessionResponse(
+                x.Id,
+                x.CounsellorId,
+                x.Counsellor.UserId,
+                x.Counsellor.UserProfile.DisplayName,
+                x.Counsellor.UserProfile.AvatarUrl,
+                x.ClientUserId,
+                x.ClientAnonymous && userId == x.Counsellor.UserId
+                    ? "Anonymous client"
+                    : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                        .Select(profile => profile.DisplayName)
+                        .SingleOrDefault() ?? "Client",
+                x.ClientAnonymous && userId == x.Counsellor.UserId
+                    ? null
+                    : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                        .Select(profile => profile.AvatarUrl)
+                        .SingleOrDefault(),
+                x.Type,
+                x.ScheduledAt,
+                x.Status,
+                x.Topic,
+                x.ClientAnonymous,
+                x.TrustUnlockStatus,
+                x.CreatedAt,
+                x.UpdatedAt))
             .SingleOrDefaultAsync(cancellationToken);
         return session is null
             ? EndpointHelpers.NotFound(context, "Session was not found.")
@@ -463,7 +528,4 @@ internal static class CounsellingEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/sessions/{id}/rating", new { rating.Id }, "Session rated successfully.");
     }
-
-    private static string MaskName(string name) => string.Join(' ', name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-        .Select(part => part.Length <= 2 ? $"{part[0]}*" : $"{part[0]}***{part[^1]}"));
 }

@@ -38,6 +38,7 @@ public interface IMirageDbContext
     DbSet<MentorPost> MentorPosts { get; }
     DbSet<MentorGroupMessage> MentorGroupMessages { get; }
     DbSet<MentorMeeting> MentorMeetings { get; }
+    DbSet<MentorMessage> MentorMessages { get; }
     DbSet<Couple> Couples { get; }
     DbSet<OrganisationAdminInvite> OrganisationAdminInvites { get; }
     DbSet<CounsellingMessage> CounsellingMessages { get; }
