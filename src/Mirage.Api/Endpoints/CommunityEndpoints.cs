@@ -140,15 +140,37 @@ internal static class CommunityEndpoints
     {
         var avatars = new[]
         {
-            new CommunityAvatarPresetResponse("faith", "Faith", "/assets/community-avatars/faith.png"),
-            new CommunityAvatarPresetResponse("movies", "Movies", "/assets/community-avatars/movies.png"),
-            new CommunityAvatarPresetResponse("music", "Music", "/assets/community-avatars/music.png"),
-            new CommunityAvatarPresetResponse("fitness", "Fitness", "/assets/community-avatars/fitness.png"),
-            new CommunityAvatarPresetResponse("books", "Books", "/assets/community-avatars/books.png"),
-            new CommunityAvatarPresetResponse("travel", "Travel", "/assets/community-avatars/travel.png")
+            new CommunityAvatarPresetResponse("faith", "Faith", AvatarDataUri("Faith", "#6D5DF7", "#25C2A0")),
+            new CommunityAvatarPresetResponse("movies", "Movies", AvatarDataUri("Movies", "#111827", "#F59E0B")),
+            new CommunityAvatarPresetResponse("music", "Music", AvatarDataUri("Music", "#7C3AED", "#EC4899")),
+            new CommunityAvatarPresetResponse("fitness", "Fitness", AvatarDataUri("Fitness", "#059669", "#84CC16")),
+            new CommunityAvatarPresetResponse("books", "Books", AvatarDataUri("Books", "#2563EB", "#06B6D4")),
+            new CommunityAvatarPresetResponse("travel", "Travel", AvatarDataUri("Travel", "#EA580C", "#14B8A6"))
         };
 
         return ApiResults.Ok(context, avatars, "Community avatar library retrieved successfully.");
+    }
+
+    private static string AvatarDataUri(string label, string color1, string color2)
+    {
+        var initials = string.Concat(label.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(part => char.ToUpperInvariant(part[0])));
+        var svg = $$"""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="{{color1}}"/>
+                  <stop offset="1" stop-color="{{color2}}"/>
+                </linearGradient>
+              </defs>
+              <rect width="160" height="160" rx="32" fill="url(#g)"/>
+              <circle cx="122" cy="34" r="24" fill="rgba(255,255,255,.18)"/>
+              <text x="80" y="96" text-anchor="middle" font-family="Inter, Arial, sans-serif"
+                    font-size="46" font-weight="800" fill="white">{{initials}}</text>
+            </svg>
+            """;
+        return $"data:image/svg+xml;utf8,{Uri.EscapeDataString(svg)}";
     }
 
     private static async Task<IResult> UpdateAvatar(Guid id, UpdateCommunityAvatarRequest request,
@@ -185,15 +207,24 @@ internal static class CommunityEndpoints
         var members = await db.CommunityMembers.AsNoTracking()
             .Where(x => x.CommunityId == id && x.LeftAt == null)
             .Join(db.Profiles.AsNoTracking(), member => member.UserId, profile => profile.UserId,
-                (member, profile) => new CommunityMemberResponse(
+                (member, profile) => new
+                {
                     member.Id,
                     member.UserId,
                     profile.DisplayName,
                     profile.AvatarUrl,
                     member.Role,
-                    member.CreatedAt))
+                    member.CreatedAt
+                })
             .OrderBy(x => x.Role)
             .ThenBy(x => x.DisplayName)
+            .Select(x => new CommunityMemberResponse(
+                x.Id,
+                x.UserId,
+                x.DisplayName,
+                x.AvatarUrl,
+                x.Role,
+                x.CreatedAt))
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         return ApiResults.Ok(context, members, "Community members retrieved successfully.");
@@ -244,6 +275,7 @@ internal static class CommunityEndpoints
 
         var posts = await db.CommunityPosts.AsNoTracking()
             .Where(x => x.CommunityId == id)
+            .OrderByDescending(post => post.CreatedAt)
             .Select(post => new CommunityPostResponse(
                 post.Id,
                 post.CommunityId,
@@ -262,7 +294,6 @@ internal static class CommunityEndpoints
                 post.Comments.Count,
                 post.Likes.Any(like => like.UserId == userId),
                 post.CreatedAt))
-            .OrderByDescending(x => x.CreatedAt)
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         return ApiResults.Ok(context, posts, "Community posts retrieved successfully.");
@@ -351,6 +382,7 @@ internal static class CommunityEndpoints
 
         var comments = await db.CommunityPostComments.AsNoTracking()
             .Where(x => x.PostId == postId)
+            .OrderBy(comment => comment.CreatedAt)
             .Select(comment => new CommunityPostCommentResponse(
                 comment.Id,
                 comment.PostId,
@@ -366,7 +398,6 @@ internal static class CommunityEndpoints
                 comment.ParentCommentId,
                 comment.Body,
                 comment.CreatedAt))
-            .OrderBy(x => x.CreatedAt)
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         return ApiResults.Ok(context, comments, "Community post comments retrieved successfully.");

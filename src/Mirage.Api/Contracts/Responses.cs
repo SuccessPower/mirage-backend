@@ -42,7 +42,12 @@ public sealed record ProfileResponse(
     SkinTone? SkinTone,
     string? PreferredLanguage,
     string? Occupation,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string[]? Roles = null,
+    Guid? MentorProfileId = null,
+    bool? HasApprovedMentorProfile = null,
+    bool? IsChurchAdmin = null,
+    bool? IsCounsellor = null);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,

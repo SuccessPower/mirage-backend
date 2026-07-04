@@ -36,6 +36,11 @@ internal static class AdminEndpoints
         admin.MapPatch("/counsellors/{id:guid}/approve", ApproveIndependentCounsellor);
         admin.MapPatch("/counsellors/{id:guid}/reject", RejectIndependentCounsellor);
 
+        // Mentor verification
+        admin.MapGet("/mentors", ListMentorProfiles);
+        admin.MapGet("/mentors/pending", ListPendingMentors);
+        admin.MapPatch("/mentors/{id:guid}/approve", ApproveMentor);
+
         // Couples overview
         admin.MapGet("/couples", ListCouples);
 
@@ -315,6 +320,80 @@ internal static class AdminEndpoints
         counsellor.Reject(request.Reason);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsRejected }, "Counsellor rejected.");
+    }
+
+    // --- Mentor verification ---
+
+    private static async Task<IResult> ListMentorProfiles(HttpContext context, IMirageDbContext db,
+        bool? approved, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+    {
+        var query = db.Mentors.AsNoTracking().AsQueryable();
+        if (approved.HasValue) query = query.Where(x => x.IsApproved == approved.Value);
+
+        var result = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.UserId,
+                DisplayName = x.UserProfile.DisplayName,
+                x.UserProfile.City,
+                x.UserProfile.Country,
+                x.UserProfile.Denomination,
+                x.YearsMarried,
+                x.IsApproved,
+                Status = x.IsApproved ? "Approved" : "Pending",
+                x.IsAnonymous,
+                x.AcceptsFreeSessions,
+                x.AreasOfGuidance,
+                x.Languages,
+                x.CreatedAt
+            })
+            .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        return ApiResults.Ok(context, result, "Mentor profiles retrieved successfully.");
+    }
+
+    private static async Task<IResult> ListPendingMentors(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var mentors = await db.Mentors.AsNoTracking()
+            .Where(x => !x.IsApproved)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.UserId,
+                DisplayName = x.UserProfile.DisplayName,
+                x.UserProfile.City,
+                x.UserProfile.Country,
+                x.UserProfile.Denomination,
+                x.YearsMarried,
+                x.AreasOfGuidance,
+                x.Languages,
+                x.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return ApiResults.Ok(context, mentors, "Pending mentors retrieved successfully.");
+    }
+
+    private static async Task<IResult> ApproveMentor(Guid id, HttpContext context, IMirageDbContext db,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+    {
+        var mentor = await db.Mentors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (mentor is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
+        if (mentor.IsApproved) return EndpointHelpers.Conflict(context, "Mentor profile is already approved.");
+
+        mentor.Approve();
+        var user = await userManager.FindByIdAsync(mentor.UserId.ToString());
+        if (user is null) return EndpointHelpers.NotFound(context, "Mentor user account was not found.");
+        if (!await userManager.IsInRoleAsync(user, MirageRoles.Mentor))
+            await userManager.AddToRoleAsync(user, MirageRoles.Mentor);
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { mentor.Id, mentor.UserId, mentor.IsApproved },
+            "Mentor approved successfully.");
     }
 
     // --- Couples overview ---

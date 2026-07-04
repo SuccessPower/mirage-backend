@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 
 namespace Mirage.Api.Endpoints;
@@ -109,7 +111,8 @@ internal static class ProfileEndpoints
         return ApiResults.Ok(context, profile.ToResponse(recommended, email), "Profile retrieved successfully.");
     }
 
-    private static async Task<IResult> GetMine(HttpContext context, MirageDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetMine(HttpContext context, MirageDbContext db,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
@@ -118,7 +121,21 @@ internal static class ProfileEndpoints
             x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
         var email = await db.Users.AsNoTracking().Where(user => user.Id == userId)
             .Select(user => user.Email).SingleOrDefaultAsync(cancellationToken);
-        return ApiResults.Ok(context, profile.ToResponse(recommended, email), "Profile retrieved successfully.");
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        var roles = user is null ? [] : (await userManager.GetRolesAsync(user)).ToArray();
+        var mentor = await db.Mentors.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new { x.Id, x.IsApproved })
+            .SingleOrDefaultAsync(cancellationToken);
+        var response = profile.ToResponse(recommended, email) with
+        {
+            Roles = roles,
+            MentorProfileId = mentor?.Id,
+            HasApprovedMentorProfile = mentor?.IsApproved == true,
+            IsChurchAdmin = roles.Contains(MirageRoles.ChurchAdmin) || roles.Contains(MirageRoles.PlatformAdmin),
+            IsCounsellor = roles.Contains(MirageRoles.Counsellor)
+        };
+        return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }
 
     private static async Task<IResult> UpdateMine(UpdateProfileRequest request, HttpContext context,
