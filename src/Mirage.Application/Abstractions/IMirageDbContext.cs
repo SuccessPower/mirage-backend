@@ -35,6 +35,7 @@ public interface IMirageDbContext
     DbSet<CommunityPost> CommunityPosts { get; }
     DbSet<CommunityPostLike> CommunityPostLikes { get; }
     DbSet<CommunityPostComment> CommunityPostComments { get; }
+    DbSet<CommunityPostCommentLike> CommunityPostCommentLikes { get; }
     DbSet<MentorPost> MentorPosts { get; }
     DbSet<MentorGroupMessage> MentorGroupMessages { get; }
     DbSet<MentorMeeting> MentorMeetings { get; }

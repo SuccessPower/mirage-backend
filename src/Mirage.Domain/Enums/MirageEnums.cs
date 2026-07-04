@@ -43,5 +43,6 @@ public enum NotificationType
     OrganisationRejected = 15,
     CounsellorApproved = 16,
     MembershipApproved = 17,
-    MembershipRejected = 18
+    MembershipRejected = 18,
+    Mention = 19
 }

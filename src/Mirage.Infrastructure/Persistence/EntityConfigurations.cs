@@ -155,9 +155,21 @@ public sealed class CommunityPostCommentConfiguration : IEntityTypeConfiguration
         b.HasIndex(x => new { x.PostId, x.CreatedAt });
         b.HasIndex(x => x.ParentCommentId);
         b.Property(x => x.Body).HasMaxLength(2000);
+        b.Property(x => x.MentionedUserIds).HasColumnType("uuid[]");
         b.HasOne(x => x.Post).WithMany(x => x.Comments).HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.ParentComment).WithMany(x => x.Replies).HasForeignKey(x => x.ParentCommentId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CommunityPostCommentLikeConfiguration : IEntityTypeConfiguration<CommunityPostCommentLike>
+{
+    public void Configure(EntityTypeBuilder<CommunityPostCommentLike> b)
+    {
+        b.ToTable("community_post_comment_likes");
+        b.HasIndex(x => new { x.CommentId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Comment).WithMany(x => x.Likes).HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 

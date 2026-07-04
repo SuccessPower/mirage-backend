@@ -121,7 +121,12 @@ public sealed record CommunityPostCommentResponse(
     string? AuthorAvatarUrl,
     Guid? ParentCommentId,
     string Body,
+    Guid[] MentionedUserIds,
+    int LikeCount,
+    bool LikedByMe,
     DateTimeOffset CreatedAt);
+
+public sealed record CommunityCommentLocationResponse(Guid CommunityId, Guid PostId, Guid CommentId);
 
 public sealed record CommunityAvatarPresetResponse(string Key, string Label, string Url);
 

@@ -112,19 +112,38 @@ public sealed class CommunityPostComment : Entity
 {
     private CommunityPostComment() { }
 
-    public CommunityPostComment(Guid postId, Guid authorUserId, string body, Guid? parentCommentId = null)
+    public CommunityPostComment(Guid postId, Guid authorUserId, string body, Guid? parentCommentId = null,
+        Guid[]? mentionedUserIds = null)
     {
         PostId = postId;
         AuthorUserId = authorUserId;
         Body = body.Trim();
         ParentCommentId = parentCommentId;
+        MentionedUserIds = mentionedUserIds ?? [];
     }
 
     public Guid PostId { get; private set; }
     public Guid AuthorUserId { get; private set; }
     public Guid? ParentCommentId { get; private set; }
     public string Body { get; private set; } = string.Empty;
+    public Guid[] MentionedUserIds { get; private set; } = [];
     public CommunityPost Post { get; private set; } = null!;
     public CommunityPostComment? ParentComment { get; private set; }
     public List<CommunityPostComment> Replies { get; private set; } = [];
+    public List<CommunityPostCommentLike> Likes { get; private set; } = [];
+}
+
+public sealed class CommunityPostCommentLike : Entity
+{
+    private CommunityPostCommentLike() { }
+
+    public CommunityPostCommentLike(Guid commentId, Guid userId)
+    {
+        CommentId = commentId;
+        UserId = userId;
+    }
+
+    public Guid CommentId { get; private set; }
+    public Guid UserId { get; private set; }
+    public CommunityPostComment Comment { get; private set; } = null!;
 }

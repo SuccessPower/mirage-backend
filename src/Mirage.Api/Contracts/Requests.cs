@@ -53,7 +53,8 @@ public sealed record CreateCommunityRequest(
     string? AvatarKey = null);
 public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? AvatarKey);
 public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null);
-public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null);
+public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
+    Guid[]? MentionedUserIds = null);
 
 public sealed record CreateEventRequest(
     string Title,

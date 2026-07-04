@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -26,6 +27,9 @@ internal static class CommunityEndpoints
         communities.MapDelete("/posts/{postId:guid}/likes", UnlikePost);
         communities.MapGet("/posts/{postId:guid}/comments", ListComments);
         communities.MapPost("/posts/{postId:guid}/comments", CreateComment);
+        communities.MapPost("/comments/{commentId:guid}/likes", LikeComment);
+        communities.MapDelete("/comments/{commentId:guid}/likes", UnlikeComment);
+        communities.MapGet("/comments/{commentId:guid}/location", GetCommentLocation);
         return api;
     }
 
@@ -397,6 +401,9 @@ internal static class CommunityEndpoints
                     .SingleOrDefault(),
                 comment.ParentCommentId,
                 comment.Body,
+                comment.MentionedUserIds,
+                comment.Likes.Count,
+                comment.Likes.Any(like => like.UserId == userId),
                 comment.CreatedAt))
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
@@ -404,7 +411,7 @@ internal static class CommunityEndpoints
     }
 
     private static async Task<IResult> CreateComment(Guid postId, CreateCommunityPostCommentRequest request,
-        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+        HttpContext context, IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Body))
             return EndpointHelpers.ValidationProblem(context, ("body", "Comment body is required."));
@@ -426,7 +433,17 @@ internal static class CommunityEndpoints
             if (!parentExists) return EndpointHelpers.NotFound(context, "Parent comment was not found.");
         }
 
-        var comment = new CommunityPostComment(postId, userId, request.Body, request.ParentCommentId);
+        var mentionedUserIds = Array.Empty<Guid>();
+        if (request.MentionedUserIds is { Length: > 0 })
+        {
+            mentionedUserIds = await db.CommunityMembers.AsNoTracking()
+                .Where(x => x.CommunityId == communityId.Value && x.LeftAt == null &&
+                            request.MentionedUserIds.Contains(x.UserId))
+                .Select(x => x.UserId)
+                .ToArrayAsync(cancellationToken);
+        }
+
+        var comment = new CommunityPostComment(postId, userId, request.Body, request.ParentCommentId, mentionedUserIds);
         db.CommunityPostComments.Add(comment);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -435,11 +452,76 @@ internal static class CommunityEndpoints
             .Select(x => new { x.DisplayName, x.AvatarUrl })
             .SingleOrDefaultAsync(cancellationToken);
 
+        foreach (var mentionedUserId in mentionedUserIds.Where(x => x != userId))
+        {
+            await notifications.NotifyAsync(mentionedUserId, NotificationType.Mention, "You were mentioned",
+                $"{author?.DisplayName ?? "Someone"} mentioned you in a comment.", comment.Id,
+                "CommunityPostComment", cancellationToken);
+        }
+
         var response = new CommunityPostCommentResponse(comment.Id, comment.PostId, comment.AuthorUserId,
             author?.DisplayName ?? "Member", author?.AvatarUrl, comment.ParentCommentId, comment.Body,
-            comment.CreatedAt);
+            comment.MentionedUserIds, 0, false, comment.CreatedAt);
         return ApiResults.Created(context, $"/api/v1/communities/posts/{postId}/comments/{comment.Id}",
             response, "Community post comment created successfully.");
+    }
+
+    private static async Task<IResult> LikeComment(Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var communityId = await db.CommunityPostComments.AsNoTracking()
+            .Where(x => x.Id == commentId)
+            .Select(x => (Guid?)x.Post.CommunityId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (communityId is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+
+        var isMember = await IsActiveMemberAsync(communityId.Value, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        var exists = await db.CommunityPostCommentLikes
+            .AnyAsync(x => x.CommentId == commentId && x.UserId == userId, cancellationToken);
+        if (!exists) db.CommunityPostCommentLikes.Add(new CommunityPostCommentLike(commentId, userId));
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { commentId }, "Comment liked successfully.");
+    }
+
+    private static async Task<IResult> UnlikeComment(Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var like = await db.CommunityPostCommentLikes
+            .SingleOrDefaultAsync(x => x.CommentId == commentId && x.UserId == userId, cancellationToken);
+        if (like is null) return EndpointHelpers.NotFound(context, "Comment like was not found.");
+
+        var communityId = await db.CommunityPostComments.AsNoTracking()
+            .Where(x => x.Id == commentId)
+            .Select(x => x.Post.CommunityId)
+            .SingleAsync(cancellationToken);
+        var isMember = await IsActiveMemberAsync(communityId, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        db.CommunityPostCommentLikes.Remove(like);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { commentId }, "Comment unliked successfully.");
+    }
+
+    private static async Task<IResult> GetCommentLocation(Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var location = await db.CommunityPostComments.AsNoTracking()
+            .Where(x => x.Id == commentId)
+            .Select(x => new { x.Post.CommunityId, x.PostId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (location is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+
+        var isMember = await IsActiveMemberAsync(location.CommunityId, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        var response = new CommunityCommentLocationResponse(location.CommunityId, location.PostId, commentId);
+        return ApiResults.Ok(context, response, "Comment location retrieved successfully.");
     }
 
     private static Task<bool> IsActiveMemberAsync(Guid communityId, Guid userId, IMirageDbContext db,

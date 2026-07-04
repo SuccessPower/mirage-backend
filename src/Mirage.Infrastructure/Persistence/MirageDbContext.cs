@@ -40,6 +40,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CommunityPost> CommunityPosts => Set<CommunityPost>();
     public DbSet<CommunityPostLike> CommunityPostLikes => Set<CommunityPostLike>();
     public DbSet<CommunityPostComment> CommunityPostComments => Set<CommunityPostComment>();
+    public DbSet<CommunityPostCommentLike> CommunityPostCommentLikes => Set<CommunityPostCommentLike>();
     public DbSet<MentorPost> MentorPosts => Set<MentorPost>();
     public DbSet<MentorGroupMessage> MentorGroupMessages => Set<MentorGroupMessage>();
     public DbSet<MentorMeeting> MentorMeetings => Set<MentorMeeting>();
