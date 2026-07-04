@@ -30,13 +30,37 @@ internal static class DateRequestEndpoints
         string? location, RelationshipIntent? intent, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
+        var userId = context.User.GetUserId();
         var query = db.DateRequests.AsNoTracking().Where(x => x.Status == DateRequestStatus.Open && x.EndsAt > DateTimeOffset.UtcNow);
         if (!string.IsNullOrWhiteSpace(location))
             query = query.Where(x => EF.Functions.ILike(x.LocationArea, $"%{location.Trim()}%"));
         if (intent.HasValue)
             query = query.Where(x => x.Intent == intent.Value);
+        var result = query.OrderBy(x => x.StartsAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.RequestorUserId,
+                x.Activity,
+                x.StartsAt,
+                x.EndsAt,
+                x.LocationArea,
+                x.Note,
+                x.ImageUrl,
+                x.Intent,
+                x.Capacity,
+                x.ItemsToBring,
+                x.Status,
+                x.RequestorIsVerified,
+                x.RequestorIsRecommended,
+                x.SelectedUserId,
+                AcceptanceCount = x.Acceptances.Count,
+                SelectedCount = x.Acceptances.Count(a => a.Status == DateAcceptanceStatus.Selected),
+                AcceptedByMe = x.Acceptances.Any(a => a.AcceptorUserId == userId && a.Status != DateAcceptanceStatus.Withdrawn),
+                x.CreatedAt
+            });
         return ApiResults.Ok(context,
-            await query.OrderBy(x => x.StartsAt).ToPagedResultAsync(page, pageSize, cancellationToken),
+            await result.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Date requests retrieved successfully.");
     }
 
@@ -75,7 +99,29 @@ internal static class DateRequestEndpoints
         var query = db.DateRequests.AsNoTracking()
             .Where(x => x.RequestorUserId == userId ||
                         x.Acceptances.Any(acceptance => acceptance.AcceptorUserId == userId))
-            .OrderByDescending(x => x.CreatedAt);
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.RequestorUserId,
+                x.Activity,
+                x.StartsAt,
+                x.EndsAt,
+                x.LocationArea,
+                x.Note,
+                x.ImageUrl,
+                x.Intent,
+                x.Capacity,
+                x.ItemsToBring,
+                x.Status,
+                x.RequestorIsVerified,
+                x.RequestorIsRecommended,
+                x.SelectedUserId,
+                AcceptanceCount = x.Acceptances.Count,
+                SelectedCount = x.Acceptances.Count(a => a.Status == DateAcceptanceStatus.Selected),
+                AcceptedByMe = x.Acceptances.Any(a => a.AcceptorUserId == userId && a.Status != DateAcceptanceStatus.Withdrawn),
+                x.CreatedAt
+            });
         return ApiResults.Ok(context,
             await query.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Your date requests were retrieved successfully.");
@@ -84,6 +130,7 @@ internal static class DateRequestEndpoints
     private static async Task<IResult> GetById(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
+        var userId = context.User.GetUserId();
         var request = await db.DateRequests.AsNoTracking()
             .Select(x => new
             {
@@ -101,6 +148,7 @@ internal static class DateRequestEndpoints
                 x.SelectedUserId,
                 AcceptanceCount = x.Acceptances.Count,
                 SelectedCount = x.Acceptances.Count(a => a.Status == DateAcceptanceStatus.Selected),
+                AcceptedByMe = x.Acceptances.Any(a => a.AcceptorUserId == userId && a.Status != DateAcceptanceStatus.Withdrawn),
                 x.CreatedAt
             }).SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         return request is null

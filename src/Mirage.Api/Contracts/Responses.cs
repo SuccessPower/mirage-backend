@@ -21,6 +21,7 @@ public sealed record AccountSessionResponse(
     bool IsActive);
 public sealed record ProfileResponse(
     Guid UserId,
+    string? Email,
     string DisplayName,
     int Age,
     DateOnly DateOfBirth,
@@ -40,7 +41,8 @@ public sealed record ProfileResponse(
     int? HeightInches,
     SkinTone? SkinTone,
     string? PreferredLanguage,
-    string? Occupation);
+    string? Occupation,
+    DateTimeOffset CreatedAt);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,

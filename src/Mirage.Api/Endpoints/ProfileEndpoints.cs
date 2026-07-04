@@ -3,6 +3,7 @@ using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Persistence;
 
 namespace Mirage.Api.Endpoints;
 
@@ -18,7 +19,7 @@ internal static class ProfileEndpoints
         return api;
     }
 
-    private static async Task<IResult> Discover(HttpContext context, IMirageDbContext db,
+    private static async Task<IResult> Discover(HttpContext context, MirageDbContext db,
         RelationshipIntent? intent, string? city,
         string? denomination, int? minAge, int? maxAge, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -80,8 +81,15 @@ internal static class ProfileEndpoints
         var recommendedUserIds = await recommendedIds
             .Where(userId => pagedProfiles.Items.Select(profile => profile.UserId).Contains(userId))
             .ToListAsync(cancellationToken);
+        var pagedUserIds = pagedProfiles.Items.Select(profile => profile.UserId).ToArray();
+        var emails = await db.Users.AsNoTracking()
+            .Where(user => pagedUserIds.Contains(user.Id))
+            .ToDictionaryAsync(user => user.Id, user => user.Email, cancellationToken);
         var response = new Mirage.Application.Common.PagedResult<ProfileResponse>(
-            pagedProfiles.Items.Select(profile => profile.ToResponse(recommendedUserIds.Contains(profile.UserId))).ToList(),
+            pagedProfiles.Items
+                .Select(profile => profile.ToResponse(recommendedUserIds.Contains(profile.UserId),
+                    emails.GetValueOrDefault(profile.UserId)))
+                .ToList(),
             pagedProfiles.Page,
             pagedProfiles.PageSize,
             pagedProfiles.TotalCount);
@@ -89,24 +97,28 @@ internal static class ProfileEndpoints
             "Profiles retrieved successfully.");
     }
 
-    private static async Task<IResult> GetById(Guid userId, HttpContext context, IMirageDbContext db,
+    private static async Task<IResult> GetById(Guid userId, HttpContext context, MirageDbContext db,
         CancellationToken cancellationToken)
     {
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         var recommended = await db.Recommendations.AnyAsync(
             x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
-        return ApiResults.Ok(context, profile.ToResponse(recommended), "Profile retrieved successfully.");
+        var email = await db.Users.AsNoTracking().Where(user => user.Id == userId)
+            .Select(user => user.Email).SingleOrDefaultAsync(cancellationToken);
+        return ApiResults.Ok(context, profile.ToResponse(recommended, email), "Profile retrieved successfully.");
     }
 
-    private static async Task<IResult> GetMine(HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetMine(HttpContext context, MirageDbContext db, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         var recommended = await db.Recommendations.AnyAsync(
             x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
-        return ApiResults.Ok(context, profile.ToResponse(recommended), "Profile retrieved successfully.");
+        var email = await db.Users.AsNoTracking().Where(user => user.Id == userId)
+            .Select(user => user.Email).SingleOrDefaultAsync(cancellationToken);
+        return ApiResults.Ok(context, profile.ToResponse(recommended, email), "Profile retrieved successfully.");
     }
 
     private static async Task<IResult> UpdateMine(UpdateProfileRequest request, HttpContext context,

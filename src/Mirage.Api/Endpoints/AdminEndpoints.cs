@@ -31,6 +31,7 @@ internal static class AdminEndpoints
         admin.MapPatch("/reports/{id:guid}/dismiss", DismissReport);
 
         // Independent counsellor verification (self-signup, no organisation)
+        admin.MapGet("/counsellors", ListCounsellors);
         admin.MapGet("/counsellors/pending", ListPendingIndependentCounsellors);
         admin.MapPatch("/counsellors/{id:guid}/approve", ApproveIndependentCounsellor);
         admin.MapPatch("/counsellors/{id:guid}/reject", RejectIndependentCounsellor);
@@ -234,6 +235,41 @@ internal static class AdminEndpoints
     }
 
     // --- Independent counsellor verification ---
+
+    private static async Task<IResult> ListCounsellors(HttpContext context, IMirageDbContext db,
+        bool? approved, bool? rejected, int page = 1, int pageSize = 100,
+        CancellationToken cancellationToken = default)
+    {
+        var query = db.Counsellors.AsNoTracking().AsQueryable();
+        if (approved.HasValue) query = query.Where(x => x.IsApproved == approved.Value);
+        if (rejected.HasValue) query = query.Where(x => x.IsRejected == rejected.Value);
+
+        var result = await query
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.UserId,
+                DisplayName = x.UserProfile.DisplayName,
+                x.UserProfile.City,
+                x.UserProfile.Country,
+                x.UserProfile.Denomination,
+                x.OrganisationId,
+                OrganisationName = x.Organisation != null ? x.Organisation.Name : null,
+                x.YearsExperience,
+                x.IsApproved,
+                x.IsRejected,
+                Status = x.IsApproved ? "Approved" : x.IsRejected ? "Rejected" : "Pending",
+                x.RejectionReason,
+                x.Specialisations,
+                x.Languages,
+                x.VerificationDocumentUrls,
+                x.CreatedAt
+            })
+            .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        return ApiResults.Ok(context, result, "Counsellors retrieved successfully.");
+    }
 
     private static async Task<IResult> ListPendingIndependentCounsellors(HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)

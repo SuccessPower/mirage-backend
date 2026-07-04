@@ -63,7 +63,15 @@ internal static class CalendarEndpoints
                 x.MeetingLink, null))
             .ToListAsync(cancellationToken);
 
-        var items = meetings.Concat(sessions).Concat(events).Concat(createdEvents).Concat(counsellingMeetings)
+        var dateRequests = await db.DateRequests.AsNoTracking()
+            .Where(x => x.RequestorUserId == userId ||
+                        x.Acceptances.Any(a => a.AcceptorUserId == userId &&
+                                               a.Status != DateAcceptanceStatus.Withdrawn &&
+                                               a.Status != DateAcceptanceStatus.Declined))
+            .Select(x => new CalendarItemResponse("DateRequest", x.Id, x.Activity, x.StartsAt, x.EndsAt, null, x.LocationArea))
+            .ToListAsync(cancellationToken);
+
+        var items = meetings.Concat(sessions).Concat(events).Concat(createdEvents).Concat(counsellingMeetings).Concat(dateRequests)
             .GroupBy(x => new { x.Source, x.SourceId })
             .Select(x => x.First())
             .OrderBy(x => x.StartsAt)
