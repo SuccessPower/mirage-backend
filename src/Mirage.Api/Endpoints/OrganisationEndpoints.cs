@@ -38,6 +38,7 @@ internal static class OrganisationEndpoints
         organisations.MapGet("/mine", ListMyMemberships).RequireAuthorization();
         organisations.MapPost("/{id:guid}/join", JoinOrganisation).RequireAuthorization();
         organisations.MapGet("/{id:guid}/members", ListMembers).RequireAuthorization(MiragePolicy.ChurchAdmin);
+        organisations.MapGet("/{id:guid}/roster", ListRoster).RequireAuthorization();
         organisations.MapPatch("/{id:guid}/members/{memberId:guid}/approve", ApproveMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
         organisations.MapPatch("/{id:guid}/members/{memberId:guid}/reject", RejectMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
         organisations.MapDelete("/{id:guid}/members/{memberId:guid}", RemoveMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
@@ -371,6 +372,24 @@ internal static class OrganisationEndpoints
                 m.AssignedMentorUserId, m.AssignedCounsellorUserId, m.CreatedAt))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, members, "Members retrieved successfully.");
+    }
+
+    private static async Task<IResult> ListRoster(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var isApprovedMember = await db.OrganisationMembers.AsNoTracking().AnyAsync(
+            x => x.OrganisationId == id && x.UserId == userId && x.Status == OrganisationMemberStatus.Approved,
+            cancellationToken);
+        if (!isApprovedMember) return EndpointHelpers.Forbidden(context);
+
+        var roster = await db.OrganisationMembers.AsNoTracking()
+            .Where(x => x.OrganisationId == id && x.Status == OrganisationMemberStatus.Approved)
+            .Join(db.Profiles.AsNoTracking(), m => m.UserId, p => p.UserId,
+                (m, p) => new OrganisationRosterMemberResponse(m.UserId, p.DisplayName, p.AvatarUrl))
+            .OrderBy(x => x.DisplayName)
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, roster, "Organisation members retrieved successfully.");
     }
 
     private static async Task<IResult> ApproveMember(Guid id, Guid memberId, HttpContext context, IMirageDbContext db,

@@ -60,6 +60,11 @@ public sealed record OrganisationMemberResponse(
     Guid? AssignedCounsellorUserId,
     DateTimeOffset CreatedAt);
 
+public sealed record OrganisationRosterMemberResponse(
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl);
+
 public sealed record OrganisationBranchResponse(Guid Id, string Name, string City, string Country, string? Address);
 
 public sealed record OrgEventResponse(
