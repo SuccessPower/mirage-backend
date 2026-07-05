@@ -90,6 +90,17 @@ internal static class CoupleEndpoints
         var profile2 = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == couple.User2Id, cancellationToken);
         profile1?.MarkMarried();
         profile2?.MarkMarried();
+
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.User1Id == couple.User1Id && x.User2Id == couple.User2Id, cancellationToken);
+        if (match is null)
+        {
+            match = new Match(couple.User1Id, couple.User2Id);
+            db.Matches.Add(match);
+        }
+        try { match.OpenForCouple(); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(couple.RequestedByUserId, NotificationType.NewMatch, "Couple link approved",

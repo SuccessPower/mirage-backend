@@ -45,6 +45,27 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
+    public void Couple_chat_opens_match_without_request_handshake()
+    {
+        var match = new Match(Guid.NewGuid(), Guid.NewGuid());
+        match.OpenForCouple();
+
+        Assert.Equal(MatchStatus.Active, match.Status);
+        Assert.Null(match.ChatRequestedByUserId);
+        Assert.NotNull(match.LastActivityAt);
+    }
+
+    [Fact]
+    public void Blocked_match_cannot_be_reopened_for_couple_chat()
+    {
+        var match = new Match(Guid.NewGuid(), Guid.NewGuid());
+        match.Block();
+
+        Assert.Throws<InvalidOperationException>(match.OpenForCouple);
+        Assert.Equal(MatchStatus.Blocked, match.Status);
+    }
+
+    [Fact]
     public void Recommendation_can_be_revoked()
     {
         var recommendation = new Recommendation(Guid.NewGuid(), Guid.NewGuid(), null, "Trusted member");

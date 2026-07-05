@@ -134,8 +134,14 @@ internal static class MatchingEndpoints
         IMirageDbContext db, CancellationToken cancellationToken)
     {
         var otherIds = matches.Select(m => m.User1Id == userId ? m.User2Id : m.User1Id).Distinct().ToList();
+        var approvedSpouseIds = await db.Couples.AsNoTracking()
+            .Where(c => c.Status == CoupleStatus.Approved && (c.User1Id == userId || c.User2Id == userId))
+            .Select(c => c.User1Id == userId ? c.User2Id : c.User1Id)
+            .ToListAsync(cancellationToken);
+
         var profiles = await db.Profiles.AsNoTracking()
-            .Where(p => otherIds.Contains(p.UserId) && p.RelationshipStatus != RelationshipStatus.Married)
+            .Where(p => otherIds.Contains(p.UserId)
+                && (p.RelationshipStatus != RelationshipStatus.Married || approvedSpouseIds.Contains(p.UserId)))
             .ToDictionaryAsync(p => p.UserId, cancellationToken);
 
         return matches.Select(m =>

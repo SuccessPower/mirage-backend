@@ -386,8 +386,9 @@ internal static class OrganisationEndpoints
         var roster = await db.OrganisationMembers.AsNoTracking()
             .Where(x => x.OrganisationId == id && x.Status == OrganisationMemberStatus.Approved)
             .Join(db.Profiles.AsNoTracking(), m => m.UserId, p => p.UserId,
-                (m, p) => new OrganisationRosterMemberResponse(m.UserId, p.DisplayName, p.AvatarUrl))
+                (m, p) => new { m.UserId, p.DisplayName, p.AvatarUrl })
             .OrderBy(x => x.DisplayName)
+            .Select(x => new OrganisationRosterMemberResponse(x.UserId, x.DisplayName, x.AvatarUrl))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, roster, "Organisation members retrieved successfully.");
     }

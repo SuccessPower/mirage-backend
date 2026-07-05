@@ -55,6 +55,16 @@ public sealed class Match : Entity
         Touch();
     }
 
+    public void OpenForCouple()
+    {
+        if (Status == MatchStatus.Blocked)
+            throw new InvalidOperationException("A blocked match cannot be opened for couple chat.");
+        Status = MatchStatus.Active;
+        ChatRequestedByUserId = null;
+        LastActivityAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
+
     public void Close()
     {
         Status = MatchStatus.Closed;
