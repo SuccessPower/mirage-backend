@@ -44,5 +44,6 @@ public enum NotificationType
     CounsellorApproved = 16,
     MembershipApproved = 17,
     MembershipRejected = 18,
-    Mention = 19
+    Mention = 19,
+    CounsellorApplicationReceived = 20
 }

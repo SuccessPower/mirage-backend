@@ -19,6 +19,7 @@ internal static class MentorEndpoints
         mentors.MapGet("/{id:guid}", GetMentor);
         mentors.MapGet("/me", GetMyProfile).RequireAuthorization(MiragePolicy.Mentor);
         mentors.MapPut("/me", UpdateMyProfile).RequireAuthorization(MiragePolicy.Mentor);
+        mentors.MapPost("/apply", Apply).RequireAuthorization();
 
         var requests = api.MapGroup("/mentorship/requests").WithTags("Mentorship").RequireAuthorization();
         requests.MapGet("/mine", ListMyRequests);
@@ -277,7 +278,9 @@ internal static class MentorEndpoints
         string? denomination, string? areaOfGuidance, bool freeOnly = false,
         int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
     {
+        var currentUserId = context.User.TryGetUserId();
         var query = db.Mentors.AsNoTracking().Where(x => x.IsApproved);
+        if (currentUserId is not null) query = query.Where(x => x.UserId != currentUserId);
         if (freeOnly) query = query.Where(x => x.AcceptsFreeSessions);
         if (!string.IsNullOrWhiteSpace(denomination))
             query = query.Where(x => EF.Functions.ILike(x.UserProfile.Denomination, $"%{denomination.Trim()}%"));
@@ -339,6 +342,27 @@ internal static class MentorEndpoints
         return profile is null
             ? EndpointHelpers.NotFound(context, "Mentor profile was not found.")
             : ApiResults.Ok(context, profile, "Mentor profile retrieved successfully.");
+    }
+
+    private static async Task<IResult> Apply(ApplyMentorRequest request, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (request.YearsMarried < 1)
+            return EndpointHelpers.ValidationProblem(context, ("yearsMarried", "At least 1 year of marriage is required."));
+        if (string.IsNullOrWhiteSpace(request.Testimony))
+            return EndpointHelpers.ValidationProblem(context, ("testimony", "Testimony is required."));
+
+        var userId = context.User.GetUserId();
+        if (await db.Mentors.AnyAsync(x => x.UserId == userId, cancellationToken))
+            return EndpointHelpers.Conflict(context, "You already have a mentor application on file.");
+
+        var profile = new MentorProfile(userId, request.YearsMarried, request.Testimony, request.AreasOfGuidance,
+            request.Languages);
+        db.Mentors.Add(profile);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/mentors/{profile.Id}", new { profile.Id },
+            "Mentor application submitted! An admin will review your profile before it appears publicly.");
     }
 
     private static async Task<IResult> UpdateMyProfile(UpdateMentorProfileRequest request, HttpContext context,

@@ -22,6 +22,7 @@ internal static class CounsellingEndpoints
         counsellors.MapGet("/me", GetMyCounsellorProfile).RequireAuthorization(MiragePolicy.Counsellor);
         counsellors.MapPut("/me", UpdateMyCounsellorProfile).RequireAuthorization(MiragePolicy.Counsellor);
         counsellors.MapPut("/me/verification-documents", UpdateVerificationDocuments).RequireAuthorization(MiragePolicy.Counsellor);
+        counsellors.MapPost("/apply", Apply).RequireAuthorization();
 
         var sessions = api.MapGroup("/sessions").WithTags("Counselling").RequireAuthorization();
         sessions.MapGet("/", ListSessions);
@@ -142,7 +143,9 @@ internal static class CounsellingEndpoints
         string? language, bool freeOnly = false, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
+        var currentUserId = context.User.TryGetUserId();
         var query = db.Counsellors.AsNoTracking().Where(x => x.IsApproved);
+        if (currentUserId is not null) query = query.Where(x => x.UserId != currentUserId);
         if (freeOnly) query = query.Where(x => x.AcceptsFreeSessions);
         if (!string.IsNullOrWhiteSpace(specialisation))
             query = query.Where(x => x.Specialisations.Any(value => EF.Functions.ILike(value, $"%{specialisation}%")));
@@ -338,6 +341,43 @@ internal static class CounsellingEndpoints
         return profile is null
             ? EndpointHelpers.NotFound(context, "Counsellor profile was not found.")
             : ApiResults.Ok(context, profile, "Counsellor profile retrieved successfully.");
+    }
+
+    private static async Task<IResult> Apply(ApplyCounsellorRequest request, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        if (request.YearsExperience < 0)
+            return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
+
+        var userId = context.User.GetUserId();
+        if (await db.Counsellors.AnyAsync(x => x.UserId == userId, cancellationToken))
+            return EndpointHelpers.Conflict(context, "You already have a counsellor application on file.");
+
+        Organisation? org = null;
+        if (request.OrganisationId is { } organisationId)
+        {
+            org = await db.Organisations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == organisationId, cancellationToken);
+            if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
+        }
+
+        var profile = new CounsellorProfile(userId, request.OrganisationId, request.YearsExperience,
+            request.Specialisations, request.Languages, request.VerificationDocumentUrls);
+        db.Counsellors.Add(profile);
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (org is not null)
+        {
+            var displayName = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+            await notifications.NotifyAsync(org.AdminUserId, NotificationType.CounsellorApplicationReceived,
+                "New counsellor application", $"{displayName ?? "A member"} applied to become a counsellor for {org.Name}.",
+                profile.Id, "Counsellor", cancellationToken);
+        }
+
+        return ApiResults.Created(context, $"/api/v1/counsellors/{profile.Id}", new { profile.Id },
+            org is not null
+                ? "Application submitted! Your organisation admin will review it."
+                : "Application submitted! A super admin will review your documents before you appear publicly.");
     }
 
     private static async Task<IResult> UpdateMyCounsellorProfile(UpdateCounsellorProfileRequest request,

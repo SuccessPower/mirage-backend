@@ -108,6 +108,17 @@ public sealed record RegisterIndependentCounsellorRequest(
 
 public sealed record UpdateVerificationDocumentsRequest(string[] DocumentUrls);
 public sealed record RejectCounsellorRequest(string Reason);
+public sealed record ApplyCounsellorRequest(
+    int YearsExperience,
+    string[] Specialisations,
+    string[] Languages,
+    Guid? OrganisationId = null,
+    string[]? VerificationDocumentUrls = null);
+public sealed record ApplyMentorRequest(
+    int YearsMarried,
+    string Testimony,
+    string[] AreasOfGuidance,
+    string[] Languages);
 public sealed record InviteCoupleRequest(string PartnerEmail);
 public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record ScheduleCounsellingMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);
