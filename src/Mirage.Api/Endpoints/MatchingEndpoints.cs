@@ -44,7 +44,25 @@ internal static class MatchingEndpoints
         if (!profileStatuses.Any(x => x.UserId == request.TargetUserId))
             return EndpointHelpers.NotFound(context, "Target profile was not found.");
         if (profileStatuses.Any(x => x.RelationshipStatus == RelationshipStatus.Married))
+        {
+            Match? coupleMatch;
+            try
+            {
+                coupleMatch = await TryOpenApprovedCoupleMatchAsync(
+                    sourceUserId, request.TargetUserId, db, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return EndpointHelpers.Conflict(context, ex.Message);
+            }
+
+            if (coupleMatch is not null)
+                return ApiResults.Ok(context,
+                    new { isMatch = true, matchId = coupleMatch.Id, status = coupleMatch.Status.ToString() },
+                    "Couple chat is ready.");
+
             return EndpointHelpers.Forbidden(context, "Married users can view and share profiles, but cannot engage in matching.");
+        }
         if (await db.Likes.AnyAsync(x => x.SourceUserId == sourceUserId && x.TargetUserId == request.TargetUserId,
                 cancellationToken))
             return EndpointHelpers.Conflict(context, "Like already recorded.");
@@ -179,6 +197,18 @@ internal static class MatchingEndpoints
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
 
+        var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        if (match.Status != MatchStatus.Active &&
+            await IsApprovedCoupleAsync(userId, otherUserId, db, cancellationToken))
+        {
+            try { match.OpenForCouple(); }
+            catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+
+            await db.SaveChangesAsync(cancellationToken);
+            return ApiResults.Ok(context, new { match.Id, match.Status, match.ChatRequestedByUserId },
+                "Couple chat is ready.");
+        }
+
         try
         {
             match.RequestChat(userId);
@@ -189,7 +219,6 @@ internal static class MatchingEndpoints
         }
         await db.SaveChangesAsync(cancellationToken);
 
-        var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
         var requesterName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
         await notifications.NotifyAsync(otherUserId, NotificationType.ChatRequestReceived, "New chat request",
@@ -224,6 +253,37 @@ internal static class MatchingEndpoints
             match.Id, "Match", cancellationToken);
 
         return ApiResults.Ok(context, new { match.Id, match.Status }, "Chat request approved successfully.");
+    }
+
+    private static async Task<Match?> TryOpenApprovedCoupleMatchAsync(Guid userId, Guid partnerUserId,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (!await IsApprovedCoupleAsync(userId, partnerUserId, db, cancellationToken))
+            return null;
+
+        var user1Id = userId.CompareTo(partnerUserId) < 0 ? userId : partnerUserId;
+        var user2Id = userId.CompareTo(partnerUserId) < 0 ? partnerUserId : userId;
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.User1Id == user1Id && x.User2Id == user2Id, cancellationToken);
+        if (match is null)
+        {
+            match = new Match(user1Id, user2Id);
+            db.Matches.Add(match);
+        }
+
+        match.OpenForCouple();
+        await db.SaveChangesAsync(cancellationToken);
+        return match;
+    }
+
+    private static Task<bool> IsApprovedCoupleAsync(Guid userId, Guid partnerUserId,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var user1Id = userId.CompareTo(partnerUserId) < 0 ? userId : partnerUserId;
+        var user2Id = userId.CompareTo(partnerUserId) < 0 ? partnerUserId : userId;
+        return db.Couples.AsNoTracking().AnyAsync(
+            x => x.User1Id == user1Id && x.User2Id == user2Id && x.Status == CoupleStatus.Approved,
+            cancellationToken);
     }
 
     private static async Task<IResult> BlockMatch(Guid id, HttpContext context, IMirageDbContext db,
