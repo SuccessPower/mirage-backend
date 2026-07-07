@@ -243,7 +243,8 @@ public sealed record CounsellingSessionResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     string? CounsellorPhoneNumber = null,
-    Guid? PaymentId = null);
+    Guid? PaymentId = null,
+    bool HasRating = false);
 
 public sealed record MatchResponse(
     Guid Id,

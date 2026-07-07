@@ -234,7 +234,8 @@ internal static class CounsellingEndpoints
                 x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
                     ? x.Counsellor.PhoneNumber
                     : null,
-                x.Payment != null ? x.Payment.Id : (Guid?)null))
+                x.Payment != null ? x.Payment.Id : (Guid?)null,
+                db.SessionRatings.Any(r => r.SessionId == x.Id)))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, sessions, "Counselling sessions retrieved successfully.");
     }
@@ -334,7 +335,8 @@ internal static class CounsellingEndpoints
                 x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
                     ? x.Counsellor.PhoneNumber
                     : null,
-                x.Payment != null ? x.Payment.Id : (Guid?)null))
+                x.Payment != null ? x.Payment.Id : (Guid?)null,
+                false))
             .SingleAsync(cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
@@ -535,7 +537,8 @@ internal static class CounsellingEndpoints
                 x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
                     ? x.Counsellor.PhoneNumber
                     : null,
-                x.Payment != null ? x.Payment.Id : (Guid?)null))
+                x.Payment != null ? x.Payment.Id : (Guid?)null,
+                db.SessionRatings.Any(r => r.SessionId == x.Id)))
             .SingleOrDefaultAsync(cancellationToken);
         return session is null
             ? EndpointHelpers.NotFound(context, "Session was not found.")
