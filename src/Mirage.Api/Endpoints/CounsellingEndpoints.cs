@@ -44,6 +44,7 @@ internal static class CounsellingEndpoints
         sessions.MapPost("/{id:guid}/messages", SendMessage);
         sessions.MapGet("/{id:guid}/meetings", ListMeetings);
         sessions.MapPost("/{id:guid}/meetings", ScheduleMeeting);
+        sessions.MapGet("/{id:guid}/video-token", GetVideoToken);
         return api;
     }
 
@@ -136,6 +137,27 @@ internal static class CounsellingEndpoints
 
         return ApiResults.Created(context, $"/api/v1/sessions/{id}/meetings/{meeting.Id}", new { meeting.Id },
             "Meeting scheduled successfully.");
+    }
+
+    private static async Task<IResult> GetVideoToken(Guid id, HttpContext context, MirageDbContext db,
+        JitsiService jitsi, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var session = await db.CounsellingSessions.AsNoTracking().Include(x => x.Counsellor)
+            .SingleAsync(x => x.Id == id, cancellationToken);
+        var displayName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken) ?? "Guest";
+        var email = await db.Users.AsNoTracking()
+            .Where(x => x.Id == userId).Select(x => x.Email).SingleOrDefaultAsync(cancellationToken);
+
+        var room = $"mirage-session-{id:N}";
+        var isModerator = session.Counsellor.UserId == userId;
+        var token = jitsi.CreateToken(userId, displayName, email, room, isModerator);
+
+        return ApiResults.Ok(context, new { AppId = jitsi.AppId, Room = room, Token = token },
+            "Video token issued successfully.");
     }
 
     private static async Task<IResult> ListCounsellors(HttpContext context, IMirageDbContext db,
