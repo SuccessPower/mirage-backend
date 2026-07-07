@@ -18,8 +18,11 @@ public sealed class FlutterwaveService(HttpClient http, IConfiguration configura
     private string SecretKey =>
         configuration["Flutterwave:SecretKey"] ?? throw new InvalidOperationException("Flutterwave:SecretKey is not configured.");
 
+    // subaccountId, when present, auto-splits the transaction at Flutterwave's end per the
+    // subaccount's configured split_value (the counsellor's share) — the remainder stays with
+    // the platform's main account. No subaccount yet means 100% lands in the platform account.
     public async Task<PaymentCheckoutResult> InitializeAsync(Payment payment, string payerEmail, PaymentMethod method,
-        string redirectUrl, CancellationToken cancellationToken)
+        string redirectUrl, string? subaccountId, CancellationToken cancellationToken)
     {
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
         var response = await http.PostAsJsonAsync($"{BaseUrl}/payments", new
@@ -30,11 +33,60 @@ public sealed class FlutterwaveService(HttpClient http, IConfiguration configura
             redirect_url = redirectUrl,
             customer = new { email = payerEmail },
             payment_options = method == PaymentMethod.BankTransfer ? "banktransfer" : "card",
+            subaccounts = subaccountId is null ? null : new[] { new { id = subaccountId } },
         }, cancellationToken);
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
         var link = body.GetProperty("data").GetProperty("link").GetString();
         return new PaymentCheckoutResult(link, null, null, null, null);
+    }
+
+    public async Task<IReadOnlyList<BankOption>> ListBanksAsync(CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.GetAsync($"{BaseUrl}/banks/NG", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        return body.GetProperty("data").EnumerateArray()
+            .Select(b => new BankOption(b.GetProperty("code").GetString() ?? "", b.GetProperty("name").GetString() ?? ""))
+            .Where(b => b.Code.Length > 0)
+            .ToList();
+    }
+
+    public async Task<ResolvedBankAccount?> ResolveAccountAsync(string bankCode, string accountNumber,
+        CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/accounts/resolve", new
+        {
+            account_number = accountNumber,
+            account_bank = bankCode,
+        }, cancellationToken);
+        if (!response.IsSuccessStatusCode) return null;
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        var name = body.GetProperty("data").GetProperty("account_name").GetString();
+        return name is null ? null : new ResolvedBankAccount(name);
+    }
+
+    // split_value is the fraction (0-1) of every transaction that settles to the counsellor's
+    // own bank account; the remainder stays with the platform's main account.
+    public async Task<string> CreateSubaccountAsync(string businessName, string bankCode, string accountNumber,
+        decimal counsellorSplitFraction, CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/subaccounts", new
+        {
+            account_bank = bankCode,
+            account_number = accountNumber,
+            business_name = businessName,
+            split_type = "percentage",
+            split_value = counsellorSplitFraction,
+        }, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        var id = body.GetProperty("data").GetProperty("id");
+        return id.ValueKind == JsonValueKind.Number ? id.GetInt64().ToString() : id.GetString()
+            ?? throw new InvalidOperationException("Flutterwave did not return a subaccount id.");
     }
 
     public bool VerifySignature(string? signatureHeader)

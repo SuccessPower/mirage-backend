@@ -21,8 +21,13 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
     private string SecretKey =>
         configuration["Paystack:SecretKey"] ?? throw new InvalidOperationException("Paystack:SecretKey is not configured.");
 
+    // subaccountCode, when present, auto-splits the transaction at Paystack's end: the
+    // subaccount's configured percentage_charge portion (our platform commission) stays with
+    // the main account, the rest settles directly to the counsellor's own bank account.
+    // Payments for a counsellor with no subaccount yet fall back to 100% landing in the
+    // platform's own account (see PaymentEndpoints.Initialize).
     public async Task<PaymentCheckoutResult> InitializeAsync(Payment payment, string payerEmail, PaymentMethod method,
-        CancellationToken cancellationToken)
+        string? subaccountCode, CancellationToken cancellationToken)
     {
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
         var amountInMinorUnits = (long)Math.Round(payment.Amount * 100);
@@ -35,6 +40,7 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
                 amount = amountInMinorUnits,
                 currency = payment.Currency,
                 reference = payment.ProviderReference,
+                subaccount = subaccountCode,
             }, cancellationToken);
             response.EnsureSuccessStatusCode();
             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
@@ -49,6 +55,7 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
             amount = amountInMinorUnits,
             currency = payment.Currency,
             reference = payment.ProviderReference,
+            subaccount = subaccountCode,
             bank_transfer = new { account_expires_at = expiresAt },
         }, cancellationToken);
         chargeResponse.EnsureSuccessStatusCode();
@@ -61,6 +68,50 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
                 : null;
 
         return new PaymentCheckoutResult(null, Get("account_number"), Get("bank"), Get("account_name"), expiresAt);
+    }
+
+    public async Task<IReadOnlyList<BankOption>> ListBanksAsync(CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.GetAsync($"{BaseUrl}/bank?country=nigeria&currency=NGN", cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        return body.GetProperty("data").EnumerateArray()
+            .Select(b => new BankOption(b.GetProperty("code").GetString() ?? "", b.GetProperty("name").GetString() ?? ""))
+            .Where(b => b.Code.Length > 0)
+            .ToList();
+    }
+
+    public async Task<ResolvedBankAccount?> ResolveAccountAsync(string bankCode, string accountNumber,
+        CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.GetAsync(
+            $"{BaseUrl}/bank/resolve?account_number={Uri.EscapeDataString(accountNumber)}&bank_code={Uri.EscapeDataString(bankCode)}",
+            cancellationToken);
+        if (!response.IsSuccessStatusCode) return null;
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        var name = body.GetProperty("data").GetProperty("account_name").GetString();
+        return name is null ? null : new ResolvedBankAccount(name);
+    }
+
+    // percentage_charge is the share Paystack routes to the MAIN (platform) account on every
+    // split transaction against this subaccount — the remainder settles to the counsellor.
+    public async Task<string> CreateSubaccountAsync(string businessName, string bankCode, string accountNumber,
+        decimal platformCommissionPercentage, CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/subaccount", new
+        {
+            business_name = businessName,
+            settlement_bank = bankCode,
+            account_number = accountNumber,
+            percentage_charge = platformCommissionPercentage,
+        }, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        return body.GetProperty("data").GetProperty("subaccount_code").GetString()
+            ?? throw new InvalidOperationException("Paystack did not return a subaccount code.");
     }
 
     public bool VerifySignature(string rawBody, string? signatureHeader)

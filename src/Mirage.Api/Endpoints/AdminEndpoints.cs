@@ -278,7 +278,8 @@ internal static class AdminEndpoints
                 x.ChargingRequested,
                 x.AverageRating,
                 x.RatingCount,
-                TotalCompletedSessions = db.CounsellingSessions.Count(s => s.CounsellorId == x.Id && s.Status == SessionStatus.Completed)
+                TotalCompletedSessions = db.CounsellingSessions.Count(s => s.CounsellorId == x.Id && s.Status == SessionStatus.Completed),
+                HasPayoutAccount = x.PaystackSubaccountCode != null || x.FlutterwaveSubaccountId != null
             })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 

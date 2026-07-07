@@ -25,6 +25,9 @@ internal static class CounsellingEndpoints
         counsellors.MapPost("/apply", Apply).RequireAuthorization();
         counsellors.MapPost("/me/charging-request", RequestCharging).RequireAuthorization(MiragePolicy.Counsellor);
         counsellors.MapGet("/me/ratings", GetMyRatings).RequireAuthorization(MiragePolicy.Counsellor);
+        counsellors.MapGet("/me/banks", ListBanks).RequireAuthorization(MiragePolicy.Counsellor);
+        counsellors.MapPost("/me/resolve-bank-account", ResolveBankAccount).RequireAuthorization(MiragePolicy.Counsellor);
+        counsellors.MapPost("/me/bank-account", SaveBankAccount).RequireAuthorization(MiragePolicy.Counsellor);
 
         var sessions = api.MapGroup("/sessions").WithTags("Counselling").RequireAuthorization();
         sessions.MapGet("/", ListSessions);
@@ -427,7 +430,11 @@ internal static class CounsellingEndpoints
                 x.SupportsVideoCalls,
                 x.AverageRating,
                 x.RatingCount,
-                x.ChargingRequested
+                x.ChargingRequested,
+                x.BankName,
+                x.BankAccountNumber,
+                x.BankAccountName,
+                HasPayoutAccount = x.PaystackSubaccountCode != null || x.FlutterwaveSubaccountId != null
             })
             .SingleOrDefaultAsync(cancellationToken);
         return profile is null
@@ -446,6 +453,75 @@ internal static class CounsellingEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id, profile.ChargingRequested },
             "Charging request submitted — an admin will review it shortly.");
+    }
+
+    private static async Task<IResult> ListBanks(HttpContext context, PaystackService paystack,
+        CancellationToken cancellationToken)
+    {
+        var banks = await paystack.ListBanksAsync(cancellationToken);
+        return ApiResults.Ok(context, banks, "Banks retrieved successfully.");
+    }
+
+    private static async Task<IResult> ResolveBankAccount(ResolveBankAccountRequest request, HttpContext context,
+        PaystackService paystack, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.BankCode) || string.IsNullOrWhiteSpace(request.AccountNumber))
+            return EndpointHelpers.ValidationProblem(context, ("accountNumber", "Bank and account number are required."));
+        var resolved = await paystack.ResolveAccountAsync(request.BankCode, request.AccountNumber, cancellationToken);
+        return resolved is null
+            ? EndpointHelpers.Problem(context, StatusCodes.Status400BadRequest,
+                "Could not resolve account", "Check the bank and account number and try again.")
+            : ApiResults.Ok(context, resolved, "Account resolved successfully.");
+    }
+
+    // Creates a payout subaccount on both providers from one bank entry, so the counsellor
+    // only has to do this once regardless of which provider a future client pays through.
+    // Best-effort: a failure on one provider doesn't block the other from succeeding.
+    private static async Task<IResult> SaveBankAccount(SaveBankAccountRequest request, HttpContext context,
+        IMirageDbContext db, PaystackService paystack, FlutterwaveService flutterwave,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.BankCode) || string.IsNullOrWhiteSpace(request.AccountNumber)
+            || string.IsNullOrWhiteSpace(request.AccountName))
+            return EndpointHelpers.ValidationProblem(context, ("accountNumber", "Bank, account number, and account name are required."));
+
+        var userId = context.User.GetUserId();
+        var profile = await db.Counsellors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
+
+        profile.SetBankAccount(request.BankCode, request.BankName, request.AccountNumber, request.AccountName);
+
+        var platformCommissionPercentage = Payment.PlatformCommissionRate * 100;
+        var counsellorSplitFraction = 1 - Payment.PlatformCommissionRate;
+        var errors = new List<string>();
+
+        try
+        {
+            var subaccountCode = await paystack.CreateSubaccountAsync(request.AccountName, request.BankCode,
+                request.AccountNumber, platformCommissionPercentage, cancellationToken);
+            profile.SetPaystackSubaccountCode(subaccountCode);
+        }
+        catch (Exception) { errors.Add("Paystack"); }
+
+        try
+        {
+            var subaccountId = await flutterwave.CreateSubaccountAsync(request.AccountName, request.BankCode,
+                request.AccountNumber, counsellorSplitFraction, cancellationToken);
+            profile.SetFlutterwaveSubaccountId(subaccountId);
+        }
+        catch (Exception) { errors.Add("Flutterwave"); }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (errors.Count == 2)
+            return EndpointHelpers.Problem(context, StatusCodes.Status502BadGateway,
+                "Payout setup failed", "Could not set up payouts with either provider. Please try again.");
+
+        return ApiResults.Ok(context,
+            new { profile.Id, profile.PaystackSubaccountCode, profile.FlutterwaveSubaccountId },
+            errors.Count == 0
+                ? "Payout account saved successfully."
+                : $"Payout account saved, but setup with {errors[0]} failed — payments through that provider won't split until this is retried.");
     }
 
     private static async Task<IResult> GetMyRatings(HttpContext context, IMirageDbContext db,

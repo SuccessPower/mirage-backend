@@ -37,6 +37,14 @@ internal static class PaymentEndpoints
             return EndpointHelpers.Problem(context, StatusCodes.Status400BadRequest,
                 "Missing email", "Your account has no email address on file.");
 
+        // No subaccount configured yet means the full amount lands in the platform account
+        // instead of auto-splitting — booking already requires HasPayoutAccount before a
+        // counsellor can charge at all, so this is a defensive fallback, not the normal path.
+        var counsellor = await db.Counsellors.AsNoTracking()
+            .Where(x => x.Id == payment.CounsellorId)
+            .Select(x => new { x.PaystackSubaccountCode, x.FlutterwaveSubaccountId })
+            .SingleAsync(cancellationToken);
+
         var reference = $"mirage-{payment.Id:N}-{DateTimeOffset.UtcNow.Ticks}";
         payment.Initialize(request.Provider, request.Method, reference);
         await db.SaveChangesAsync(cancellationToken);
@@ -45,9 +53,10 @@ internal static class PaymentEndpoints
         {
             var result = request.Provider switch
             {
-                PaymentProvider.Paystack => await paystack.InitializeAsync(payment, payerEmail, request.Method, cancellationToken),
+                PaymentProvider.Paystack => await paystack.InitializeAsync(payment, payerEmail, request.Method,
+                    counsellor.PaystackSubaccountCode, cancellationToken),
                 PaymentProvider.Flutterwave => await flutterwave.InitializeAsync(payment, payerEmail, request.Method,
-                    $"{configuration["Frontend:BaseUrl"]}/counselling", cancellationToken),
+                    $"{configuration["Frontend:BaseUrl"]}/counselling", counsellor.FlutterwaveSubaccountId, cancellationToken),
                 _ => throw new InvalidOperationException("Unsupported payment provider."),
             };
             return ApiResults.Ok(context, result, "Payment initialized successfully.");

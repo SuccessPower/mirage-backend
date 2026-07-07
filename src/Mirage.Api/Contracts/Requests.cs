@@ -119,6 +119,8 @@ public sealed record ApplyMentorRequest(
     string Testimony,
     string[] AreasOfGuidance,
     string[] Languages);
+public sealed record ResolveBankAccountRequest(string BankCode, string AccountNumber);
+public sealed record SaveBankAccountRequest(string BankCode, string BankName, string AccountNumber, string AccountName);
 public sealed record InviteCoupleRequest(string PartnerEmail);
 public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record ScheduleCounsellingMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);

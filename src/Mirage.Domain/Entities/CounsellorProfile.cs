@@ -43,6 +43,13 @@ public sealed class CounsellorProfile : Entity
     public double AverageRating { get; private set; }
     public int RatingCount { get; private set; }
     public bool ChargingRequested { get; private set; }
+    public string? BankCode { get; private set; }
+    public string? BankName { get; private set; }
+    public string? BankAccountNumber { get; private set; }
+    public string? BankAccountName { get; private set; }
+    public string? PaystackSubaccountCode { get; private set; }
+    public string? FlutterwaveSubaccountId { get; private set; }
+    public bool HasPayoutAccount => PaystackSubaccountCode is not null || FlutterwaveSubaccountId is not null;
     public Organisation? Organisation { get; private set; }
     public UserProfile UserProfile { get; private set; } = null!;
 
@@ -80,6 +87,8 @@ public sealed class CounsellorProfile : Entity
         if (!IsEligibleToCharge)
             throw new InvalidOperationException(
                 $"Counsellor must complete {MinimumFreeSessionsBeforeCharging} free sessions before requesting to charge.");
+        if (!HasPayoutAccount)
+            throw new InvalidOperationException("Add a payout bank account before requesting to charge for sessions.");
         if (!AcceptsFreeSessions)
             throw new InvalidOperationException("Counsellor is already charging.");
         if (ChargingRequested)
@@ -87,6 +96,18 @@ public sealed class CounsellorProfile : Entity
         ChargingRequested = true;
         Touch();
     }
+
+    public void SetBankAccount(string bankCode, string bankName, string accountNumber, string accountName)
+    {
+        BankCode = bankCode.Trim();
+        BankName = bankName.Trim();
+        BankAccountNumber = accountNumber.Trim();
+        BankAccountName = accountName.Trim();
+        Touch();
+    }
+
+    public void SetPaystackSubaccountCode(string code) { PaystackSubaccountCode = code; Touch(); }
+    public void SetFlutterwaveSubaccountId(string id) { FlutterwaveSubaccountId = id; Touch(); }
 
     public void ApproveCharging()
     {

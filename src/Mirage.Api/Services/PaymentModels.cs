@@ -11,3 +11,7 @@ public sealed record PaymentCheckoutResult(
     DateTimeOffset? ExpiresAt);
 
 public sealed record PaymentWebhookResult(string? ProviderReference, bool Successful, string? ProviderTransactionId);
+
+public sealed record BankOption(string Code, string Name);
+
+public sealed record ResolvedBankAccount(string AccountName);

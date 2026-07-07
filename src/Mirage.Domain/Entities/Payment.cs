@@ -5,6 +5,11 @@ namespace Mirage.Domain.Entities;
 
 public sealed class Payment : Entity
 {
+    // Platform's cut of every paid session. Snapshotted onto each Payment at creation time
+    // (PlatformFeeAmount/CounsellorAmount below) so a future rate change never retroactively
+    // alters the split on already-created payments.
+    public const decimal PlatformCommissionRate = 0.15m;
+
     private Payment() { }
 
     public Payment(Guid counsellingSessionId, Guid payerUserId, Guid counsellorId, decimal amount, string currency)
@@ -14,12 +19,16 @@ public sealed class Payment : Entity
         CounsellorId = counsellorId;
         Amount = amount;
         Currency = currency.Trim().ToUpperInvariant();
+        PlatformFeeAmount = Math.Round(amount * PlatformCommissionRate, 2);
+        CounsellorAmount = amount - PlatformFeeAmount;
     }
 
     public Guid CounsellingSessionId { get; private set; }
     public Guid PayerUserId { get; private set; }
     public Guid CounsellorId { get; private set; }
     public decimal Amount { get; private set; }
+    public decimal PlatformFeeAmount { get; private set; }
+    public decimal CounsellorAmount { get; private set; }
     public string Currency { get; private set; } = string.Empty;
     public PaymentProvider? Provider { get; private set; }
     public PaymentMethod? Method { get; private set; }
