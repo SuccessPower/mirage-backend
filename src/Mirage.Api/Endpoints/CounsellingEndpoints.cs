@@ -23,6 +23,8 @@ internal static class CounsellingEndpoints
         counsellors.MapPut("/me", UpdateMyCounsellorProfile).RequireAuthorization(MiragePolicy.Counsellor);
         counsellors.MapPut("/me/verification-documents", UpdateVerificationDocuments).RequireAuthorization(MiragePolicy.Counsellor);
         counsellors.MapPost("/apply", Apply).RequireAuthorization();
+        counsellors.MapPost("/me/charging-request", RequestCharging).RequireAuthorization(MiragePolicy.Counsellor);
+        counsellors.MapGet("/me/ratings", GetMyRatings).RequireAuthorization(MiragePolicy.Counsellor);
 
         var sessions = api.MapGroup("/sessions").WithTags("Counselling").RequireAuthorization();
         sessions.MapGet("/", ListSessions);
@@ -424,12 +426,56 @@ internal static class CounsellingEndpoints
                 x.SupportsVoiceCalls,
                 x.SupportsVideoCalls,
                 x.AverageRating,
-                x.RatingCount
+                x.RatingCount,
+                x.ChargingRequested
             })
             .SingleOrDefaultAsync(cancellationToken);
         return profile is null
             ? EndpointHelpers.NotFound(context, "Counsellor profile was not found.")
             : ApiResults.Ok(context, profile, "Counsellor profile retrieved successfully.");
+    }
+
+    private static async Task<IResult> RequestCharging(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var profile = await db.Counsellors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
+        try { profile.RequestCharging(); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { profile.Id, profile.ChargingRequested },
+            "Charging request submitted — an admin will review it shortly.");
+    }
+
+    private static async Task<IResult> GetMyRatings(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var counsellor = await db.Counsellors.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new { x.Id })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
+
+        var ratings = await db.SessionRatings.AsNoTracking()
+            .Join(db.CounsellingSessions.AsNoTracking(), r => r.SessionId, s => s.Id, (r, s) => new { r, s })
+            .Where(x => x.s.CounsellorId == counsellor.Id)
+            .OrderByDescending(x => x.r.CreatedAt)
+            .Select(x => new
+            {
+                x.r.Id,
+                x.r.SessionId,
+                x.s.Topic,
+                x.r.Rating,
+                x.r.Comment,
+                x.r.CreatedAt,
+                ClientDisplayName = x.s.ClientAnonymous
+                    ? "Anonymous client"
+                    : db.Profiles.Where(p => p.UserId == x.s.ClientUserId).Select(p => p.DisplayName).SingleOrDefault() ?? "Client"
+            })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, ratings, "Ratings retrieved successfully.");
     }
 
     private static async Task<IResult> Apply(ApplyCounsellorRequest request, HttpContext context, IMirageDbContext db,

@@ -17,6 +17,9 @@ public sealed class CounsellorProfile : Entity
         Specialisations = specialisations.Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
         Languages = languages.Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
         VerificationDocumentUrls = (verificationDocumentUrls ?? []).Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
+        // Every counsellor starts on free sessions; charging is only ever switched on via
+        // RequestCharging + admin ApproveCharging.
+        AcceptsFreeSessions = true;
     }
 
     public Guid UserId { get; private set; }
@@ -39,6 +42,7 @@ public sealed class CounsellorProfile : Entity
     public bool SupportsVideoCalls { get; private set; } = true;
     public double AverageRating { get; private set; }
     public int RatingCount { get; private set; }
+    public bool ChargingRequested { get; private set; }
     public Organisation? Organisation { get; private set; }
     public UserProfile UserProfile { get; private set; } = null!;
 
@@ -57,15 +61,45 @@ public sealed class CounsellorProfile : Entity
         Touch();
     }
 
+    // Counsellors can always self-service back to free sessions (strictly more generous),
+    // but switching to charging requires admin approval — see RequestCharging/ApproveCharging.
     public void UpdateProfile(int yearsExperience, string[] specialisations, string[] languages, bool acceptsFreeSessions)
     {
-        if (!acceptsFreeSessions && !IsEligibleToCharge)
+        if (!acceptsFreeSessions && AcceptsFreeSessions)
             throw new InvalidOperationException(
-                $"Counsellor must complete {MinimumFreeSessionsBeforeCharging} free sessions before they can stop accepting free sessions.");
+                "Submit a charging request for admin approval instead of disabling free sessions directly.");
         YearsExperience = yearsExperience;
         Specialisations = specialisations.Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
         Languages = languages.Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
         AcceptsFreeSessions = acceptsFreeSessions;
+        Touch();
+    }
+
+    public void RequestCharging()
+    {
+        if (!IsEligibleToCharge)
+            throw new InvalidOperationException(
+                $"Counsellor must complete {MinimumFreeSessionsBeforeCharging} free sessions before requesting to charge.");
+        if (!AcceptsFreeSessions)
+            throw new InvalidOperationException("Counsellor is already charging.");
+        if (ChargingRequested)
+            throw new InvalidOperationException("A charging request is already pending.");
+        ChargingRequested = true;
+        Touch();
+    }
+
+    public void ApproveCharging()
+    {
+        if (!ChargingRequested) throw new InvalidOperationException("No pending charging request to approve.");
+        AcceptsFreeSessions = false;
+        ChargingRequested = false;
+        Touch();
+    }
+
+    public void DeclineChargingRequest()
+    {
+        if (!ChargingRequested) throw new InvalidOperationException("No pending charging request to decline.");
+        ChargingRequested = false;
         Touch();
     }
 

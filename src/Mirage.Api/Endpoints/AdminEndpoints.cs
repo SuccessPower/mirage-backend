@@ -35,6 +35,8 @@ internal static class AdminEndpoints
         admin.MapGet("/counsellors/pending", ListPendingIndependentCounsellors);
         admin.MapPatch("/counsellors/{id:guid}/approve", ApproveIndependentCounsellor);
         admin.MapPatch("/counsellors/{id:guid}/reject", RejectIndependentCounsellor);
+        admin.MapPatch("/counsellors/{id:guid}/approve-charging", ApproveCounsellorCharging);
+        admin.MapPatch("/counsellors/{id:guid}/decline-charging", DeclineCounsellorCharging);
 
         // Mentor verification
         admin.MapGet("/mentors", ListMentorProfiles);
@@ -269,11 +271,41 @@ internal static class AdminEndpoints
                 x.Specialisations,
                 x.Languages,
                 x.VerificationDocumentUrls,
-                x.CreatedAt
+                x.CreatedAt,
+                x.AcceptsFreeSessions,
+                x.CompletedFreeSessionsCount,
+                IsEligibleToCharge = x.CompletedFreeSessionsCount >= CounsellorProfile.MinimumFreeSessionsBeforeCharging,
+                x.ChargingRequested,
+                x.AverageRating,
+                x.RatingCount,
+                TotalCompletedSessions = db.CounsellingSessions.Count(s => s.CounsellorId == x.Id && s.Status == SessionStatus.Completed)
             })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         return ApiResults.Ok(context, result, "Counsellors retrieved successfully.");
+    }
+
+    private static async Task<IResult> ApproveCounsellorCharging(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor was not found.");
+        try { counsellor.ApproveCharging(); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { counsellor.Id, counsellor.AcceptsFreeSessions },
+            "Counsellor is now approved to charge for sessions.");
+    }
+
+    private static async Task<IResult> DeclineCounsellorCharging(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor was not found.");
+        try { counsellor.DeclineChargingRequest(); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { counsellor.Id, counsellor.ChargingRequested }, "Charging request declined.");
     }
 
     private static async Task<IResult> ListPendingIndependentCounsellors(HttpContext context, IMirageDbContext db,
