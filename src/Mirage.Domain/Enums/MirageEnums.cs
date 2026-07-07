@@ -13,7 +13,10 @@ public enum CommunityMemberRole { Owner = 1, Moderator = 2, Member = 3 }
 public enum DateRequestStatus { Open = 1, Confirmed = 2, Completed = 3, Cancelled = 4, Expired = 5 }
 public enum DateAcceptanceStatus { Pending = 1, Selected = 2, Declined = 3, Withdrawn = 4 }
 public enum SessionType { Group = 1, Personal = 2, Couples = 3 }
-public enum SessionStatus { Requested = 1, Scheduled = 2, InProgress = 3, Completed = 4, Cancelled = 5, Declined = 6 }
+public enum SessionStatus { Requested = 1, Scheduled = 2, InProgress = 3, Completed = 4, Cancelled = 5, Declined = 6, AwaitingPayment = 7 }
+public enum PaymentProvider { Paystack = 1, Flutterwave = 2 }
+public enum PaymentMethod { Card = 1, BankTransfer = 2 }
+public enum PaymentStatus { Pending = 1, Successful = 2, Failed = 3 }
 public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3, PendingRequest = 4 }
 public enum MessageType { Text = 1, Image = 2 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }
@@ -45,5 +48,6 @@ public enum NotificationType
     MembershipApproved = 17,
     MembershipRejected = 18,
     Mention = 19,
-    CounsellorApplicationReceived = 20
+    CounsellorApplicationReceived = 20,
+    PaymentConfirmed = 21
 }

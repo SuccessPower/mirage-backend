@@ -32,6 +32,13 @@ public sealed class CounsellorProfile : Entity
     public string[] Specialisations { get; private set; } = [];
     public string[] Languages { get; private set; } = [];
     public string[] VerificationDocumentUrls { get; private set; } = [];
+    public string? PhoneNumber { get; private set; }
+    public decimal? PriceAmount { get; private set; }
+    public string? PriceCurrency { get; private set; }
+    public bool SupportsVoiceCalls { get; private set; } = true;
+    public bool SupportsVideoCalls { get; private set; } = true;
+    public double AverageRating { get; private set; }
+    public int RatingCount { get; private set; }
     public Organisation? Organisation { get; private set; }
     public UserProfile UserProfile { get; private set; } = null!;
 
@@ -67,6 +74,24 @@ public sealed class CounsellorProfile : Entity
     public void RecordCompletedFreeSession()
     {
         if (AcceptsFreeSessions) CompletedFreeSessionsCount++;
+        Touch();
+    }
+
+    public void SetContactAndPricing(string? phoneNumber, decimal? priceAmount, string? priceCurrency,
+        bool supportsVoiceCalls, bool supportsVideoCalls)
+    {
+        PhoneNumber = string.IsNullOrWhiteSpace(phoneNumber) ? null : phoneNumber.Trim();
+        PriceAmount = priceAmount;
+        PriceCurrency = string.IsNullOrWhiteSpace(priceCurrency) ? null : priceCurrency.Trim().ToUpperInvariant();
+        SupportsVoiceCalls = supportsVoiceCalls;
+        SupportsVideoCalls = supportsVideoCalls;
+        Touch();
+    }
+
+    public void RecordRating(int rating)
+    {
+        AverageRating = (AverageRating * RatingCount + rating) / (RatingCount + 1);
+        RatingCount++;
         Touch();
     }
 }

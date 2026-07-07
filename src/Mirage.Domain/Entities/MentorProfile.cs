@@ -23,6 +23,7 @@ public sealed class MentorProfile : Entity
     public bool IsApproved { get; private set; }
     public bool AcceptsFreeSessions { get; private set; } = true;
     public bool AllowMenteesToSeeEachOther { get; private set; }
+    public string? PhoneNumber { get; private set; }
     public UserProfile UserProfile { get; private set; } = null!;
 
     public void Approve() { IsApproved = true; Touch(); }
@@ -36,6 +37,12 @@ public sealed class MentorProfile : Entity
         Languages = languages.Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
         AcceptsFreeSessions = acceptsFreeSessions;
         AllowMenteesToSeeEachOther = allowMenteesToSeeEachOther;
+        Touch();
+    }
+
+    public void SetPhoneNumber(string? phoneNumber)
+    {
+        PhoneNumber = string.IsNullOrWhiteSpace(phoneNumber) ? null : phoneNumber.Trim();
         Touch();
     }
 }

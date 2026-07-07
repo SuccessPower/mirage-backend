@@ -18,6 +18,7 @@ public static class MirageEndpointExtensions
         api.MapNotificationEndpoints();
         api.MapMilestoneEndpoints();
         api.MapUploadEndpoints();
+        api.MapPaymentEndpoints();
         api.MapAdminEndpoints();
         return endpoints;
     }

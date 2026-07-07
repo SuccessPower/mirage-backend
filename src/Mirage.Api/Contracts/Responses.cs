@@ -177,7 +177,8 @@ public sealed record MentorRequestDetailResponse(
     string? MenteeAvatarUrl,
     string Message,
     MentorRequestStatus Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? MentorPhoneNumber = null);
 
 public sealed record MentorMenteeResponse(
     Guid MentorRequestId,
@@ -240,7 +241,9 @@ public sealed record CounsellingSessionResponse(
     Guid? PartnerUserId,
     bool PartnerAccepted,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    string? CounsellorPhoneNumber = null,
+    Guid? PaymentId = null);
 
 public sealed record MatchResponse(
     Guid Id,

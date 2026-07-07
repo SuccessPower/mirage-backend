@@ -363,6 +363,23 @@ public sealed class CounsellingSessionConfiguration : IEntityTypeConfiguration<C
     }
 }
 
+public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
+{
+    public void Configure(EntityTypeBuilder<Payment> b)
+    {
+        b.ToTable("payments");
+        b.HasIndex(x => x.CounsellingSessionId).IsUnique();
+        b.HasIndex(x => x.ProviderReference).IsUnique();
+        b.Property(x => x.Currency).HasMaxLength(3);
+        b.Property(x => x.ProviderReference).HasMaxLength(200);
+        b.Property(x => x.ProviderTransactionId).HasMaxLength(200);
+        b.HasOne(x => x.CounsellingSession).WithOne(x => x.Payment)
+            .HasForeignKey<Payment>(x => x.CounsellingSessionId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PayerUserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class AnonymityAuditLogConfiguration : IEntityTypeConfiguration<AnonymityAuditLog>
 {
     public void Configure(EntityTypeBuilder<AnonymityAuditLog> b)

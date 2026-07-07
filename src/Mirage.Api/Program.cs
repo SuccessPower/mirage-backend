@@ -96,6 +96,8 @@ builder.Services.AddMemoryCache();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<NotificationService>();
+builder.Services.AddHttpClient<PaystackService>();
+builder.Services.AddHttpClient<FlutterwaveService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()

@@ -33,6 +33,23 @@ public sealed class CounsellingSession : Entity
     public Guid? PartnerUserId { get; private set; }
     public bool PartnerAccepted { get; private set; }
     public CounsellorProfile Counsellor { get; private set; } = null!;
+    public Payment? Payment { get; private set; }
+
+    public void MarkAwaitingPayment()
+    {
+        if (Status != SessionStatus.Requested)
+            throw new InvalidOperationException("Only a newly requested session can await payment.");
+        Status = SessionStatus.AwaitingPayment;
+        Touch();
+    }
+
+    public void ConfirmPayment()
+    {
+        if (Status != SessionStatus.AwaitingPayment)
+            throw new InvalidOperationException("Only a session awaiting payment can be confirmed as paid.");
+        Status = SessionStatus.Requested;
+        Touch();
+    }
 
     public void InvitePartner(Guid partnerUserId)
     {

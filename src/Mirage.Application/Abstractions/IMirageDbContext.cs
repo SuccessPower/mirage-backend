@@ -44,5 +44,6 @@ public interface IMirageDbContext
     DbSet<OrganisationAdminInvite> OrganisationAdminInvites { get; }
     DbSet<CounsellingMessage> CounsellingMessages { get; }
     DbSet<CounsellingMeeting> CounsellingMeetings { get; }
+    DbSet<Payment> Payments { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

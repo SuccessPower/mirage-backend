@@ -293,6 +293,7 @@ internal static class MentorEndpoints
             DisplayName = x.UserProfile.DisplayName,
             x.UserProfile.Denomination,
             x.UserProfile.City,
+            x.UserProfile.AvatarUrl,
             x.YearsMarried,
             x.AcceptsFreeSessions,
             x.AreasOfGuidance,
@@ -306,6 +307,11 @@ internal static class MentorEndpoints
     private static async Task<IResult> GetMentor(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
+        var currentUserId = context.User.TryGetUserId();
+        var isAcceptedMentee = currentUserId is not null && await db.MentorRequests.AsNoTracking()
+            .AnyAsync(x => x.MentorProfileId == id && x.MenteeUserId == currentUserId
+                && x.Status == MentorRequestStatus.Accepted, cancellationToken);
+
         var mentor = await db.Mentors.AsNoTracking()
             .Where(x => x.Id == id && x.IsApproved)
             .Select(x => new
@@ -314,11 +320,13 @@ internal static class MentorEndpoints
                 DisplayName = x.UserProfile.DisplayName,
                 x.UserProfile.Denomination,
                 x.UserProfile.City,
+                x.UserProfile.AvatarUrl,
                 x.YearsMarried,
                 x.Testimony,
                 x.AcceptsFreeSessions,
                 x.AreasOfGuidance,
-                x.Languages
+                x.Languages,
+                PhoneNumber = isAcceptedMentee ? x.PhoneNumber : null
             })
             .SingleOrDefaultAsync(cancellationToken);
         return mentor is null
@@ -336,7 +344,7 @@ internal static class MentorEndpoints
             {
                 x.Id, x.UserId, x.YearsMarried, x.Testimony,
                 x.IsApproved, x.AcceptsFreeSessions, x.AllowMenteesToSeeEachOther,
-                x.AreasOfGuidance, x.Languages, x.CreatedAt
+                x.AreasOfGuidance, x.Languages, x.PhoneNumber, x.CreatedAt
             })
             .SingleOrDefaultAsync(cancellationToken);
         return profile is null
@@ -378,6 +386,7 @@ internal static class MentorEndpoints
         if (profile is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
         profile.UpdateProfile(request.YearsMarried, request.Testimony, request.AreasOfGuidance, request.Languages,
             request.AcceptsFreeSessions, request.AllowMenteesToSeeEachOther);
+        profile.SetPhoneNumber(request.PhoneNumber);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Mentor profile updated successfully.");
     }
@@ -481,6 +490,7 @@ internal static class MentorEndpoints
                 MentorUserId = x.Mentor.UserId,
                 MentorName = x.Mentor.UserProfile.DisplayName,
                 MentorAvatarUrl = x.Mentor.UserProfile.AvatarUrl,
+                MentorPhoneNumber = x.Status == MentorRequestStatus.Accepted ? x.Mentor.PhoneNumber : null,
                 x.MenteeUserId,
                 x.Message,
                 x.Status,
@@ -496,7 +506,7 @@ internal static class MentorEndpoints
 
         var response = new MentorRequestDetailResponse(request.Id, request.MentorProfileId, request.MentorUserId,
             request.MentorName, request.MentorAvatarUrl, request.MenteeUserId, mentee?.DisplayName ?? "Mentee",
-            mentee?.AvatarUrl, request.Message, request.Status, request.CreatedAt);
+            mentee?.AvatarUrl, request.Message, request.Status, request.CreatedAt, request.MentorPhoneNumber);
         return ApiResults.Ok(context, response, "Mentor request retrieved successfully.");
     }
 

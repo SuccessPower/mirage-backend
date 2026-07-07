@@ -156,12 +156,19 @@ internal static class CounsellingEndpoints
             x.Id,
             x.UserProfile.DisplayName,
             x.UserProfile.Denomination,
+            x.UserProfile.AvatarUrl,
             Organisation = x.Organisation != null ? x.Organisation.Name : null,
             x.YearsExperience,
             IsAnonymous = false,
             x.AcceptsFreeSessions,
             x.Specialisations,
-            x.Languages
+            x.Languages,
+            x.PriceAmount,
+            x.PriceCurrency,
+            x.SupportsVoiceCalls,
+            x.SupportsVideoCalls,
+            x.AverageRating,
+            x.RatingCount
         });
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
@@ -201,31 +208,24 @@ internal static class CounsellingEndpoints
                 x.PartnerUserId,
                 x.PartnerAccepted,
                 x.CreatedAt,
-                x.UpdatedAt))
+                x.UpdatedAt,
+                x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
+                    ? x.Counsellor.PhoneNumber
+                    : null,
+                x.Payment != null ? x.Payment.Id : (Guid?)null))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, sessions, "Counselling sessions retrieved successfully.");
     }
 
-    private static async Task<IResult> Book(BookSessionRequest request, HttpContext context,
-        MirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    private static async Task FinalizeBookedSessionAsync(CounsellingSession session, BookSessionRequest request,
+        MirageDbContext db, NotificationService notifications, Guid clientUserId, Guid counsellorUserId,
+        CancellationToken cancellationToken)
     {
-        if (request.ScheduledAt <= DateTimeOffset.UtcNow)
-            return EndpointHelpers.ValidationProblem(context,
-                ("scheduledAt", "Session must be scheduled in the future."));
-        var counsellor = await db.Counsellors.AsNoTracking()
-            .Where(x => x.Id == request.CounsellorId && x.IsApproved)
-            .Select(x => new { x.UserId })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (counsellor is null) return EndpointHelpers.NotFound(context, "Approved counsellor was not found.");
-        var userId = context.User.GetUserId();
-        var session = new CounsellingSession(request.CounsellorId, userId, request.Type,
-            request.ScheduledAt, request.Topic, false, request.ClientAnonymous);
-        db.CounsellingSessions.Add(session);
-        db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, userId,
+        db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, clientUserId,
             $"Session requested; clientAnonymous={request.ClientAnonymous}; counsellorAnonymous=false"));
         await db.SaveChangesAsync(cancellationToken);
 
-        await notifications.NotifyAsync(counsellor.UserId, NotificationType.SessionBooked,
+        await notifications.NotifyAsync(counsellorUserId, NotificationType.SessionBooked,
             "New session request", $"A new {request.Type.ToString().ToLowerInvariant()} session was requested.",
             session.Id, "CounsellingSession", cancellationToken);
 
@@ -245,6 +245,44 @@ internal static class CounsellingEndpoints
                     session.Id, "CounsellingSession", cancellationToken);
             }
         }
+    }
+
+    private static async Task<IResult> Book(BookSessionRequest request, HttpContext context,
+        MirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        if (request.ScheduledAt <= DateTimeOffset.UtcNow)
+            return EndpointHelpers.ValidationProblem(context,
+                ("scheduledAt", "Session must be scheduled in the future."));
+        var counsellor = await db.Counsellors.AsNoTracking()
+            .Where(x => x.Id == request.CounsellorId && x.IsApproved)
+            .Select(x => new { x.UserId, x.AcceptsFreeSessions, x.PriceAmount, x.PriceCurrency })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (counsellor is null) return EndpointHelpers.NotFound(context, "Approved counsellor was not found.");
+
+        var requiresPayment = !counsellor.AcceptsFreeSessions;
+        if (requiresPayment && (counsellor.PriceAmount is null || string.IsNullOrWhiteSpace(counsellor.PriceCurrency)))
+            return EndpointHelpers.Problem(context, StatusCodes.Status400BadRequest,
+                "Pricing not configured", "This counsellor has not set a session price yet.");
+
+        var userId = context.User.GetUserId();
+        var session = new CounsellingSession(request.CounsellorId, userId, request.Type,
+            request.ScheduledAt, request.Topic, false, request.ClientAnonymous);
+        db.CounsellingSessions.Add(session);
+
+        Payment? payment = null;
+        if (requiresPayment)
+        {
+            session.MarkAwaitingPayment();
+            payment = new Payment(session.Id, userId, request.CounsellorId, counsellor.PriceAmount!.Value,
+                counsellor.PriceCurrency!);
+            db.Payments.Add(payment);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (!requiresPayment)
+            await FinalizeBookedSessionAsync(session, request, db, notifications, userId, counsellor.UserId,
+                cancellationToken);
 
         var response = await db.CounsellingSessions.AsNoTracking()
             .Where(x => x.Id == session.Id)
@@ -270,11 +308,18 @@ internal static class CounsellingEndpoints
                 x.PartnerUserId,
                 x.PartnerAccepted,
                 x.CreatedAt,
-                x.UpdatedAt))
+                x.UpdatedAt,
+                x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
+                    ? x.Counsellor.PhoneNumber
+                    : null,
+                x.Payment != null ? x.Payment.Id : (Guid?)null))
             .SingleAsync(cancellationToken);
 
-        return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}", response,
-            "Counselling session requested successfully.");
+        return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
+            new { Session = response, RequiresPayment = requiresPayment, PaymentId = payment?.Id },
+            requiresPayment
+                ? "Payment is required to confirm this session."
+                : "Counselling session requested successfully.");
     }
 
     private static async Task<IResult> ConsentToTrustUnlock(Guid id, HttpContext context,
@@ -296,6 +341,11 @@ internal static class CounsellingEndpoints
     private static async Task<IResult> GetCounsellor(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
+        var currentUserId = context.User.TryGetUserId();
+        var isAcceptedClient = currentUserId is not null && await db.CounsellingSessions.AsNoTracking()
+            .AnyAsync(x => x.CounsellorId == id && x.ClientUserId == currentUserId
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled, cancellationToken);
+
         var counsellor = await db.Counsellors.AsNoTracking()
             .Where(x => x.Id == id && x.IsApproved)
             .Select(x => new
@@ -303,12 +353,20 @@ internal static class CounsellingEndpoints
                 x.Id,
                 x.UserProfile.DisplayName,
                 x.UserProfile.Denomination,
+                x.UserProfile.AvatarUrl,
                 Organisation = x.Organisation != null ? x.Organisation.Name : null,
                 x.YearsExperience,
                 IsAnonymous = false,
                 x.AcceptsFreeSessions,
                 x.Specialisations,
-                x.Languages
+                x.Languages,
+                x.PriceAmount,
+                x.PriceCurrency,
+                x.SupportsVoiceCalls,
+                x.SupportsVideoCalls,
+                x.AverageRating,
+                x.RatingCount,
+                PhoneNumber = isAcceptedClient ? x.PhoneNumber : null
             })
             .SingleOrDefaultAsync(cancellationToken);
         return counsellor is null
@@ -335,7 +393,14 @@ internal static class CounsellingEndpoints
                 x.CompletedFreeSessionsCount,
                 IsEligibleToCharge = x.CompletedFreeSessionsCount >= CounsellorProfile.MinimumFreeSessionsBeforeCharging,
                 x.Specialisations,
-                x.Languages
+                x.Languages,
+                x.PhoneNumber,
+                x.PriceAmount,
+                x.PriceCurrency,
+                x.SupportsVoiceCalls,
+                x.SupportsVideoCalls,
+                x.AverageRating,
+                x.RatingCount
             })
             .SingleOrDefaultAsync(cancellationToken);
         return profile is null
@@ -391,6 +456,8 @@ internal static class CounsellingEndpoints
         try { profile.UpdateProfile(request.YearsExperience, request.Specialisations, request.Languages, request.AcceptsFreeSessions); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         profile.ToggleAnonymity(false);
+        profile.SetContactAndPricing(request.PhoneNumber, request.PriceAmount, request.PriceCurrency,
+            request.SupportsVoiceCalls, request.SupportsVideoCalls);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Counsellor profile updated successfully.");
     }
@@ -442,7 +509,11 @@ internal static class CounsellingEndpoints
                 x.PartnerUserId,
                 x.PartnerAccepted,
                 x.CreatedAt,
-                x.UpdatedAt))
+                x.UpdatedAt,
+                x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
+                    ? x.Counsellor.PhoneNumber
+                    : null,
+                x.Payment != null ? x.Payment.Id : (Guid?)null))
             .SingleOrDefaultAsync(cancellationToken);
         return session is null
             ? EndpointHelpers.NotFound(context, "Session was not found.")
@@ -523,13 +594,14 @@ internal static class CounsellingEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var session = await db.CounsellingSessions.Include(x => x.Counsellor)
+        var session = await db.CounsellingSessions.Include(x => x.Counsellor).Include(x => x.Payment)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (session is null) return EndpointHelpers.NotFound(context, "Session was not found.");
         if (session.ClientUserId != userId && session.Counsellor.UserId != userId)
             return EndpointHelpers.Forbidden(context);
         try { session.Cancel(); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        session.Payment?.MarkFailed();
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(id, userId, "SessionCancelled"));
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { session.Id, session.Status }, "Session cancelled.");
@@ -595,6 +667,10 @@ internal static class CounsellingEndpoints
             return EndpointHelpers.Conflict(context, "Session has already been rated.");
         var rating = new SessionRating(id, userId, request.Rating, request.Comment);
         db.SessionRatings.Add(rating);
+
+        var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == session.CounsellorId, cancellationToken);
+        counsellor?.RecordRating(request.Rating);
+
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/sessions/{id}/rating", new { rating.Id }, "Session rated successfully.");
     }

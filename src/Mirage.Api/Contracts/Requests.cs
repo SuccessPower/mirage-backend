@@ -144,14 +144,20 @@ public sealed record UpdateCounsellorProfileRequest(
     string[] Specialisations,
     string[] Languages,
     bool AcceptsFreeSessions,
-    bool IsAnonymous);
+    bool IsAnonymous,
+    string? PhoneNumber = null,
+    decimal? PriceAmount = null,
+    string? PriceCurrency = null,
+    bool SupportsVoiceCalls = true,
+    bool SupportsVideoCalls = true);
 public sealed record UpdateMentorProfileRequest(
     int YearsMarried,
     string Testimony,
     string[] AreasOfGuidance,
     string[] Languages,
     bool AcceptsFreeSessions,
-    bool AllowMenteesToSeeEachOther);
+    bool AllowMenteesToSeeEachOther,
+    string? PhoneNumber = null);
 public sealed record RequestMentorRequest(string Message);
 public sealed record SendMentorMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record AddSessionNoteRequest(string Content);
@@ -172,3 +178,5 @@ public sealed record BookSessionRequest(
     bool ClientAnonymous,
     string Topic,
     string? PartnerEmail = null);
+
+public sealed record InitializePaymentRequest(PaymentProvider Provider, PaymentMethod Method);

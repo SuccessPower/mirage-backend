@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260707084008_AddCounsellorAndMentorContactPricingRating")]
+    partial class AddCounsellorAndMentorContactPricingRating
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1593,70 +1596,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("organisation_members", "mirage");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.Payment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("Amount")
-                        .HasColumnType("numeric");
-
-                    b.Property<Guid>("CounsellingSessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CounsellorId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("character varying(3)");
-
-                    b.Property<int?>("Method")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset?>("PaidAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("PayerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("Provider")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ProviderReference")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("ProviderTransactionId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CounsellingSessionId")
-                        .IsUnique();
-
-                    b.HasIndex("CounsellorId");
-
-                    b.HasIndex("PayerUserId");
-
-                    b.HasIndex("ProviderReference")
-                        .IsUnique();
-
-                    b.ToTable("payments", "mirage");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.Recommendation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2553,29 +2492,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Organisation");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.Payment", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.CounsellingSession", "CounsellingSession")
-                        .WithOne("Payment")
-                        .HasForeignKey("Mirage.Domain.Entities.Payment", "CounsellingSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Domain.Entities.CounsellorProfile", null)
-                        .WithMany()
-                        .HasForeignKey("CounsellorId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("PayerUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CounsellingSession");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.Recommendation", b =>
                 {
                     b.HasOne("Mirage.Domain.Entities.Organisation", "Organisation")
@@ -2680,11 +2596,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Likes");
 
                     b.Navigation("Replies");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellingSession", b =>
-                {
-                    b.Navigation("Payment");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.DateRequest", b =>
