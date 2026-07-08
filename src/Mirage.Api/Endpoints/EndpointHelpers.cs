@@ -1,15 +1,24 @@
 using System.Diagnostics;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Middleware;
 using Mirage.Application.Common;
 using Mirage.Domain.Entities;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
 internal static class EndpointHelpers
 {
+    public static Task<ApplicationUser?> FindByEmailOrUsernameAsync(
+        this UserManager<ApplicationUser> userManager, string emailOrUsername)
+    {
+        var value = emailOrUsername.Trim();
+        return value.Contains('@') ? userManager.FindByEmailAsync(value) : userManager.FindByNameAsync(value);
+    }
+
     public static int Age(DateOnly birthDate)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);

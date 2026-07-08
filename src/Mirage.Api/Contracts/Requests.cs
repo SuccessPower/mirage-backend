@@ -20,6 +20,8 @@ public sealed record RegisterRequest(
 public sealed record LoginRequest(string Email, string Password);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+public sealed record ForgotPasswordRequest(string Email);
+public sealed record ResetPasswordRequest(string Email, string Token, string NewPassword);
 public sealed record UpdateProfileRequest(
     string DisplayName,
     string City,
@@ -55,6 +57,8 @@ public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? Ava
 public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);
+public sealed record InviteToGatheringRequest(string EmailOrUsername);
+public sealed record UpdateCommunityPostCommentRequest(string Body);
 
 public sealed record CreateEventRequest(
     string Title,

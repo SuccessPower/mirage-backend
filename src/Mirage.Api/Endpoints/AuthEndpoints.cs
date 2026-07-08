@@ -7,6 +7,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Mirage.Api.Contracts;
 using Mirage.Api.Middleware;
 using Mirage.Api.Security;
+using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
@@ -29,6 +30,8 @@ internal static class AuthEndpoints
         group.MapPost("/logout", Logout).RequireAuthorization();
         group.MapPost("/logout-all", LogoutAll).RequireAuthorization();
         group.MapPost("/change-password", ChangePassword).RequireAuthorization();
+        group.MapPost("/forgot-password", ForgotPassword);
+        group.MapPost("/reset-password", ResetPassword);
         group.MapGet("/sessions", GetSessions).RequireAuthorization();
         return api;
     }
@@ -38,6 +41,7 @@ internal static class AuthEndpoints
         IPasswordHasher<ApplicationUser> passwordHasher,
         IMemoryCache cache,
         MirageDbContext db, TokenService tokens, IConfiguration configuration, ILoggerFactory loggerFactory,
+        IEmailService emailService,
         CancellationToken cancellationToken)
     {
         var errors = Validate(request);
@@ -106,6 +110,8 @@ internal static class AuthEndpoints
                     request.RelationshipStatus, request.Occupation));
                 db.RefreshTokens.Add(refreshToken);
                 await db.SaveChangesAsync(cancellationToken);
+
+                await emailService.SendWelcomeEmailAsync(user.Email!, request.DisplayName, cancellationToken);
 
                 var databaseMs = registrationStopwatch.Elapsed.TotalMilliseconds - databaseStarted;
                 ResponseTimeMiddleware.SetServerTiming(context, "password", passwordHashingMs);
@@ -481,7 +487,8 @@ internal static class AuthEndpoints
     }
 
     private static async Task<IResult> ChangePassword(ChangePasswordRequest request, HttpContext context,
-        UserManager<ApplicationUser> userManager, MirageDbContext db, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, MirageDbContext db, IEmailService emailService,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
             return EndpointHelpers.ValidationProblem(context,
@@ -501,8 +508,73 @@ internal static class AuthEndpoints
             .ToListAsync(cancellationToken);
         foreach (var token in tokens) token.Revoke();
         await db.SaveChangesAsync(cancellationToken);
+
+        var displayName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        if (user.Email is not null)
+            await emailService.SendPasswordChangedEmailAsync(user.Email, displayName ?? "there", cancellationToken);
+
         return ApiResults.Ok(context, new { revokedSessions = tokens.Count },
             "Password changed successfully. Sign in again on all devices.");
+    }
+
+    private static async Task<IResult> ForgotPassword(ForgotPasswordRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, MirageDbContext db, IEmailService emailService,
+        IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return EndpointHelpers.ValidationProblem(context, ("email", "Email is required."));
+
+        var user = await userManager.FindByEmailAsync(request.Email.Trim());
+        if (user?.Email is not null)
+        {
+            var token = await userManager.GeneratePasswordResetTokenAsync(user);
+            var displayName = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+            var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
+            var resetUrl = $"{appUrl}/reset-password?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+            await emailService.SendPasswordResetEmailAsync(user.Email, displayName ?? "there", resetUrl, cancellationToken);
+        }
+
+        // Always report success, whether or not the email is registered, so this endpoint can't be
+        // used to enumerate accounts.
+        return ApiResults.Ok(context, new { }, "If an account exists for that email, a reset link has been sent.");
+    }
+
+    private static async Task<IResult> ResetPassword(ResetPasswordRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, MirageDbContext db, IEmailService emailService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Token) ||
+            string.IsNullOrWhiteSpace(request.NewPassword))
+            return EndpointHelpers.ValidationProblem(context,
+                ("password", "Email, token, and new password are required."));
+
+        var user = await userManager.FindByEmailAsync(request.Email.Trim());
+        if (user is null)
+            return EndpointHelpers.ValidationProblem(context,
+                new Dictionary<string, string[]> { ["token"] = ["This reset link is invalid or has expired."] },
+                "Password reset failed.");
+
+        var result = await userManager.ResetPasswordAsync(user, request.Token, request.NewPassword);
+        if (!result.Succeeded)
+            return EndpointHelpers.ValidationProblem(context,
+                result.Errors.GroupBy(x => x.Code)
+                    .ToDictionary(x => x.Key, x => x.Select(error => error.Description).ToArray()),
+                "Password reset failed.");
+
+        var tokens = await db.RefreshTokens
+            .Where(x => x.UserId == user.Id && x.RevokedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow)
+            .ToListAsync(cancellationToken);
+        foreach (var token in tokens) token.Revoke();
+        await db.SaveChangesAsync(cancellationToken);
+
+        var displayName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        if (user.Email is not null)
+            await emailService.SendPasswordChangedEmailAsync(user.Email, displayName ?? "there", cancellationToken);
+
+        return ApiResults.Ok(context, new { }, "Password reset successfully. Sign in with your new password.");
     }
 
     private static async Task<IResult> GetSessions(HttpContext context, MirageDbContext db,

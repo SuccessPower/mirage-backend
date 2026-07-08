@@ -50,6 +50,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CounsellingMessage> CounsellingMessages => Set<CounsellingMessage>();
     public DbSet<CounsellingMeeting> CounsellingMeetings => Set<CounsellingMeeting>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<GatheringInvite> GatheringInvites => Set<GatheringInvite>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

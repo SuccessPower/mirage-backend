@@ -105,6 +105,17 @@ public sealed record CommunityMemberResponse(
     CommunityMemberRole Role,
     DateTimeOffset JoinedAt);
 
+public sealed record GatheringInviteResponse(
+    Guid Id,
+    GatheringInviteKind Kind,
+    Guid TargetId,
+    string TargetTitle,
+    Guid InviterUserId,
+    string InviterDisplayName,
+    string? InviterAvatarUrl,
+    GatheringInviteStatus Status,
+    DateTimeOffset CreatedAt);
+
 public sealed record CommunityPostResponse(
     Guid Id,
     Guid CommunityId,
@@ -129,6 +140,8 @@ public sealed record CommunityPostCommentResponse(
     Guid[] MentionedUserIds,
     int LikeCount,
     bool LikedByMe,
+    bool IsEdited,
+    bool IsDeleted,
     DateTimeOffset CreatedAt);
 
 public sealed record CommunityCommentLocationResponse(Guid CommunityId, Guid PostId, Guid CommentId);

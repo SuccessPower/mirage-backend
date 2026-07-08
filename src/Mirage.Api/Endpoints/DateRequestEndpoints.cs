@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
@@ -5,6 +6,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
@@ -19,6 +21,7 @@ internal static class DateRequestEndpoints
         group.MapGet("/{id:guid}/acceptances", GetAcceptances);
         group.MapPost("/", Create);
         group.MapPost("/{id:guid}/accept", Accept);
+        group.MapPost("/{id:guid}/invites", Invite);
         group.MapDelete("/{id:guid}/accept", WithdrawAcceptance);
         group.MapPost("/{id:guid}/select/{userId:guid}", Select);
         group.MapDelete("/{id:guid}", Cancel);
@@ -212,6 +215,50 @@ internal static class DateRequestEndpoints
             request.Id, "DateRequest", cancellationToken);
 
         return ApiResults.Ok(context, new { dateRequestId = id }, "Date request accepted successfully.");
+    }
+
+    private static async Task<IResult> Invite(Guid id, InviteToGatheringRequest request, HttpContext context,
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.EmailOrUsername))
+            return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "Email or username is required."));
+
+        var userId = context.User.GetUserId();
+        var dateRequest = await db.DateRequests.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (dateRequest is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
+        if (dateRequest.RequestorUserId != userId) return EndpointHelpers.Forbidden(context);
+        if (dateRequest.Status != DateRequestStatus.Open)
+            return EndpointHelpers.Conflict(context, "This gathering is no longer open for invites.");
+
+        var invitee = await userManager.FindByEmailOrUsernameAsync(request.EmailOrUsername);
+        if (invitee is null)
+            return EndpointHelpers.NotFound(context, "No user was found with that email or username.");
+        if (invitee.Id == userId)
+            return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "You cannot invite yourself."));
+
+        var alreadyResponded = await db.DateRequestAcceptances.AnyAsync(
+            x => x.DateRequestId == id && x.AcceptorUserId == invitee.Id, cancellationToken);
+        if (alreadyResponded)
+            return EndpointHelpers.Conflict(context, "This user has already responded to this gathering.");
+
+        var hasPendingInvite = await db.GatheringInvites.AnyAsync(
+            x => x.Kind == GatheringInviteKind.DateRequest && x.TargetId == id && x.InviteeUserId == invitee.Id &&
+                 x.Status == GatheringInviteStatus.Pending, cancellationToken);
+        if (hasPendingInvite) return EndpointHelpers.Conflict(context, "An invite is already pending for this user.");
+
+        var invite = new GatheringInvite(GatheringInviteKind.DateRequest, id, userId, invitee.Id);
+        db.GatheringInvites.Add(invite);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var inviterName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(invitee.Id, NotificationType.GatheringInviteReceived,
+            "Gathering invite", $"{inviterName ?? "Someone"} invited you to \"{dateRequest.Activity}\".",
+            invite.Id, "GatheringInvite", cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/invites/{invite.Id}", new { invite.Id },
+            "Invite sent successfully.");
     }
 
     private static async Task<IResult> Select(Guid id, Guid userId, HttpContext context, IMirageDbContext db,

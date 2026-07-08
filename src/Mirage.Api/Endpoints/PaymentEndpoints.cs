@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Api.Services;
+using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Persistence;
@@ -82,7 +83,8 @@ internal static class PaymentEndpoints
     }
 
     private static async Task<IResult> ConfirmPaymentAsync(Guid paymentId, string providerTransactionId,
-        MirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+        MirageDbContext db, NotificationService notifications, IEmailService emailService,
+        CancellationToken cancellationToken)
     {
         var payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken);
         if (payment is null || payment.Status == PaymentStatus.Successful) return Results.Ok();
@@ -100,6 +102,16 @@ internal static class PaymentEndpoints
             "New session request", $"A new {session.Type.ToString().ToLowerInvariant()} session was requested.",
             session.Id, "CounsellingSession", cancellationToken);
 
+        var payer = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == payment.PayerUserId)
+            .Select(x => new { x.DisplayName })
+            .SingleOrDefaultAsync(cancellationToken);
+        var payerEmail = await db.Users.AsNoTracking()
+            .Where(x => x.Id == payment.PayerUserId).Select(x => x.Email).SingleOrDefaultAsync(cancellationToken);
+        if (payerEmail is not null)
+            await emailService.SendPaymentConfirmedEmailAsync(payerEmail, payer?.DisplayName ?? "there",
+                $"{session.Type} counselling session", payment.Amount, payment.Currency, cancellationToken);
+
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, payment.PayerUserId,
             "Session requested after payment confirmation"));
         await db.SaveChangesAsync(cancellationToken);
@@ -107,7 +119,8 @@ internal static class PaymentEndpoints
     }
 
     private static async Task<IResult> PaystackWebhook(HttpContext context, MirageDbContext db,
-        NotificationService notifications, PaystackService paystack, CancellationToken cancellationToken)
+        NotificationService notifications, IEmailService emailService, PaystackService paystack,
+        CancellationToken cancellationToken)
     {
         using var reader = new StreamReader(context.Request.Body);
         var rawBody = await reader.ReadToEndAsync(cancellationToken);
@@ -121,13 +134,14 @@ internal static class PaymentEndpoints
                 x => x.ProviderReference == result.ProviderReference, cancellationToken);
             if (payment is not null)
                 return await ConfirmPaymentAsync(payment.Id, result.ProviderTransactionId ?? result.ProviderReference,
-                    db, notifications, cancellationToken);
+                    db, notifications, emailService, cancellationToken);
         }
         return Results.Ok();
     }
 
     private static async Task<IResult> FlutterwaveWebhook(HttpContext context, MirageDbContext db,
-        NotificationService notifications, FlutterwaveService flutterwave, CancellationToken cancellationToken)
+        NotificationService notifications, IEmailService emailService, FlutterwaveService flutterwave,
+        CancellationToken cancellationToken)
     {
         if (!flutterwave.VerifySignature(context.Request.Headers["verif-hash"]))
             return Results.Unauthorized();
@@ -141,7 +155,7 @@ internal static class PaymentEndpoints
                 x => x.ProviderReference == result.ProviderReference, cancellationToken);
             if (payment is not null)
                 return await ConfirmPaymentAsync(payment.Id, result.ProviderTransactionId ?? result.ProviderReference,
-                    db, notifications, cancellationToken);
+                    db, notifications, emailService, cancellationToken);
         }
         return Results.Ok();
     }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
@@ -5,11 +6,14 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
 internal static class CommunityEndpoints
 {
+    private static readonly TimeSpan CommentEditWindow = TimeSpan.FromMinutes(15);
+
     public static RouteGroupBuilder MapCommunityEndpoints(this RouteGroupBuilder api)
     {
         var communities = api.MapGroup("/communities").WithTags("Communities").RequireAuthorization();
@@ -21,12 +25,15 @@ internal static class CommunityEndpoints
         communities.MapGet("/{id:guid}/members", ListMembers);
         communities.MapPost("/{id:guid}/join", Join);
         communities.MapDelete("/{id:guid}/membership", Leave);
+        communities.MapPost("/{id:guid}/invites", InviteMember);
         communities.MapGet("/{id:guid}/posts", ListPosts);
         communities.MapPost("/{id:guid}/posts", CreatePost);
         communities.MapPost("/posts/{postId:guid}/likes", LikePost);
         communities.MapDelete("/posts/{postId:guid}/likes", UnlikePost);
         communities.MapGet("/posts/{postId:guid}/comments", ListComments);
         communities.MapPost("/posts/{postId:guid}/comments", CreateComment);
+        communities.MapPatch("/comments/{commentId:guid}", EditComment);
+        communities.MapDelete("/comments/{commentId:guid}", DeleteComment);
         communities.MapPost("/comments/{commentId:guid}/likes", LikeComment);
         communities.MapDelete("/comments/{commentId:guid}/likes", UnlikeComment);
         communities.MapGet("/comments/{commentId:guid}/location", GetCommentLocation);
@@ -270,6 +277,52 @@ internal static class CommunityEndpoints
         return ApiResults.Ok(context, new { communityId = id }, "Community membership ended successfully.");
     }
 
+    private static async Task<IResult> InviteMember(Guid id, InviteToGatheringRequest request, HttpContext context,
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.EmailOrUsername))
+            return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "Email or username is required."));
+
+        var userId = context.User.GetUserId();
+        var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        var community = await db.Communities.AsNoTracking()
+            .Where(x => x.Id == id && x.Status == CommunityStatus.Active)
+            .Select(x => new { x.Name })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (community is null) return EndpointHelpers.NotFound(context, "Community was not found.");
+
+        var invitee = await userManager.FindByEmailOrUsernameAsync(request.EmailOrUsername);
+        if (invitee is null)
+            return EndpointHelpers.NotFound(context, "No user was found with that email or username.");
+        if (invitee.Id == userId)
+            return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "You cannot invite yourself."));
+
+        var alreadyMember = await db.CommunityMembers.AnyAsync(
+            x => x.CommunityId == id && x.UserId == invitee.Id && x.LeftAt == null, cancellationToken);
+        if (alreadyMember) return EndpointHelpers.Conflict(context, "This user is already a member of the community.");
+
+        var hasPendingInvite = await db.GatheringInvites.AnyAsync(
+            x => x.Kind == GatheringInviteKind.Community && x.TargetId == id && x.InviteeUserId == invitee.Id &&
+                 x.Status == GatheringInviteStatus.Pending, cancellationToken);
+        if (hasPendingInvite) return EndpointHelpers.Conflict(context, "An invite is already pending for this user.");
+
+        var invite = new GatheringInvite(GatheringInviteKind.Community, id, userId, invitee.Id);
+        db.GatheringInvites.Add(invite);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var inviterName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(invitee.Id, NotificationType.GatheringInviteReceived,
+            "Community invite", $"{inviterName ?? "Someone"} invited you to join \"{community.Name}\".",
+            invite.Id, "GatheringInvite", cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/invites/{invite.Id}", new { invite.Id },
+            "Invite sent successfully.");
+    }
+
     private static async Task<IResult> ListPosts(Guid id, HttpContext context, IMirageDbContext db,
         int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
     {
@@ -404,6 +457,8 @@ internal static class CommunityEndpoints
                 comment.MentionedUserIds,
                 comment.Likes.Count,
                 comment.Likes.Any(like => like.UserId == userId),
+                comment.IsEdited,
+                comment.IsDeleted,
                 comment.CreatedAt))
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
@@ -461,9 +516,43 @@ internal static class CommunityEndpoints
 
         var response = new CommunityPostCommentResponse(comment.Id, comment.PostId, comment.AuthorUserId,
             author?.DisplayName ?? "Member", author?.AvatarUrl, comment.ParentCommentId, comment.Body,
-            comment.MentionedUserIds, 0, false, comment.CreatedAt);
+            comment.MentionedUserIds, 0, false, false, false, comment.CreatedAt);
         return ApiResults.Created(context, $"/api/v1/communities/posts/{postId}/comments/{comment.Id}",
             response, "Community post comment created successfully.");
+    }
+
+    private static async Task<IResult> EditComment(Guid commentId, UpdateCommunityPostCommentRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Body))
+            return EndpointHelpers.ValidationProblem(context, ("body", "Comment body is required."));
+
+        var userId = context.User.GetUserId();
+        var comment = await db.CommunityPostComments.SingleOrDefaultAsync(x => x.Id == commentId, cancellationToken);
+        if (comment is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+        if (comment.AuthorUserId != userId) return EndpointHelpers.Forbidden(context);
+        if (comment.IsDeleted) return EndpointHelpers.Conflict(context, "This comment has been deleted.");
+        if (DateTimeOffset.UtcNow - comment.CreatedAt > CommentEditWindow)
+            return EndpointHelpers.Conflict(context, "Comments can only be edited within 15 minutes of posting.");
+
+        comment.Edit(request.Body);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { comment.Id, comment.Body, comment.IsEdited },
+            "Comment updated successfully.");
+    }
+
+    private static async Task<IResult> DeleteComment(Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var comment = await db.CommunityPostComments.SingleOrDefaultAsync(x => x.Id == commentId, cancellationToken);
+        if (comment is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+        if (comment.AuthorUserId != userId) return EndpointHelpers.Forbidden(context);
+        if (comment.IsDeleted) return EndpointHelpers.Conflict(context, "This comment has already been deleted.");
+
+        comment.SoftDelete();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { comment.Id }, "Comment deleted successfully.");
     }
 
     private static async Task<IResult> LikeComment(Guid commentId, HttpContext context, IMirageDbContext db,

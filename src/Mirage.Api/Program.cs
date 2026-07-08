@@ -15,7 +15,9 @@ using Mirage.Api.Security;
 using Mirage.Api.Services;
 using Mirage.Infrastructure.Identity;
 using Mirage.Application;
+using Mirage.Application.Abstractions;
 using Mirage.Infrastructure;
+using Mirage.Infrastructure.Email;
 using Mirage.Infrastructure.Persistence;
 using Serilog;
 using Serilog.Events;
@@ -99,6 +101,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<JitsiService>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
+builder.Services.AddHttpClient<IEmailService, ResendEmailService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()

@@ -233,6 +233,18 @@ public sealed class OrganisationAdminInviteConfiguration : IEntityTypeConfigurat
     }
 }
 
+public sealed class GatheringInviteConfiguration : IEntityTypeConfiguration<GatheringInvite>
+{
+    public void Configure(EntityTypeBuilder<GatheringInvite> b)
+    {
+        b.ToTable("gathering_invites");
+        b.HasIndex(x => new { x.Kind, x.TargetId, x.InviteeUserId });
+        b.HasIndex(x => new { x.InviteeUserId, x.Status });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InviterUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InviteeUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CoupleConfiguration : IEntityTypeConfiguration<Couple>
 {
     public void Configure(EntityTypeBuilder<Couple> b)

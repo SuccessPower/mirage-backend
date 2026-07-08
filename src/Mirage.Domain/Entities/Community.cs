@@ -127,10 +127,26 @@ public sealed class CommunityPostComment : Entity
     public Guid? ParentCommentId { get; private set; }
     public string Body { get; private set; } = string.Empty;
     public Guid[] MentionedUserIds { get; private set; } = [];
+    public bool IsEdited { get; private set; }
+    public bool IsDeleted { get; private set; }
     public CommunityPost Post { get; private set; } = null!;
     public CommunityPostComment? ParentComment { get; private set; }
     public List<CommunityPostComment> Replies { get; private set; } = [];
     public List<CommunityPostCommentLike> Likes { get; private set; } = [];
+
+    public void Edit(string body)
+    {
+        Body = body.Trim();
+        IsEdited = true;
+        Touch();
+    }
+
+    public void SoftDelete()
+    {
+        Body = string.Empty;
+        IsDeleted = true;
+        Touch();
+    }
 }
 
 public sealed class CommunityPostCommentLike : Entity

@@ -6,6 +6,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Email\Templates\*.html" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Mirage.Application\Mirage.Application.csproj" />
     <ProjectReference Include="..\Mirage.Domain\Mirage.Domain.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
