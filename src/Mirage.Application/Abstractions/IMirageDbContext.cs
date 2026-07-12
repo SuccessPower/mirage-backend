@@ -28,6 +28,7 @@ public interface IMirageDbContext
     DbSet<Notification> Notifications { get; }
     DbSet<OrganisationBranch> OrganisationBranches { get; }
     DbSet<OrganisationMember> OrganisationMembers { get; }
+    DbSet<OrganisationManager> OrganisationManagers { get; }
     DbSet<OrgEvent> OrgEvents { get; }
     DbSet<EventTicket> EventTickets { get; }
     DbSet<Community> Communities { get; }

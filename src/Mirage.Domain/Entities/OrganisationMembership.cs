@@ -24,6 +24,26 @@ public sealed class OrganisationBranch : Entity
     public string? Address { get; private set; }
 }
 
+// A user granted management rights over an organisation, beyond the single original
+// Organisation.AdminUserId owner. BranchId null means org-wide (same rights as the owner);
+// a set BranchId is a manager scoped to that branch, invited by an org-wide manager.
+public sealed class OrganisationManager : Entity
+{
+    private OrganisationManager() { }
+
+    public OrganisationManager(Guid organisationId, Guid userId, Guid? branchId)
+    {
+        OrganisationId = organisationId;
+        UserId = userId;
+        BranchId = branchId;
+    }
+
+    public Guid OrganisationId { get; private set; }
+    public Organisation? Organisation { get; private set; }
+    public Guid UserId { get; private set; }
+    public Guid? BranchId { get; private set; }
+}
+
 public sealed class OrganisationMember : Entity
 {
     private OrganisationMember() { }

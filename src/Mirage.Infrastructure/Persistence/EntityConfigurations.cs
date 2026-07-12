@@ -19,6 +19,7 @@ public sealed class UserProfileConfiguration : IEntityTypeConfiguration<UserProf
         b.Property(x => x.Denomination).HasMaxLength(100);
         b.Property(x => x.Bio).HasMaxLength(1000);
         b.Property(x => x.Interests).HasColumnType("text[]");
+        b.Property(x => x.PhotoUrls).HasColumnType("text[]");
         b.Property(x => x.PreferredLanguage).HasMaxLength(60);
         b.Property(x => x.Occupation).HasMaxLength(160);
         b.HasOne<ApplicationUser>().WithOne().HasForeignKey<UserProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
@@ -63,6 +64,18 @@ public sealed class OrganisationMemberConfiguration : IEntityTypeConfiguration<O
         b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedMentorUserId).OnDelete(DeleteBehavior.SetNull);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AssignedCounsellorUserId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class OrganisationManagerConfiguration : IEntityTypeConfiguration<OrganisationManager>
+{
+    public void Configure(EntityTypeBuilder<OrganisationManager> b)
+    {
+        b.ToTable("organisation_managers");
+        b.HasIndex(x => new { x.OrganisationId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 
@@ -242,6 +255,7 @@ public sealed class GatheringInviteConfiguration : IEntityTypeConfiguration<Gath
         b.HasIndex(x => new { x.InviteeUserId, x.Status });
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InviterUserId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InviteeUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 

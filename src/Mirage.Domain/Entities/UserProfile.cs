@@ -37,6 +37,7 @@ public sealed class UserProfile : Entity
     public SubscriptionTier SubscriptionTier { get; private set; } = SubscriptionTier.Free;
     public string[] Interests { get; private set; } = [];
     public string? AvatarUrl { get; private set; }
+    public string[] PhotoUrls { get; private set; } = [];
     public Sex? Sex { get; private set; }
     public RelationshipStatus? RelationshipStatus { get; private set; }
     public int? HeightInches { get; private set; }
@@ -64,6 +65,17 @@ public sealed class UserProfile : Entity
         if (skinTone is not null) SkinTone = skinTone;
         if (preferredLanguage is not null) PreferredLanguage = preferredLanguage.Trim();
         if (occupation is not null) Occupation = occupation.Trim();
+        Touch();
+    }
+
+    public const int MaxPhotos = 6;
+
+    public void SetPhotos(string[] photoUrls)
+    {
+        var cleaned = photoUrls.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct().ToArray();
+        if (cleaned.Length > MaxPhotos)
+            throw new InvalidOperationException($"A profile can have at most {MaxPhotos} photos.");
+        PhotoUrls = cleaned;
         Touch();
     }
 

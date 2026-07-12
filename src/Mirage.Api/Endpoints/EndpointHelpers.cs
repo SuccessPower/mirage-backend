@@ -40,7 +40,7 @@ internal static class EndpointHelpers
     public static ProfileResponse ToResponse(this UserProfile profile, bool isRecommended, string? email = null) =>
         new(profile.UserId, email, profile.DisplayName, Age(profile.DateOfBirth), profile.DateOfBirth, profile.City, profile.Country,
             profile.Denomination, profile.Intent, profile.Bio, profile.IsVerified, isRecommended,
-            profile.SubscriptionTier, profile.AnonymityEnabled, profile.Interests, profile.AvatarUrl, profile.Sex, profile.RelationshipStatus,
+            profile.SubscriptionTier, profile.AnonymityEnabled, profile.Interests, profile.AvatarUrl, profile.PhotoUrls, profile.Sex, profile.RelationshipStatus,
             profile.HeightInches, profile.SkinTone, profile.PreferredLanguage, profile.Occupation, profile.CreatedAt);
 
     public static IResult ValidationProblem(HttpContext context, params (string Field, string Error)[] errors) =>

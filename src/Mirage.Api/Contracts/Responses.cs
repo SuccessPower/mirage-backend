@@ -36,6 +36,7 @@ public sealed record ProfileResponse(
     bool AnonymityEnabled,
     string[] Interests,
     string? AvatarUrl,
+    string[] PhotoUrls,
     Sex? Sex,
     RelationshipStatus? RelationshipStatus,
     int? HeightInches,
@@ -67,6 +68,14 @@ public sealed record OrganisationRosterMemberResponse(
 
 public sealed record OrganisationBranchResponse(Guid Id, string Name, string City, string Country, string? Address);
 
+public sealed record OrganisationManagerResponse(
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    Guid? BranchId,
+    string? BranchName,
+    bool IsOriginalOwner);
+
 public sealed record OrgEventResponse(
     Guid Id,
     Guid OrganisationId,
@@ -81,6 +90,22 @@ public sealed record OrgEventResponse(
     int TicketsIssued);
 
 public sealed record EventTicketResponse(Guid Id, Guid EventId, string EventTitle, string? EventImageUrl, DateTimeOffset StartsAt, string Code, DateTimeOffset? CheckedInAt);
+
+public sealed record PublicEventResponse(
+    Guid Id,
+    Guid OrganisationId,
+    string OrganisationName,
+    Guid? BranchId,
+    string? BranchName,
+    string Title,
+    string? Description,
+    string? ImageUrl,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Location,
+    int? Capacity,
+    int TicketsIssued,
+    bool IsRegistered);
 
 public sealed record CommunityResponse(
     Guid Id,
@@ -232,7 +257,7 @@ public sealed record CounsellingMeetingResponse(
     Guid SessionId,
     Guid ScheduledByUserId,
     string Title,
-    string MeetingLink,
+    string Room,
     DateTimeOffset ScheduledAt,
     int? DurationMinutes);
 

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260712150625_AddOrganisationManagers")]
+    partial class AddOrganisationManagers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1999,10 +2002,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<string>("Occupation")
                         .HasMaxLength(160)
                         .HasColumnType("character varying(160)");
-
-                    b.Property<string[]>("PhotoUrls")
-                        .IsRequired()
-                        .HasColumnType("text[]");
 
                     b.Property<string>("PreferredLanguage")
                         .HasMaxLength(60)

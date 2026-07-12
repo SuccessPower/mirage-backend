@@ -43,6 +43,10 @@ internal static class UploadEndpoints
         {
             folder = $"mirage/counsellor-verification/{userId}";
         }
+        else if (uploadContext == "profile-photo")
+        {
+            folder = $"mirage/profile-photos/{userId}";
+        }
         else
         {
             folder = $"mirage/avatars/{userId}";

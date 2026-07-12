@@ -27,7 +27,7 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
     // Payments for a counsellor with no subaccount yet fall back to 100% landing in the
     // platform's own account (see PaymentEndpoints.Initialize).
     public async Task<PaymentCheckoutResult> InitializeAsync(Payment payment, string payerEmail, PaymentMethod method,
-        string? subaccountCode, CancellationToken cancellationToken)
+        string? subaccountCode, string callbackUrl, CancellationToken cancellationToken)
     {
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
         var amountInMinorUnits = (long)Math.Round(payment.Amount * 100);
@@ -41,6 +41,7 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
                 currency = payment.Currency,
                 reference = payment.ProviderReference,
                 subaccount = subaccountCode,
+                callback_url = callbackUrl,
             }, cancellationToken);
             response.EnsureSuccessStatusCode();
             var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);

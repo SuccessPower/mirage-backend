@@ -62,7 +62,7 @@ internal static class CalendarEndpoints
                     || (s.PartnerUserId == userId && s.PartnerAccepted))))
             .Select(x => new CalendarItemResponse("CounsellingMeeting", x.Id, x.Title, x.ScheduledAt,
                 x.DurationMinutes != null ? x.ScheduledAt.AddMinutes(x.DurationMinutes.Value) : null,
-                x.MeetingLink, null))
+                null, null))
             .ToListAsync(cancellationToken);
 
         var dateRequests = await db.DateRequests.AsNoTracking()

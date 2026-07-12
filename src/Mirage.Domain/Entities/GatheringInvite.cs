@@ -10,18 +10,23 @@ public sealed class GatheringInvite : Entity
 {
     private GatheringInvite() { }
 
-    public GatheringInvite(GatheringInviteKind kind, Guid targetId, Guid inviterUserId, Guid inviteeUserId)
+    public GatheringInvite(GatheringInviteKind kind, Guid targetId, Guid inviterUserId, Guid inviteeUserId,
+        Guid? branchId = null)
     {
         Kind = kind;
         TargetId = targetId;
         InviterUserId = inviterUserId;
         InviteeUserId = inviteeUserId;
+        BranchId = branchId;
     }
 
     public GatheringInviteKind Kind { get; private set; }
     public Guid TargetId { get; private set; }
     public Guid InviterUserId { get; private set; }
     public Guid InviteeUserId { get; private set; }
+    // Only meaningful for Kind == OrganisationManager: scopes the invited manager to one branch
+    // of TargetId's organisation, or null for an org-wide manager.
+    public Guid? BranchId { get; private set; }
     public GatheringInviteStatus Status { get; private set; } = GatheringInviteStatus.Pending;
 
     public void Accept()

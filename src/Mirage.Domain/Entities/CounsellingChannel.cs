@@ -30,13 +30,15 @@ public sealed class CounsellingMeeting : Entity
 {
     private CounsellingMeeting() { }
 
-    public CounsellingMeeting(Guid sessionId, Guid scheduledByUserId, string title, string meetingLink,
+    // The meeting always happens inside Mirage's own video room — callers don't supply a URL,
+    // since follow-up counselling must stay on-platform rather than routing to an external link.
+    public CounsellingMeeting(Guid sessionId, Guid scheduledByUserId, string title,
         DateTimeOffset scheduledAt, int? durationMinutes)
     {
         SessionId = sessionId;
         ScheduledByUserId = scheduledByUserId;
         Title = title.Trim();
-        MeetingLink = meetingLink.Trim();
+        MeetingLink = $"mirage-meeting-{Id:N}";
         ScheduledAt = scheduledAt;
         DurationMinutes = durationMinutes;
     }

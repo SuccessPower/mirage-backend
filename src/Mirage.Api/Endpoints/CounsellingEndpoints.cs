@@ -50,6 +50,7 @@ internal static class CounsellingEndpoints
         sessions.MapGet("/{id:guid}/meetings", ListMeetings);
         sessions.MapPost("/{id:guid}/meetings", ScheduleMeeting);
         sessions.MapGet("/{id:guid}/video-token", GetVideoToken);
+        sessions.MapGet("/{id:guid}/meetings/{meetingId:guid}/video-token", GetMeetingVideoToken);
         return api;
     }
 
@@ -125,10 +126,10 @@ internal static class CounsellingEndpoints
     {
         var userId = context.User.GetUserId();
         if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
-        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.MeetingLink))
-            return EndpointHelpers.ValidationProblem(context, ("meeting", "Title and meeting link are required."));
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return EndpointHelpers.ValidationProblem(context, ("meeting", "Title is required."));
 
-        var meeting = new CounsellingMeeting(id, userId, request.Title, request.MeetingLink, request.ScheduledAt,
+        var meeting = new CounsellingMeeting(id, userId, request.Title, request.ScheduledAt,
             request.DurationMinutes);
         db.CounsellingMeetings.Add(meeting);
         await db.SaveChangesAsync(cancellationToken);
@@ -162,6 +163,30 @@ internal static class CounsellingEndpoints
         var token = jitsi.CreateToken(userId, displayName, email, room, isModerator);
 
         return ApiResults.Ok(context, new { AppId = jitsi.AppId, Room = room, Token = token },
+            "Video token issued successfully.");
+    }
+
+    private static async Task<IResult> GetMeetingVideoToken(Guid id, Guid meetingId, HttpContext context,
+        MirageDbContext db, JitsiService jitsi, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+
+        var meeting = await db.CounsellingMeetings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == meetingId && x.SessionId == id, cancellationToken);
+        if (meeting is null) return EndpointHelpers.NotFound(context, "Meeting was not found.");
+
+        var session = await db.CounsellingSessions.AsNoTracking().Include(x => x.Counsellor)
+            .SingleAsync(x => x.Id == id, cancellationToken);
+        var displayName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken) ?? "Guest";
+        var email = await db.Users.AsNoTracking()
+            .Where(x => x.Id == userId).Select(x => x.Email).SingleOrDefaultAsync(cancellationToken);
+
+        var isModerator = session.Counsellor.UserId == userId;
+        var token = jitsi.CreateToken(userId, displayName, email, meeting.MeetingLink, isModerator);
+
+        return ApiResults.Ok(context, new { AppId = jitsi.AppId, Room = meeting.MeetingLink, Token = token },
             "Video token issued successfully.");
     }
 
@@ -245,6 +270,30 @@ internal static class CounsellingEndpoints
         return ApiResults.Ok(context, sessions, "Counselling sessions retrieved successfully.");
     }
 
+    // Runs regardless of whether the session required payment first — a couple's partner must be
+    // able to see the session and join its chat as soon as it's booked, not only once payment
+    // clears (paid Couples sessions used to never invite the partner because this only ran on the
+    // free-session path).
+    private static async Task InvitePartnerIfApplicableAsync(CounsellingSession session, SessionType type,
+        string? partnerEmail, MirageDbContext db, NotificationService notifications,
+        CancellationToken cancellationToken)
+    {
+        if (type != SessionType.Couples || string.IsNullOrWhiteSpace(partnerEmail)) return;
+
+        var partnerUserId = await db.Users.AsNoTracking()
+            .Where(x => x.Email != null && x.Email.ToLower() == partnerEmail.Trim().ToLower())
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (!partnerUserId.HasValue) return;
+
+        session.InvitePartner(partnerUserId.Value);
+        await db.SaveChangesAsync(cancellationToken);
+        await notifications.NotifyAsync(partnerUserId.Value, NotificationType.SessionBooked,
+            "Couples counselling invitation",
+            "Your partner invited you to a couples counselling session.",
+            session.Id, "CounsellingSession", cancellationToken);
+    }
+
     private static async Task FinalizeBookedSessionAsync(CounsellingSession session, BookSessionRequest request,
         MirageDbContext db, NotificationService notifications, Guid clientUserId, Guid counsellorUserId,
         CancellationToken cancellationToken)
@@ -256,23 +305,6 @@ internal static class CounsellingEndpoints
         await notifications.NotifyAsync(counsellorUserId, NotificationType.SessionBooked,
             "New session request", $"A new {request.Type.ToString().ToLowerInvariant()} session was requested.",
             session.Id, "CounsellingSession", cancellationToken);
-
-        if (request.Type == SessionType.Couples && !string.IsNullOrWhiteSpace(request.PartnerEmail))
-        {
-            var partnerUserId = await db.Users.AsNoTracking()
-                .Where(x => x.Email != null && x.Email.ToLower() == request.PartnerEmail.Trim().ToLower())
-                .Select(x => (Guid?)x.Id)
-                .SingleOrDefaultAsync(cancellationToken);
-            if (partnerUserId.HasValue)
-            {
-                session.InvitePartner(partnerUserId.Value);
-                await db.SaveChangesAsync(cancellationToken);
-                await notifications.NotifyAsync(partnerUserId.Value, NotificationType.SessionBooked,
-                    "Couples counselling invitation",
-                    "Your partner invited you to a couples counselling session.",
-                    session.Id, "CounsellingSession", cancellationToken);
-            }
-        }
     }
 
     private static async Task<IResult> Book(BookSessionRequest request, HttpContext context,
@@ -307,6 +339,9 @@ internal static class CounsellingEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        await InvitePartnerIfApplicableAsync(session, request.Type, request.PartnerEmail, db, notifications,
+            cancellationToken);
 
         if (!requiresPayment)
             await FinalizeBookedSessionAsync(session, request, db, notifications, userId, counsellor.UserId,

@@ -50,14 +50,18 @@ internal static class PaymentEndpoints
         payment.Initialize(request.Provider, request.Method, reference);
         await db.SaveChangesAsync(cancellationToken);
 
+        // Both providers land the browser back on this URL after checkout; the paymentId lets the
+        // frontend poll GET /payments/{id} and show "session scheduled" once the webhook confirms it.
+        var redirectUrl = $"{configuration["Frontend:BaseUrl"]}/counselling/payment-result?paymentId={payment.Id}";
+
         try
         {
             var result = request.Provider switch
             {
                 PaymentProvider.Paystack => await paystack.InitializeAsync(payment, payerEmail, request.Method,
-                    counsellor.PaystackSubaccountCode, cancellationToken),
+                    counsellor.PaystackSubaccountCode, redirectUrl, cancellationToken),
                 PaymentProvider.Flutterwave => await flutterwave.InitializeAsync(payment, payerEmail, request.Method,
-                    $"{configuration["Frontend:BaseUrl"]}/counselling", counsellor.FlutterwaveSubaccountId, cancellationToken),
+                    redirectUrl, counsellor.FlutterwaveSubaccountId, cancellationToken),
                 _ => throw new InvalidOperationException("Unsupported payment provider."),
             };
             return ApiResults.Ok(context, result, "Payment initialized successfully.");
@@ -118,6 +122,19 @@ internal static class PaymentEndpoints
         return Results.Ok();
     }
 
+    // A reference-bearing webhook that isn't a success (e.g. charge.failed/declined) still needs
+    // to unstick the session — otherwise it sits in AwaitingPayment forever with no signal to the
+    // client that checkout failed and they should retry.
+    private static async Task MarkPaymentFailedAsync(string providerReference, MirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var payment = await db.Payments.Include(x => x.CounsellingSession)
+            .SingleOrDefaultAsync(x => x.ProviderReference == providerReference, cancellationToken);
+        if (payment is null || payment.Status == PaymentStatus.Successful) return;
+        payment.MarkFailed();
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private static async Task<IResult> PaystackWebhook(HttpContext context, MirageDbContext db,
         NotificationService notifications, IEmailService emailService, PaystackService paystack,
         CancellationToken cancellationToken)
@@ -128,13 +145,20 @@ internal static class PaymentEndpoints
             return Results.Unauthorized();
 
         var result = paystack.ParseWebhook(rawBody);
-        if (result.Successful && result.ProviderReference is not null)
+        if (result.ProviderReference is not null)
         {
-            var payment = await db.Payments.SingleOrDefaultAsync(
-                x => x.ProviderReference == result.ProviderReference, cancellationToken);
-            if (payment is not null)
-                return await ConfirmPaymentAsync(payment.Id, result.ProviderTransactionId ?? result.ProviderReference,
-                    db, notifications, emailService, cancellationToken);
+            if (result.Successful)
+            {
+                var payment = await db.Payments.SingleOrDefaultAsync(
+                    x => x.ProviderReference == result.ProviderReference, cancellationToken);
+                if (payment is not null)
+                    return await ConfirmPaymentAsync(payment.Id, result.ProviderTransactionId ?? result.ProviderReference,
+                        db, notifications, emailService, cancellationToken);
+            }
+            else
+            {
+                await MarkPaymentFailedAsync(result.ProviderReference, db, cancellationToken);
+            }
         }
         return Results.Ok();
     }
@@ -149,13 +173,20 @@ internal static class PaymentEndpoints
         using var reader = new StreamReader(context.Request.Body);
         var rawBody = await reader.ReadToEndAsync(cancellationToken);
         var result = flutterwave.ParseWebhook(rawBody);
-        if (result.Successful && result.ProviderReference is not null)
+        if (result.ProviderReference is not null)
         {
-            var payment = await db.Payments.SingleOrDefaultAsync(
-                x => x.ProviderReference == result.ProviderReference, cancellationToken);
-            if (payment is not null)
-                return await ConfirmPaymentAsync(payment.Id, result.ProviderTransactionId ?? result.ProviderReference,
-                    db, notifications, emailService, cancellationToken);
+            if (result.Successful)
+            {
+                var payment = await db.Payments.SingleOrDefaultAsync(
+                    x => x.ProviderReference == result.ProviderReference, cancellationToken);
+                if (payment is not null)
+                    return await ConfirmPaymentAsync(payment.Id, result.ProviderTransactionId ?? result.ProviderReference,
+                        db, notifications, emailService, cancellationToken);
+            }
+            else
+            {
+                await MarkPaymentFailedAsync(result.ProviderReference, db, cancellationToken);
+            }
         }
         return Results.Ok();
     }

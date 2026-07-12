@@ -38,6 +38,7 @@ public sealed record UpdateProfileRequest(
     SkinTone? SkinTone = null,
     string? PreferredLanguage = null,
     string? Occupation = null);
+public sealed record SetProfilePhotosRequest(string[] PhotoUrls);
 public sealed record CreateOrganisationRequest(
     string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null);
 public sealed record InviteOrganisationAdminRequest(string Email);
@@ -127,7 +128,7 @@ public sealed record ResolveBankAccountRequest(string BankCode, string AccountNu
 public sealed record SaveBankAccountRequest(string BankCode, string BankName, string AccountNumber, string AccountName);
 public sealed record InviteCoupleRequest(string PartnerEmail);
 public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
-public sealed record ScheduleCounsellingMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);
+public sealed record ScheduleCounsellingMeetingRequest(string Title, DateTimeOffset ScheduledAt, int? DurationMinutes);
 
 public sealed record RegisterMentorRequest(
     string Email,
@@ -144,6 +145,7 @@ public sealed record RegisterMentorRequest(
     string[] Languages);
 
 public sealed record InviteCounsellorRequest(string Email);
+public sealed record InviteManagerRequest(string EmailOrUsername, Guid? BranchId);
 public sealed record ApproveOrgRequest(string? Note);
 public sealed record UpdateCounsellorProfileRequest(
     int YearsExperience,

@@ -18,6 +18,7 @@ internal static class ProfileEndpoints
         group.MapGet("/{userId:guid}", GetById);
         group.MapGet("/me", GetMine).RequireAuthorization();
         group.MapPut("/me", UpdateMine).RequireAuthorization();
+        group.MapPut("/me/photos", UpdateMyPhotos).RequireAuthorization();
         return api;
     }
 
@@ -151,5 +152,16 @@ internal static class ProfileEndpoints
             request.Occupation);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
+    }
+
+    private static async Task<IResult> UpdateMyPhotos(SetProfilePhotosRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+        try { profile.SetPhotos(request.PhotoUrls); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { profile.UserId, profile.PhotoUrls }, "Profile photos updated successfully.");
     }
 }

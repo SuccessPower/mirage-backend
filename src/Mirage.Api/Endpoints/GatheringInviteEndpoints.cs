@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
@@ -5,6 +6,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
@@ -33,6 +35,7 @@ internal static class GatheringInviteEndpoints
 
         var communityIds = pending.Where(x => x.Kind == GatheringInviteKind.Community).Select(x => x.TargetId).ToArray();
         var dateRequestIds = pending.Where(x => x.Kind == GatheringInviteKind.DateRequest).Select(x => x.TargetId).ToArray();
+        var organisationIds = pending.Where(x => x.Kind == GatheringInviteKind.OrganisationManager).Select(x => x.TargetId).ToArray();
         var inviterIds = pending.Select(x => x.InviterUserId).Distinct().ToArray();
 
         var communityTitles = await db.Communities.AsNoTracking()
@@ -41,17 +44,25 @@ internal static class GatheringInviteEndpoints
         var dateRequestTitles = await db.DateRequests.AsNoTracking()
             .Where(x => dateRequestIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.Activity, cancellationToken);
+        var organisationTitles = await db.Organisations.AsNoTracking()
+            .Where(x => organisationIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
         var inviterProfiles = await db.Profiles.AsNoTracking()
             .Where(x => inviterIds.Contains(x.UserId))
             .ToDictionaryAsync(x => x.UserId, x => new { x.DisplayName, x.AvatarUrl }, cancellationToken);
+
+        string TitleFor(GatheringInvite invite) => invite.Kind switch
+        {
+            GatheringInviteKind.Community => communityTitles.GetValueOrDefault(invite.TargetId, "Community"),
+            GatheringInviteKind.OrganisationManager => organisationTitles.GetValueOrDefault(invite.TargetId, "Organisation"),
+            _ => dateRequestTitles.GetValueOrDefault(invite.TargetId, "Gathering"),
+        };
 
         var response = pending.Select(x => new GatheringInviteResponse(
             x.Id,
             x.Kind,
             x.TargetId,
-            x.Kind == GatheringInviteKind.Community
-                ? communityTitles.GetValueOrDefault(x.TargetId, "Community")
-                : dateRequestTitles.GetValueOrDefault(x.TargetId, "Gathering"),
+            TitleFor(x),
             x.InviterUserId,
             inviterProfiles.TryGetValue(x.InviterUserId, out var inviter) ? inviter.DisplayName : "Member",
             inviterProfiles.TryGetValue(x.InviterUserId, out var inviterProfile) ? inviterProfile.AvatarUrl : null,
@@ -62,7 +73,7 @@ internal static class GatheringInviteEndpoints
     }
 
     private static async Task<IResult> Accept(Guid id, HttpContext context, IMirageDbContext db,
-        NotificationService notifications, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var invite = await db.GatheringInvites.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -83,6 +94,21 @@ internal static class GatheringInviteEndpoints
                 db.CommunityMembers.Add(new CommunityMember(invite.TargetId, userId));
             else if (member.LeftAt is not null)
                 member.Rejoin();
+        }
+        else if (invite.Kind == GatheringInviteKind.OrganisationManager)
+        {
+            var org = await db.Organisations.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == invite.TargetId, cancellationToken);
+            if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
+
+            var alreadyManager = await db.OrganisationManagers.AnyAsync(
+                x => x.OrganisationId == invite.TargetId && x.UserId == userId, cancellationToken);
+            if (!alreadyManager)
+                db.OrganisationManagers.Add(new OrganisationManager(invite.TargetId, userId, invite.BranchId));
+
+            var user = await userManager.FindByIdAsync(userId.ToString());
+            if (user is not null && !await userManager.IsInRoleAsync(user, MirageRoles.ChurchAdmin))
+                await userManager.AddToRoleAsync(user, MirageRoles.ChurchAdmin);
         }
         else
         {

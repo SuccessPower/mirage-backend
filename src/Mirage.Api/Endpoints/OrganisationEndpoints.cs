@@ -44,6 +44,11 @@ internal static class OrganisationEndpoints
         organisations.MapDelete("/{id:guid}/members/{memberId:guid}", RemoveMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
         organisations.MapPatch("/{id:guid}/members/{memberId:guid}/assign", AssignMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
 
+        // Managers: multiple people can administer an org (org-wide) or one of its branches
+        organisations.MapGet("/{id:guid}/managers", ListManagers).RequireAuthorization(MiragePolicy.ChurchAdmin);
+        organisations.MapPost("/{id:guid}/managers/invite", InviteManager).RequireAuthorization(MiragePolicy.ChurchAdmin);
+        organisations.MapDelete("/{id:guid}/managers/{userId:guid}", RemoveManager).RequireAuthorization(MiragePolicy.ChurchAdmin);
+
         // Branches
         organisations.MapGet("/{id:guid}/branches", ListBranches);
         organisations.MapPost("/{id:guid}/branches", CreateBranch).RequireAuthorization(MiragePolicy.ChurchAdmin);
@@ -220,12 +225,8 @@ internal static class OrganisationEndpoints
     private static async Task<IResult> ListCounsellors(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
-        var userId = context.User.GetUserId();
-        var org = await db.Organisations.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
-        if (org.AdminUserId != userId && !context.User.IsInRole(MirageRoles.PlatformAdmin))
-            return EndpointHelpers.Forbidden(context);
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
 
         var counsellors = await db.Counsellors.AsNoTracking()
             .Where(x => x.OrganisationId == id)
@@ -251,11 +252,9 @@ internal static class OrganisationEndpoints
         if (string.IsNullOrWhiteSpace(request.Email) || !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(request.Email))
             return EndpointHelpers.ValidationProblem(context, ("email", "A valid email address is required."));
 
-        var userId = context.User.GetUserId();
-        var org = await db.Organisations.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
-        if (org.AdminUserId != userId && !context.User.IsInRole(MirageRoles.PlatformAdmin))
-            return EndpointHelpers.Forbidden(context);
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+        var org = await db.Organisations.SingleAsync(x => x.Id == id, cancellationToken);
         if (org.Status != OrganisationStatus.Approved)
             return EndpointHelpers.Problem(context, StatusCodes.Status400BadRequest,
                 "Organisation not active", "Only approved organisations can invite counsellors.");
@@ -281,12 +280,9 @@ internal static class OrganisationEndpoints
         IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
         CancellationToken cancellationToken)
     {
-        var userId = context.User.GetUserId();
-        var org = await db.Organisations.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
-        if (org.AdminUserId != userId && !context.User.IsInRole(MirageRoles.PlatformAdmin))
-            return EndpointHelpers.Forbidden(context);
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+        var org = await db.Organisations.AsNoTracking().SingleAsync(x => x.Id == id, cancellationToken);
 
         var counsellor = await db.Counsellors
             .SingleOrDefaultAsync(x => x.Id == counsellorId && x.OrganisationId == id, cancellationToken);
@@ -588,14 +584,122 @@ internal static class OrganisationEndpoints
         return ApiResults.Ok(context, tickets, "Your tickets were retrieved successfully.");
     }
 
+    // Org management is no longer limited to the single original Organisation.AdminUserId — any
+    // user with an OrganisationManager row for this org (org-wide or branch-scoped) also passes.
+    private static async Task<bool> IsOrgManagerAsync(Guid organisationId, Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken) =>
+        await db.OrganisationManagers.AsNoTracking()
+            .AnyAsync(x => x.OrganisationId == organisationId && x.UserId == userId, cancellationToken);
+
     private static async Task<IResult?> RequireOrgAdmin(Guid organisationId, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var org = await db.Organisations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == organisationId, cancellationToken);
         if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
-        if (org.AdminUserId != userId && !context.User.IsInRole(MirageRoles.PlatformAdmin))
+        if (org.AdminUserId != userId && !context.User.IsInRole(MirageRoles.PlatformAdmin)
+            && !await IsOrgManagerAsync(organisationId, userId, db, cancellationToken))
             return EndpointHelpers.Forbidden(context);
         return null;
+    }
+
+    // --- Managers ---
+
+    private static async Task<IResult> ListManagers(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+
+        var org = await db.Organisations.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new { x.AdminUserId })
+            .SingleAsync(cancellationToken);
+
+        var ownerProfile = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == org.AdminUserId)
+            .Select(x => new { x.DisplayName, x.AvatarUrl })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        var managers = await db.OrganisationManagers.AsNoTracking()
+            .Where(x => x.OrganisationId == id)
+            .Join(db.Profiles.AsNoTracking(), m => m.UserId, p => p.UserId, (m, p) => new { m.UserId, m.BranchId, p.DisplayName, p.AvatarUrl })
+            .ToListAsync(cancellationToken);
+        var branchNames = await db.OrganisationBranches.AsNoTracking()
+            .Where(x => x.OrganisationId == id)
+            .ToDictionaryAsync(x => x.Id, x => x.Name, cancellationToken);
+
+        var response = new List<OrganisationManagerResponse>
+        {
+            new(org.AdminUserId, ownerProfile?.DisplayName ?? "Owner", ownerProfile?.AvatarUrl, null, null, true)
+        };
+        response.AddRange(managers.Select(m => new OrganisationManagerResponse(
+            m.UserId, m.DisplayName, m.AvatarUrl, m.BranchId,
+            m.BranchId.HasValue ? branchNames.GetValueOrDefault(m.BranchId.Value) : null, false)));
+
+        return ApiResults.Ok(context, response, "Managers retrieved successfully.");
+    }
+
+    private static async Task<IResult> InviteManager(Guid id, InviteManagerRequest request, HttpContext context,
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.EmailOrUsername))
+            return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "Email or username is required."));
+
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+
+        var org = await db.Organisations.AsNoTracking().SingleAsync(x => x.Id == id, cancellationToken);
+        if (org.Status != OrganisationStatus.Approved)
+            return EndpointHelpers.Problem(context, StatusCodes.Status400BadRequest,
+                "Organisation not active", "Only approved organisations can invite managers.");
+
+        if (request.BranchId.HasValue &&
+            !await db.OrganisationBranches.AnyAsync(x => x.Id == request.BranchId && x.OrganisationId == id, cancellationToken))
+            return EndpointHelpers.ValidationProblem(context, ("branchId", "Branch does not belong to this organisation."));
+
+        var invitee = await userManager.FindByEmailOrUsernameAsync(request.EmailOrUsername);
+        if (invitee is null)
+            return EndpointHelpers.NotFound(context, "No user was found with that email or username.");
+
+        var userId = context.User.GetUserId();
+        if (invitee.Id == userId)
+            return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "You cannot invite yourself."));
+        if (invitee.Id == org.AdminUserId || await IsOrgManagerAsync(id, invitee.Id, db, cancellationToken))
+            return EndpointHelpers.Conflict(context, "This user already manages this organisation.");
+
+        var hasPendingInvite = await db.GatheringInvites.AnyAsync(
+            x => x.Kind == GatheringInviteKind.OrganisationManager && x.TargetId == id && x.InviteeUserId == invitee.Id &&
+                 x.Status == GatheringInviteStatus.Pending, cancellationToken);
+        if (hasPendingInvite) return EndpointHelpers.Conflict(context, "An invite is already pending for this user.");
+
+        var invite = new GatheringInvite(GatheringInviteKind.OrganisationManager, id, userId, invitee.Id, request.BranchId);
+        db.GatheringInvites.Add(invite);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var inviterName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(invitee.Id, NotificationType.GatheringInviteReceived,
+            "Organisation manager invite",
+            $"{inviterName ?? "Someone"} invited you to help manage {org.Name}.",
+            invite.Id, "GatheringInvite", cancellationToken);
+
+        return ApiResults.Created(context, $"/api/v1/invites/{invite.Id}", new { invite.Id }, "Invite sent successfully.");
+    }
+
+    private static async Task<IResult> RemoveManager(Guid id, Guid userId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+
+        var manager = await db.OrganisationManagers.SingleOrDefaultAsync(
+            x => x.OrganisationId == id && x.UserId == userId, cancellationToken);
+        if (manager is null) return EndpointHelpers.NotFound(context, "Manager was not found.");
+
+        db.OrganisationManagers.Remove(manager);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { id, userId }, "Manager removed successfully.");
     }
 }

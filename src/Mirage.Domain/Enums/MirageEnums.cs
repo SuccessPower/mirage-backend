@@ -27,7 +27,7 @@ public enum MilestoneType { Dating = 1, Engaged = 2, Married = 3, Separated = 4 
 public enum ContentReportTargetType { Profile = 1, DateRequest = 2, Recommendation = 3, CounsellorProfile = 4 }
 public enum ContentReportReason { Inappropriate = 1, FakeProfile = 2, Harassment = 3, Spam = 4, Other = 5 }
 public enum ContentReportStatus { Pending = 1, UnderReview = 2, ActionTaken = 3, Dismissed = 4 }
-public enum GatheringInviteKind { Community = 1, DateRequest = 2 }
+public enum GatheringInviteKind { Community = 1, DateRequest = 2, OrganisationManager = 3 }
 public enum GatheringInviteStatus { Pending = 1, Accepted = 2, Declined = 3 }
 public enum NotificationType
 {
