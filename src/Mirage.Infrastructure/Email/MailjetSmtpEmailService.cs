@@ -34,7 +34,7 @@ public sealed class MailjetSmtpEmailService : IEmailService
         }
     }
 
-    public Task SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default)
+    public Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default)
     {
         var appUrl = _config["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
         return SendAsync(toEmail, $"Welcome to Mirage, {displayName}!",
@@ -64,14 +64,14 @@ public sealed class MailjetSmtpEmailService : IEmailService
         SendAsync(toEmail, title,
             EmailTemplates.Notification(type, displayName, title, body, actionUrl, actionLabel), cancellationToken);
 
-    private async Task SendAsync(string to, string subject, string html, CancellationToken cancellationToken)
+    private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken)
     {
         var apiKey = _config["Mailjet:ApiKey"];
         var secretKey = _config["Mailjet:SecretKey"];
         if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(secretKey))
         {
             _logger.LogWarning("Mailjet:ApiKey/Mailjet:SecretKey not configured — skipping email to {To} ({Subject})", to, subject);
-            return;
+            return false;
         }
 
         var from = _config["Mailjet:From"] ?? "Mirage <onboarding@mirageapp.dev>";
@@ -102,15 +102,16 @@ public sealed class MailjetSmtpEmailService : IEmailService
                 _logger.LogError(
                     "Mailjet rejected email to {To} — HTTP {Status}: {Detail}. Ensure the From address/domain is verified in Mailjet.",
                     to, (int)response.StatusCode, detail);
+                return false;
             }
-            else
-            {
-                _logger.LogInformation("Email sent via Mailjet API to {To} — subject: {Subject}", to, subject);
-            }
+
+            _logger.LogInformation("Email sent via Mailjet API to {To} — subject: {Subject}", to, subject);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send email via Mailjet API to {To} — subject: {Subject}", to, subject);
+            return false;
         }
     }
 

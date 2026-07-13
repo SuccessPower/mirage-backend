@@ -6,6 +6,7 @@ namespace Mirage.Api.Contracts;
 public sealed record RegisterRequest(
     string Email,
     string Password,
+    string ConfirmPassword,
     string DisplayName,
     DateOnly DateOfBirth,
     string City,

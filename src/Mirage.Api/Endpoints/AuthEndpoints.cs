@@ -111,7 +111,12 @@ internal static class AuthEndpoints
                 db.RefreshTokens.Add(refreshToken);
                 await db.SaveChangesAsync(cancellationToken);
 
-                await emailService.SendWelcomeEmailAsync(user.Email!, request.DisplayName, cancellationToken);
+                var welcomeEmailSent = await emailService.SendWelcomeEmailAsync(user.Email!, request.DisplayName, cancellationToken);
+                if (welcomeEmailSent)
+                {
+                    user.WelcomeEmailSentAt = DateTimeOffset.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                }
 
                 var databaseMs = registrationStopwatch.Elapsed.TotalMilliseconds - databaseStarted;
                 ResponseTimeMiddleware.SetServerTiming(context, "password", passwordHashingMs);
@@ -615,6 +620,13 @@ internal static class AuthEndpoints
         if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
+        if (string.IsNullOrWhiteSpace(request.ConfirmPassword))
+            errors.Add(("confirmPassword", "Please confirm your password."));
+        else if (request.Password != request.ConfirmPassword)
+            errors.Add(("confirmPassword", "Passwords do not match."));
+        if (!string.IsNullOrWhiteSpace(request.Denomination) &&
+            !Enum.TryParse<ChristianDenomination>(request.Denomination, ignoreCase: true, out _))
+            errors.Add(("denomination", "Select a valid denomination."));
         return errors.ToArray();
     }
 

@@ -29,6 +29,31 @@ public enum ContentReportReason { Inappropriate = 1, FakeProfile = 2, Harassment
 public enum ContentReportStatus { Pending = 1, UnderReview = 2, ActionTaken = 3, Dismissed = 4 }
 public enum GatheringInviteKind { Community = 1, DateRequest = 2, OrganisationManager = 3 }
 public enum GatheringInviteStatus { Pending = 1, Accepted = 2, Declined = 3 }
+
+// Drives the Denomination dropdown on signup. UserProfile.Denomination stays a plain string column
+// (avoids a data migration for existing free-text values) — registration validates the submitted
+// value against this enum's names instead of constraining the column itself.
+public enum ChristianDenomination
+{
+    NonDenominational = 1,
+    Catholic = 2,
+    Orthodox = 3,
+    Anglican = 4,
+    Baptist = 5,
+    Methodist = 6,
+    Lutheran = 7,
+    Presbyterian = 8,
+    Pentecostal = 9,
+    Charismatic = 10,
+    Evangelical = 11,
+    Adventist = 12,
+    Reformed = 13,
+    Apostolic = 14,
+    Quaker = 15,
+    Anabaptist = 16,
+    Other = 17
+}
+
 public enum NotificationType
 {
     NewLike = 1,
@@ -54,5 +79,6 @@ public enum NotificationType
     PaymentConfirmed = 21,
     GatheringInviteReceived = 22,
     GatheringInviteAccepted = 23,
-    GatheringInviteDeclined = 24
+    GatheringInviteDeclined = 24,
+    ProfileVerified = 25
 }

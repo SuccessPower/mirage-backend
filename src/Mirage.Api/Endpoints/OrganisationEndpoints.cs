@@ -43,6 +43,7 @@ internal static class OrganisationEndpoints
         organisations.MapPatch("/{id:guid}/members/{memberId:guid}/reject", RejectMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
         organisations.MapDelete("/{id:guid}/members/{memberId:guid}", RemoveMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
         organisations.MapPatch("/{id:guid}/members/{memberId:guid}/assign", AssignMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
+        organisations.MapPatch("/{id:guid}/members/{memberId:guid}/verify-profile", VerifyMemberProfile).RequireAuthorization(MiragePolicy.ChurchAdmin);
 
         // Managers: multiple people can administer an org (org-wide) or one of its branches
         organisations.MapGet("/{id:guid}/managers", ListManagers).RequireAuthorization(MiragePolicy.ChurchAdmin);
@@ -408,6 +409,31 @@ internal static class OrganisationEndpoints
             member.Id, "OrganisationMember", cancellationToken);
 
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member approved successfully.");
+    }
+
+    // ChurchAdmin verifying a profile is scoped to members of their own organisation — the
+    // platform-wide equivalent (any user) lives in AdminEndpoints.VerifyProfile (PlatformAdmin only).
+    private static async Task<IResult> VerifyMemberProfile(Guid id, Guid memberId, HttpContext context,
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+
+        var member = await db.OrganisationMembers.SingleOrDefaultAsync(
+            x => x.Id == memberId && x.OrganisationId == id, cancellationToken);
+        if (member is null) return EndpointHelpers.NotFound(context, "Member was not found.");
+
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == member.UserId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+        if (profile.IsVerified) return EndpointHelpers.Conflict(context, "Profile is already verified.");
+        profile.Verify();
+        await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(member.UserId, NotificationType.ProfileVerified, "Your profile is verified",
+            "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests for any relationship intent.",
+            cancellationToken: cancellationToken);
+
+        return ApiResults.Ok(context, new { UserId = member.UserId, profile.IsVerified }, "Profile verified successfully.");
     }
 
     private static async Task<IResult> RejectMember(Guid id, Guid memberId, HttpContext context, IMirageDbContext db,

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -23,6 +24,7 @@ internal static class AdminEndpoints
         admin.MapPatch("/users/{id:guid}/suspend", SuspendUser);
         admin.MapPatch("/users/{id:guid}/reactivate", ReactivateUser);
         admin.MapPatch("/users/{id:guid}/verify-profile", VerifyProfile);
+        admin.MapPost("/users/welcome-emails/backfill", BackfillWelcomeEmails);
 
         // Content reports
         admin.MapGet("/reports", ListReports);
@@ -135,14 +137,41 @@ internal static class AdminEndpoints
     }
 
     private static async Task<IResult> VerifyProfile(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == id, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         if (profile.IsVerified) return EndpointHelpers.Conflict(context, "Profile is already verified.");
         profile.Verify();
         await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(id, NotificationType.ProfileVerified, "Your profile is verified",
+            "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests for any relationship intent.",
+            cancellationToken: cancellationToken);
+
         return ApiResults.Ok(context, new { UserId = id, profile.IsVerified }, "Profile verified successfully.");
+    }
+
+    // Runs the backlog down in batches within one request rather than one giant query — caps
+    // out at 20 batches (500 users) per call so the request can't run away; call again if
+    // TotalSent hits the cap and more remain.
+    private static async Task<IResult> BackfillWelcomeEmails(HttpContext context,
+        WelcomeEmailBackfillService backfill, CancellationToken cancellationToken)
+    {
+        const int batchSize = 25;
+        const int maxBatches = 20;
+        var totalSent = 0;
+        var batches = 0;
+        int sentThisBatch;
+        do
+        {
+            sentThisBatch = await backfill.RunBatchAsync(batchSize, cancellationToken);
+            totalSent += sentThisBatch;
+            batches++;
+        } while (sentThisBatch > 0 && batches < maxBatches);
+
+        return ApiResults.Ok(context, new { TotalSent = totalSent, ReachedBatchCap = batches >= maxBatches },
+            "Welcome email backfill completed.");
     }
 
     // --- Content reports ---

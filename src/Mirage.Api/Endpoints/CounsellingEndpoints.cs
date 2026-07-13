@@ -325,6 +325,9 @@ internal static class CounsellingEndpoints
                 "Pricing not configured", "This counsellor has not set a session price yet.");
 
         var userId = context.User.GetUserId();
+        if (!await db.Profiles.AsNoTracking().AnyAsync(x => x.UserId == userId && x.IsVerified, cancellationToken))
+            return EndpointHelpers.Forbidden(context, "Verify your profile before booking a counselling session.");
+
         var session = new CounsellingSession(request.CounsellorId, userId, request.Type,
             request.ScheduledAt, request.Topic, false, request.ClientAnonymous);
         db.CounsellingSessions.Add(session);

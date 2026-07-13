@@ -39,10 +39,12 @@ internal static class MatchingEndpoints
             return EndpointHelpers.ValidationProblem(context, ("targetUserId", "A user cannot like themselves."));
         var profileStatuses = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId || x.UserId == request.TargetUserId)
-            .Select(x => new { x.UserId, x.RelationshipStatus })
+            .Select(x => new { x.UserId, x.RelationshipStatus, x.IsVerified })
             .ToListAsync(cancellationToken);
         if (!profileStatuses.Any(x => x.UserId == request.TargetUserId))
             return EndpointHelpers.NotFound(context, "Target profile was not found.");
+        if (profileStatuses.SingleOrDefault(x => x.UserId == sourceUserId)?.IsVerified != true)
+            return EndpointHelpers.Forbidden(context, "Verify your profile before liking or matching with other members.");
         if (profileStatuses.Any(x => x.RelationshipStatus == RelationshipStatus.Married))
         {
             Match? coupleMatch;
@@ -193,6 +195,8 @@ internal static class MatchingEndpoints
         NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        if (!await IsProfileVerifiedAsync(userId, db, cancellationToken))
+            return EndpointHelpers.Forbidden(context, "Verify your profile before requesting to chat with other members.");
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
@@ -232,6 +236,8 @@ internal static class MatchingEndpoints
         NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        if (!await IsProfileVerifiedAsync(userId, db, cancellationToken))
+            return EndpointHelpers.Forbidden(context, "Verify your profile before approving chat requests.");
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
@@ -285,6 +291,10 @@ internal static class MatchingEndpoints
             x => x.User1Id == user1Id && x.User2Id == user2Id && x.Status == CoupleStatus.Approved,
             cancellationToken);
     }
+
+    private static Task<bool> IsProfileVerifiedAsync(Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken) =>
+        db.Profiles.AsNoTracking().AnyAsync(x => x.UserId == userId && x.IsVerified, cancellationToken);
 
     private static async Task<IResult> BlockMatch(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
