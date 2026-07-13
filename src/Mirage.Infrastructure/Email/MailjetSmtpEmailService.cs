@@ -1,6 +1,5 @@
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
+using System.Net;
+using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mirage.Application.Abstractions;
@@ -8,22 +7,15 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Infrastructure.Email;
 
-public sealed class ResendEmailService : IEmailService
+public sealed class MailjetSmtpEmailService : IEmailService
 {
-    private readonly HttpClient _http;
     private readonly IConfiguration _config;
-    private readonly ILogger<ResendEmailService> _logger;
+    private readonly ILogger<MailjetSmtpEmailService> _logger;
 
-    public ResendEmailService(HttpClient http, IConfiguration config, ILogger<ResendEmailService> logger)
+    public MailjetSmtpEmailService(IConfiguration config, ILogger<MailjetSmtpEmailService> logger)
     {
-        _http = http;
         _config = config;
         _logger = logger;
-
-        var apiKey = _config["Resend:ApiKey"];
-        _http.BaseAddress = new Uri("https://api.resend.com/");
-        if (!string.IsNullOrWhiteSpace(apiKey))
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
     }
 
     public Task SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default)
@@ -58,35 +50,53 @@ public sealed class ResendEmailService : IEmailService
 
     private async Task SendAsync(string to, string subject, string html, CancellationToken cancellationToken)
     {
-        var apiKey = _config["Resend:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
+        var apiKey = _config["Mailjet:ApiKey"];
+        var secretKey = _config["Mailjet:SecretKey"];
+        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(secretKey))
         {
-            _logger.LogWarning("Resend:ApiKey is not configured — skipping email to {To} ({Subject})", to, subject);
+            _logger.LogWarning("Mailjet:ApiKey/Mailjet:SecretKey not configured — skipping email to {To} ({Subject})", to, subject);
             return;
         }
 
-        var from = _config["Resend:From"] ?? "Mirage <onboarding@resend.dev>";
-        var payload = new { from, to = new[] { to }, subject, html };
-        var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var host = _config["Mailjet:SmtpHost"] ?? "in-v3.mailjet.com";
+        var port = int.TryParse(_config["Mailjet:SmtpPort"], out var p) ? p : 587;
+        var from = _config["Mailjet:From"] ?? "Mirage <onboarding@mirageapp.dev>";
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(ParseAddress(from), ParseName(from)),
+            Subject = subject,
+            Body = html,
+            IsBodyHtml = true,
+        };
+        message.To.Add(to);
+
+        using var client = new SmtpClient(host, port)
+        {
+            EnableSsl = true,
+            Credentials = new NetworkCredential(apiKey, secretKey),
+        };
 
         try
         {
-            var response = await _http.PostAsync("emails", body, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                var detail = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError(
-                    "Resend rejected email to {To} — HTTP {Status}: {Detail}. Ensure the From domain is verified in Resend.",
-                    to, (int)response.StatusCode, detail);
-            }
-            else
-            {
-                _logger.LogInformation("Email sent via Resend to {To} — subject: {Subject}", to, subject);
-            }
+            await client.SendMailAsync(message, cancellationToken);
+            _logger.LogInformation("Email sent via Mailjet SMTP to {To} — subject: {Subject}", to, subject);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email to {To} — subject: {Subject}", to, subject);
+            _logger.LogError(ex, "Failed to send email via Mailjet SMTP to {To} — subject: {Subject}", to, subject);
         }
+    }
+
+    private static string ParseAddress(string from)
+    {
+        var start = from.IndexOf('<');
+        return start >= 0 ? from[(start + 1)..from.IndexOf('>')] : from;
+    }
+
+    private static string ParseName(string from)
+    {
+        var start = from.IndexOf('<');
+        return start >= 0 ? from[..start].Trim() : string.Empty;
     }
 }

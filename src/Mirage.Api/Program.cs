@@ -101,7 +101,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<JitsiService>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
-builder.Services.AddHttpClient<IEmailService, ResendEmailService>();
+builder.Services.AddTransient<IEmailService, MailjetSmtpEmailService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()
