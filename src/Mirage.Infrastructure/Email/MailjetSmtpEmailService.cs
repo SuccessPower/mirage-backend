@@ -1,5 +1,6 @@
-using System.Net;
-using System.Net.Mail;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mirage.Application.Abstractions;
@@ -7,15 +8,30 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Infrastructure.Email;
 
+// Uses Mailjet's HTTPS Send API rather than raw SMTP — most PaaS hosts (Render included)
+// block outbound SMTP ports (25/465/587) for anti-abuse reasons, which makes a real
+// SmtpClient connection hang or fail silently. The HTTPS API uses the same API key /
+// secret key as SMTP credentials, just over port 443.
 public sealed class MailjetSmtpEmailService : IEmailService
 {
+    private readonly HttpClient _http;
     private readonly IConfiguration _config;
     private readonly ILogger<MailjetSmtpEmailService> _logger;
 
-    public MailjetSmtpEmailService(IConfiguration config, ILogger<MailjetSmtpEmailService> logger)
+    public MailjetSmtpEmailService(HttpClient http, IConfiguration config, ILogger<MailjetSmtpEmailService> logger)
     {
+        _http = http;
         _config = config;
         _logger = logger;
+
+        var apiKey = _config["Mailjet:ApiKey"];
+        var secretKey = _config["Mailjet:SecretKey"];
+        _http.BaseAddress = new Uri("https://api.mailjet.com/v3.1/");
+        if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(secretKey))
+        {
+            var creds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{apiKey}:{secretKey}"));
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", creds);
+        }
     }
 
     public Task SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default)
@@ -58,33 +74,43 @@ public sealed class MailjetSmtpEmailService : IEmailService
             return;
         }
 
-        var host = _config["Mailjet:SmtpHost"] ?? "in-v3.mailjet.com";
-        var port = int.TryParse(_config["Mailjet:SmtpPort"], out var p) ? p : 587;
         var from = _config["Mailjet:From"] ?? "Mirage <onboarding@mirageapp.dev>";
+        var fromEmail = ParseAddress(from);
+        var fromName = ParseName(from);
 
-        using var message = new MailMessage
+        var payload = new
         {
-            From = new MailAddress(ParseAddress(from), ParseName(from)),
-            Subject = subject,
-            Body = html,
-            IsBodyHtml = true,
+            Messages = new[]
+            {
+                new
+                {
+                    From = new { Email = fromEmail, Name = fromName },
+                    To = new[] { new { Email = to } },
+                    Subject = subject,
+                    HTMLPart = html,
+                },
+            },
         };
-        message.To.Add(to);
-
-        using var client = new SmtpClient(host, port)
-        {
-            EnableSsl = true,
-            Credentials = new NetworkCredential(apiKey, secretKey),
-        };
+        var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
         try
         {
-            await client.SendMailAsync(message, cancellationToken);
-            _logger.LogInformation("Email sent via Mailjet SMTP to {To} — subject: {Subject}", to, subject);
+            var response = await _http.PostAsync("send", body, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError(
+                    "Mailjet rejected email to {To} — HTTP {Status}: {Detail}. Ensure the From address/domain is verified in Mailjet.",
+                    to, (int)response.StatusCode, detail);
+            }
+            else
+            {
+                _logger.LogInformation("Email sent via Mailjet API to {To} — subject: {Subject}", to, subject);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email via Mailjet SMTP to {To} — subject: {Subject}", to, subject);
+            _logger.LogError(ex, "Failed to send email via Mailjet API to {To} — subject: {Subject}", to, subject);
         }
     }
 
