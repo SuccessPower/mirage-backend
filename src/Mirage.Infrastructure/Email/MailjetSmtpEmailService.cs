@@ -96,12 +96,25 @@ public sealed class MailjetSmtpEmailService : IEmailService
         try
         {
             var response = await _http.PostAsync("send", body, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
             if (!response.IsSuccessStatusCode)
             {
-                var detail = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogError(
                     "Mailjet rejected email to {To} — HTTP {Status}: {Detail}. Ensure the From address/domain is verified in Mailjet.",
-                    to, (int)response.StatusCode, detail);
+                    to, (int)response.StatusCode, responseBody);
+                return false;
+            }
+
+            // Mailjet's v3.1 Send API can return HTTP 200 even when the message itself was
+            // rejected (e.g. an unverified From address/domain) — the real outcome is only in
+            // the per-message "Status" field, so the HTTP status alone can't be trusted.
+            if (!IsMessageAccepted(responseBody, out var messageError))
+            {
+                _logger.LogError(
+                    "Mailjet accepted the API call but rejected the message to {To}: {Detail}. " +
+                    "Check that the From address/domain is verified under Mailjet > Sender addresses & domains.",
+                    to, messageError ?? responseBody);
                 return false;
             }
 
@@ -111,6 +124,33 @@ public sealed class MailjetSmtpEmailService : IEmailService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send email via Mailjet API to {To} — subject: {Subject}", to, subject);
+            return false;
+        }
+    }
+
+    private static bool IsMessageAccepted(string responseBody, out string? error)
+    {
+        error = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(responseBody);
+            if (!doc.RootElement.TryGetProperty("Messages", out var messages) ||
+                messages.ValueKind != JsonValueKind.Array || messages.GetArrayLength() == 0)
+            {
+                error = "Unexpected response shape from Mailjet.";
+                return false;
+            }
+
+            var message = messages[0];
+            var status = message.TryGetProperty("Status", out var statusProp) ? statusProp.GetString() : null;
+            if (string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)) return true;
+
+            error = message.TryGetProperty("Errors", out var errors) ? errors.ToString() : responseBody;
+            return false;
+        }
+        catch (JsonException)
+        {
+            error = "Could not parse Mailjet response body.";
             return false;
         }
     }

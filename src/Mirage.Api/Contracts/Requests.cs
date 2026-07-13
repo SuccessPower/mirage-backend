@@ -189,3 +189,4 @@ public sealed record BookSessionRequest(
     string? PartnerEmail = null);
 
 public sealed record InitializePaymentRequest(PaymentProvider Provider, PaymentMethod Method);
+public sealed record ResetWelcomeEmailsRequest(string[] Emails);

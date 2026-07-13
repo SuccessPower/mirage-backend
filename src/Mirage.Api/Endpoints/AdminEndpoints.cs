@@ -25,6 +25,7 @@ internal static class AdminEndpoints
         admin.MapPatch("/users/{id:guid}/reactivate", ReactivateUser);
         admin.MapPatch("/users/{id:guid}/verify-profile", VerifyProfile);
         admin.MapPost("/users/welcome-emails/backfill", BackfillWelcomeEmails);
+        admin.MapPost("/users/welcome-emails/reset", ResetWelcomeEmails);
 
         // Content reports
         admin.MapGet("/reports", ListReports);
@@ -172,6 +173,25 @@ internal static class AdminEndpoints
 
         return ApiResults.Ok(context, new { TotalSent = totalSent, ReachedBatchCap = batches >= maxBatches },
             "Welcome email backfill completed.");
+    }
+
+    // Clears WelcomeEmailSentAt for specific users so the backfill endpoint will re-send to them —
+    // needed once, for the batch of users whose welcome email was logged as "sent" by the old
+    // Mailjet integration before we started validating the per-message Status in the response
+    // body (it was returning HTTP 200 while silently dropping messages from an unverified sender).
+    private static async Task<IResult> ResetWelcomeEmails(ResetWelcomeEmailsRequest request, HttpContext context,
+        MirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.Emails is not { Length: > 0 })
+            return EndpointHelpers.ValidationProblem(context, ("emails", "At least one email is required."));
+
+        var normalized = request.Emails.Select(e => e.Trim().ToLowerInvariant()).ToArray();
+        var updated = await db.Users
+            .Where(x => x.Email != null && normalized.Contains(x.Email.ToLower()))
+            .ExecuteUpdateAsync(x => x.SetProperty(u => u.WelcomeEmailSentAt, (DateTimeOffset?)null), cancellationToken);
+
+        return ApiResults.Ok(context, new { MatchedCount = updated },
+            "Welcome email status reset — call the backfill endpoint to re-send.");
     }
 
     // --- Content reports ---
