@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -5,6 +6,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(Mirage.Infrastructure.Persistence.MirageDbContext))]
+    [Migration("20260702150000_AddOrgEventImageUrl")]
     public partial class AddOrgEventImageUrl : Migration
     {
         /// <inheritdoc />

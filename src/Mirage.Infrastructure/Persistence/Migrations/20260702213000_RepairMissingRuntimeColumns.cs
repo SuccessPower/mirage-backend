@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Mirage.Infrastructure.Persistence.Migrations;
 
+[DbContext(typeof(MirageDbContext))]
 [Migration("20260702213000_RepairMissingRuntimeColumns")]
 public sealed class RepairMissingRuntimeColumns : Migration
 {
