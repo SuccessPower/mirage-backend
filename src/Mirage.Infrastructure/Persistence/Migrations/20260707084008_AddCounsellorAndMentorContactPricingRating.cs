@@ -77,7 +77,30 @@ namespace Mirage.Infrastructure.Persistence.Migrations
             // was genuinely never created (AddCounsellingSessionPartner added the column via raw
             // SQL but skipped the FK index) — add it idempotently here instead of recreating
             // tables that already exist.
+            //
+            // Production's migration history recorded AddCounsellingSessionPartner as applied
+            // without its ALTER TABLE having actually run, so re-assert the column here too
+            // before indexing it.
             migrationBuilder.Sql("""
+                ALTER TABLE mirage.counselling_sessions
+                    ADD COLUMN IF NOT EXISTS "PartnerUserId" uuid NULL,
+                    ADD COLUMN IF NOT EXISTS "PartnerAccepted" boolean NOT NULL DEFAULT false;
+
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'FK_counselling_sessions_AspNetUsers_PartnerUserId'
+                          AND conrelid = 'mirage.counselling_sessions'::regclass
+                    ) THEN
+                        ALTER TABLE mirage.counselling_sessions
+                        ADD CONSTRAINT "FK_counselling_sessions_AspNetUsers_PartnerUserId"
+                        FOREIGN KEY ("PartnerUserId")
+                        REFERENCES mirage."AspNetUsers" ("Id")
+                        ON DELETE SET NULL;
+                    END IF;
+                END $$;
+
                 CREATE INDEX IF NOT EXISTS "IX_counselling_sessions_PartnerUserId"
                     ON mirage.counselling_sessions ("PartnerUserId");
                 """);
