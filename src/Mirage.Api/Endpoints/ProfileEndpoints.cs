@@ -88,9 +88,14 @@ internal static class ProfileEndpoints
             .Where(userId => pagedProfiles.Items.Select(profile => profile.UserId).Contains(userId))
             .ToListAsync(cancellationToken);
         var pagedUserIds = pagedProfiles.Items.Select(profile => profile.UserId).ToArray();
-        var emails = await db.Users.AsNoTracking()
-            .Where(user => pagedUserIds.Contains(user.Id))
-            .ToDictionaryAsync(user => user.Id, user => user.Email, cancellationToken);
+
+        // Emails are only ever shown to signed-in viewers — an anonymous visitor browsing
+        // Discovery should not be able to harvest every listed member's email address.
+        var emails = currentUserId.HasValue
+            ? await db.Users.AsNoTracking()
+                .Where(user => pagedUserIds.Contains(user.Id))
+                .ToDictionaryAsync(user => user.Id, user => user.Email, cancellationToken)
+            : new Dictionary<Guid, string?>();
         var badges = await db.GetOrgBadgesAsync(pagedUserIds, cancellationToken);
         var response = new Mirage.Application.Common.PagedResult<ProfileResponse>(
             pagedProfiles.Items
