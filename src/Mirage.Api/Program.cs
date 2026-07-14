@@ -221,6 +221,8 @@ builder.Services.AddAuthorization(options =>
         p => p.RequireRole(MirageRoles.Counsellor, MirageRoles.ChurchAdmin, MirageRoles.PlatformAdmin));
     options.AddPolicy(MiragePolicy.Mentor,
         p => p.RequireRole(MirageRoles.Mentor, MirageRoles.PlatformAdmin));
+    options.AddPolicy(MiragePolicy.Vendor,
+        p => p.RequireRole(MirageRoles.Vendor, MirageRoles.PlatformAdmin));
 });
 builder.Services.AddRateLimiter(options =>
 {

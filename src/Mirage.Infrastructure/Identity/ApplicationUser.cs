@@ -15,8 +15,9 @@ public static class MirageRoles
     public const string ChurchAdmin = "ChurchAdmin";
     public const string Counsellor = "Counsellor";
     public const string Mentor = "Mentor";
+    public const string Vendor = "Vendor";
     public const string PlatformAdmin = "PlatformAdmin";
-    public static readonly string[] All = [User, ChurchAdmin, Counsellor, Mentor, PlatformAdmin];
+    public static readonly string[] All = [User, ChurchAdmin, Counsellor, Mentor, Vendor, PlatformAdmin];
 }
 
 public static class IdentityCacheKeys

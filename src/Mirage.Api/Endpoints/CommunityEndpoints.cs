@@ -209,14 +209,14 @@ internal static class CommunityEndpoints
     }
 
     private static async Task<IResult> ListMembers(Guid id, HttpContext context, IMirageDbContext db,
-        int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+        UserManager<ApplicationUser> userManager, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
     {
         var userId = context.User.GetUserId();
         var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
-        var members = await db.CommunityMembers.AsNoTracking()
-            .Where(x => x.CommunityId == id && x.LeftAt == null)
+        var paged = await db.CommunityMembers.AsNoTracking()
+            .Where(x => x.CommunityId == id && x.LeftAt == null && userManager.Users.Any(u => u.Id == x.UserId && u.IsActive))
             .Join(db.Profiles.AsNoTracking(), member => member.UserId, profile => profile.UserId,
                 (member, profile) => new
                 {
@@ -229,14 +229,13 @@ internal static class CommunityEndpoints
                 })
             .OrderBy(x => x.Role)
             .ThenBy(x => x.DisplayName)
-            .Select(x => new CommunityMemberResponse(
-                x.Id,
-                x.UserId,
-                x.DisplayName,
-                x.AvatarUrl,
-                x.Role,
-                x.CreatedAt))
             .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        var badges = await db.GetOrgBadgesAsync(paged.Items.Select(x => x.UserId), cancellationToken);
+        var members = new Mirage.Application.Common.PagedResult<CommunityMemberResponse>(
+            paged.Items.Select(x => new CommunityMemberResponse(x.Id, x.UserId, x.DisplayName, x.AvatarUrl, x.Role,
+                x.CreatedAt, badges.GetValueOrDefault(x.UserId)?.LogoUrl, badges.GetValueOrDefault(x.UserId)?.OrganisationName)).ToList(),
+            paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, members, "Community members retrieved successfully.");
     }
@@ -330,28 +329,37 @@ internal static class CommunityEndpoints
         var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
-        var posts = await db.CommunityPosts.AsNoTracking()
+        var paged = await db.CommunityPosts.AsNoTracking()
             .Where(x => x.CommunityId == id)
             .OrderByDescending(post => post.CreatedAt)
-            .Select(post => new CommunityPostResponse(
+            .Select(post => new
+            {
                 post.Id,
                 post.CommunityId,
                 post.AuthorUserId,
-                db.Profiles
+                AuthorName = db.Profiles
                     .Where(profile => profile.UserId == post.AuthorUserId)
                     .Select(profile => profile.DisplayName)
                     .SingleOrDefault() ?? "Member",
-                db.Profiles
+                AuthorAvatarUrl = db.Profiles
                     .Where(profile => profile.UserId == post.AuthorUserId)
                     .Select(profile => profile.AvatarUrl)
                     .SingleOrDefault(),
                 post.Body,
                 post.ImageUrl,
-                post.Likes.Count,
-                post.Comments.Count,
-                post.Likes.Any(like => like.UserId == userId),
-                post.CreatedAt))
+                LikeCount = post.Likes.Count,
+                CommentCount = post.Comments.Count,
+                LikedByMe = post.Likes.Any(like => like.UserId == userId),
+                post.CreatedAt
+            })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        var badges = await db.GetOrgBadgesAsync(paged.Items.Select(x => x.AuthorUserId), cancellationToken);
+        var posts = new Mirage.Application.Common.PagedResult<CommunityPostResponse>(
+            paged.Items.Select(x => new CommunityPostResponse(x.Id, x.CommunityId, x.AuthorUserId, x.AuthorName,
+                x.AuthorAvatarUrl, x.Body, x.ImageUrl, x.LikeCount, x.CommentCount, x.LikedByMe, x.CreatedAt,
+                badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl, badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName)).ToList(),
+            paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, posts, "Community posts retrieved successfully.");
     }
@@ -376,9 +384,10 @@ internal static class CommunityEndpoints
             .Select(x => new { x.DisplayName, x.AvatarUrl })
             .SingleOrDefaultAsync(cancellationToken);
 
+        var authorBadge = await db.GetOrgBadgeAsync(userId, cancellationToken);
         var response = new CommunityPostResponse(post.Id, post.CommunityId, post.AuthorUserId,
             author?.DisplayName ?? "Member", author?.AvatarUrl, post.Body, post.ImageUrl, 0, 0, false,
-            post.CreatedAt);
+            post.CreatedAt, authorBadge?.LogoUrl, authorBadge?.OrganisationName);
         return ApiResults.Created(context, $"/api/v1/communities/{id}/posts/{post.Id}", response,
             "Community post created successfully.");
     }
@@ -437,30 +446,40 @@ internal static class CommunityEndpoints
         var isMember = await IsActiveMemberAsync(communityId.Value, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
-        var comments = await db.CommunityPostComments.AsNoTracking()
+        var paged = await db.CommunityPostComments.AsNoTracking()
             .Where(x => x.PostId == postId)
             .OrderBy(comment => comment.CreatedAt)
-            .Select(comment => new CommunityPostCommentResponse(
+            .Select(comment => new
+            {
                 comment.Id,
                 comment.PostId,
                 comment.AuthorUserId,
-                db.Profiles
+                AuthorName = db.Profiles
                     .Where(profile => profile.UserId == comment.AuthorUserId)
                     .Select(profile => profile.DisplayName)
                     .SingleOrDefault() ?? "Member",
-                db.Profiles
+                AuthorAvatarUrl = db.Profiles
                     .Where(profile => profile.UserId == comment.AuthorUserId)
                     .Select(profile => profile.AvatarUrl)
                     .SingleOrDefault(),
                 comment.ParentCommentId,
                 comment.Body,
                 comment.MentionedUserIds,
-                comment.Likes.Count,
-                comment.Likes.Any(like => like.UserId == userId),
+                LikeCount = comment.Likes.Count,
+                LikedByMe = comment.Likes.Any(like => like.UserId == userId),
                 comment.IsEdited,
                 comment.IsDeleted,
-                comment.CreatedAt))
+                comment.CreatedAt
+            })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        var badges = await db.GetOrgBadgesAsync(paged.Items.Select(x => x.AuthorUserId), cancellationToken);
+        var comments = new Mirage.Application.Common.PagedResult<CommunityPostCommentResponse>(
+            paged.Items.Select(x => new CommunityPostCommentResponse(x.Id, x.PostId, x.AuthorUserId, x.AuthorName,
+                x.AuthorAvatarUrl, x.ParentCommentId, x.Body, x.MentionedUserIds, x.LikeCount, x.LikedByMe, x.IsEdited,
+                x.IsDeleted, x.CreatedAt, badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl,
+                badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName)).ToList(),
+            paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, comments, "Community post comments retrieved successfully.");
     }
@@ -514,9 +533,11 @@ internal static class CommunityEndpoints
                 "CommunityPostComment", cancellationToken);
         }
 
+        var authorBadge = await db.GetOrgBadgeAsync(userId, cancellationToken);
         var response = new CommunityPostCommentResponse(comment.Id, comment.PostId, comment.AuthorUserId,
             author?.DisplayName ?? "Member", author?.AvatarUrl, comment.ParentCommentId, comment.Body,
-            comment.MentionedUserIds, 0, false, false, false, comment.CreatedAt);
+            comment.MentionedUserIds, 0, false, false, false, comment.CreatedAt,
+            authorBadge?.LogoUrl, authorBadge?.OrganisationName);
         return ApiResults.Created(context, $"/api/v1/communities/posts/{postId}/comments/{comment.Id}",
             response, "Community post comment created successfully.");
     }

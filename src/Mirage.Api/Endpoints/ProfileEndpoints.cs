@@ -33,6 +33,9 @@ internal static class ProfileEndpoints
 
         var query = db.Profiles.AsNoTracking().AsQueryable();
 
+        // Deactivated/deleted accounts (ApplicationUser.IsActive = false) never surface here.
+        query = query.Where(x => db.Users.Any(u => u.Id == x.UserId && u.IsActive));
+
         // Approved couples are off the market entirely, for everyone.
         query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
             && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
@@ -88,10 +91,11 @@ internal static class ProfileEndpoints
         var emails = await db.Users.AsNoTracking()
             .Where(user => pagedUserIds.Contains(user.Id))
             .ToDictionaryAsync(user => user.Id, user => user.Email, cancellationToken);
+        var badges = await db.GetOrgBadgesAsync(pagedUserIds, cancellationToken);
         var response = new Mirage.Application.Common.PagedResult<ProfileResponse>(
             pagedProfiles.Items
                 .Select(profile => profile.ToResponse(recommendedUserIds.Contains(profile.UserId),
-                    emails.GetValueOrDefault(profile.UserId)))
+                    emails.GetValueOrDefault(profile.UserId), badges.GetValueOrDefault(profile.UserId)))
                 .ToList(),
             pagedProfiles.Page,
             pagedProfiles.PageSize,
@@ -105,11 +109,13 @@ internal static class ProfileEndpoints
     {
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+        var account = await db.Users.AsNoTracking().Where(user => user.Id == userId)
+            .Select(user => new { user.Email, user.IsActive }).SingleOrDefaultAsync(cancellationToken);
+        if (account is null || !account.IsActive) return EndpointHelpers.NotFound(context, "Profile was not found.");
         var recommended = await db.Recommendations.AnyAsync(
             x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
-        var email = await db.Users.AsNoTracking().Where(user => user.Id == userId)
-            .Select(user => user.Email).SingleOrDefaultAsync(cancellationToken);
-        return ApiResults.Ok(context, profile.ToResponse(recommended, email), "Profile retrieved successfully.");
+        var badge = await db.GetOrgBadgeAsync(userId, cancellationToken);
+        return ApiResults.Ok(context, profile.ToResponse(recommended, account.Email, badge), "Profile retrieved successfully.");
     }
 
     private static async Task<IResult> GetMine(HttpContext context, MirageDbContext db,
@@ -128,13 +134,15 @@ internal static class ProfileEndpoints
             .Where(x => x.UserId == userId)
             .Select(x => new { x.Id, x.IsApproved })
             .SingleOrDefaultAsync(cancellationToken);
-        var response = profile.ToResponse(recommended, email) with
+        var badge = await db.GetOrgBadgeAsync(userId, cancellationToken);
+        var response = profile.ToResponse(recommended, email, badge) with
         {
             Roles = roles,
             MentorProfileId = mentor?.Id,
             HasApprovedMentorProfile = mentor?.IsApproved == true,
             IsChurchAdmin = roles.Contains(MirageRoles.ChurchAdmin) || roles.Contains(MirageRoles.PlatformAdmin),
-            IsCounsellor = roles.Contains(MirageRoles.Counsellor)
+            IsCounsellor = roles.Contains(MirageRoles.Counsellor),
+            EmailConfirmed = user?.EmailConfirmed
         };
         return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }
@@ -150,6 +158,7 @@ internal static class ProfileEndpoints
             request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
             request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage,
             request.Occupation);
+        profile.AutoVerifyIfComplete();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }
@@ -161,6 +170,7 @@ internal static class ProfileEndpoints
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         try { profile.SetPhotos(request.PhotoUrls); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+        profile.AutoVerifyIfComplete();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId, profile.PhotoUrls }, "Profile photos updated successfully.");
     }

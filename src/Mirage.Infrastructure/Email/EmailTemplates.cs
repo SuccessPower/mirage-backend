@@ -15,6 +15,14 @@ public static class EmailTemplates
             new Dictionary<string, string> { [DisplayNameToken] = displayName },
             ctaBlock: "").Replace("{{APP_URL}}", appUrl);
 
+    public static string EmailConfirmation(string displayName, string confirmUrl) =>
+        TemplateEngine.RenderPage("email-confirmation", "Confirm your email to start liking, matching, and chatting on Mirage.",
+            new Dictionary<string, string>
+            {
+                [DisplayNameToken] = displayName,
+                ["CONFIRM_URL"] = confirmUrl
+            });
+
     public static string PasswordReset(string displayName, string resetUrl) =>
         TemplateEngine.RenderPage("password-reset", "Reset your Mirage password — this link expires in 24 hours.",
             new Dictionary<string, string>
@@ -22,6 +30,21 @@ public static class EmailTemplates
                 [DisplayNameToken] = displayName,
                 ["RESET_URL"] = resetUrl
             });
+
+    public static string AccountClosed(string displayName, bool permanent)
+    {
+        var title = permanent ? "Your account has been deleted" : "Your account has been deactivated";
+        var body = permanent
+            ? "your Mirage account and profile details have been deleted. You will no longer be able to sign in."
+            : "your Mirage account has been deactivated and you will no longer be able to sign in. Contact support if you'd like it reactivated.";
+        return TemplateEngine.RenderPage("account-closed", title,
+            new Dictionary<string, string>
+            {
+                [DisplayNameToken] = displayName,
+                ["TITLE"] = title,
+                ["BODY"] = body
+            });
+    }
 
     public static string PasswordChanged(string displayName) =>
         TemplateEngine.RenderPage("password-changed", "Your Mirage password was changed successfully.",

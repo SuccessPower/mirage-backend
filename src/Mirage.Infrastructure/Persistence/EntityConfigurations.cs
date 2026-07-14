@@ -35,7 +35,28 @@ public sealed class OrganisationConfiguration : IEntityTypeConfiguration<Organis
         b.HasIndex(x => x.Status);
         b.Property(x => x.Name).HasMaxLength(200);
         b.Property(x => x.RegistrationNumber).HasMaxLength(100);
+        b.Property(x => x.LogoUrl).HasMaxLength(1000);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AdminUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class VendorConfiguration : IEntityTypeConfiguration<Vendor>
+{
+    public void Configure(EntityTypeBuilder<Vendor> b)
+    {
+        b.ToTable("vendors");
+        b.HasIndex(x => x.OwnerUserId);
+        b.HasIndex(x => x.Status);
+        b.HasIndex(x => x.Category);
+        b.Property(x => x.BusinessName).HasMaxLength(200);
+        b.Property(x => x.Description).HasMaxLength(2000);
+        b.Property(x => x.Email).HasMaxLength(255);
+        b.Property(x => x.Phone).HasMaxLength(40);
+        b.Property(x => x.Address).HasMaxLength(300);
+        b.Property(x => x.City).HasMaxLength(100);
+        b.Property(x => x.Country).HasMaxLength(100);
+        b.Property(x => x.PhotoUrls).HasColumnType("text[]");
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

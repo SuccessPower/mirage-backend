@@ -77,7 +77,7 @@ internal static class OrganisationEndpoints
 
         var userId = context.User.GetUserId();
         var organisation = new Organisation(userId, request.Name, request.Denomination,
-            request.Country, request.RegistrationNumber);
+            request.Country, request.RegistrationNumber, request.LogoUrl);
 
         // A PlatformAdmin-issued invite lets this org skip the Pending review queue entirely.
         if (!string.IsNullOrWhiteSpace(request.InviteToken))
@@ -322,6 +322,13 @@ internal static class OrganisationEndpoints
         if (existing is not null && existing.Status != OrganisationMemberStatus.Removed
             && existing.Status != OrganisationMemberStatus.Rejected)
             return EndpointHelpers.Conflict(context, "A membership request already exists for this organisation.");
+
+        // A member (and their badge) belongs to exactly one organisation at a time — leave/get
+        // removed from your current one before requesting to join another.
+        if (await db.OrganisationMembers.AnyAsync(x => x.UserId == userId && x.OrganisationId != id &&
+            (x.Status == OrganisationMemberStatus.Pending || x.Status == OrganisationMemberStatus.Approved), cancellationToken))
+            return EndpointHelpers.Conflict(context,
+                "You already belong to another organisation. Leave it before joining a new one.");
 
         if (request.BranchId.HasValue &&
             !await db.OrganisationBranches.AnyAsync(x => x.Id == request.BranchId && x.OrganisationId == id, cancellationToken))
