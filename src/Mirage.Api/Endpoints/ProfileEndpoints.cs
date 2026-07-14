@@ -15,7 +15,7 @@ internal static class ProfileEndpoints
     {
         var group = api.MapGroup("/profiles").WithTags("Profiles");
         group.MapGet("/", Discover);
-        group.MapGet("/{userId:guid}", GetById);
+        group.MapGet("/{userId:guid}", GetById).RequireAuthorization();
         group.MapGet("/me", GetMine).RequireAuthorization();
         group.MapPut("/me", UpdateMine).RequireAuthorization();
         group.MapPut("/me/photos", UpdateMyPhotos).RequireAuthorization();
