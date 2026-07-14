@@ -53,6 +53,8 @@ internal static class OrganisationEndpoints
         // Branches
         organisations.MapGet("/{id:guid}/branches", ListBranches);
         organisations.MapPost("/{id:guid}/branches", CreateBranch).RequireAuthorization(MiragePolicy.ChurchAdmin);
+        organisations.MapPost("/{id:guid}/branches/import", ImportBranches)
+            .RequireAuthorization(MiragePolicy.ChurchAdmin).DisableAntiforgery();
 
         // Events + tickets
         organisations.MapGet("/{id:guid}/events", ListEvents);
@@ -330,11 +332,12 @@ internal static class OrganisationEndpoints
             return EndpointHelpers.Conflict(context,
                 "You already belong to another organisation. Leave it before joining a new one.");
 
-        if (request.BranchId.HasValue &&
-            !await db.OrganisationBranches.AnyAsync(x => x.Id == request.BranchId && x.OrganisationId == id, cancellationToken))
+        if (!request.BranchId.HasValue)
+            return EndpointHelpers.ValidationProblem(context, ("branchId", "Please select the branch you attend."));
+        if (!await db.OrganisationBranches.AnyAsync(x => x.Id == request.BranchId && x.OrganisationId == id, cancellationToken))
             return EndpointHelpers.ValidationProblem(context, ("branchId", "Branch does not belong to this organisation."));
 
-        var member = new OrganisationMember(id, userId, request.BranchId);
+        var member = new OrganisationMember(id, userId, request.BranchId, request.Description);
         db.OrganisationMembers.Add(member);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/organisations/{id}/members/{member.Id}",
@@ -354,6 +357,7 @@ internal static class OrganisationEndpoints
                 x.OrganisationId,
                 OrganisationName = x.Organisation!.Name,
                 x.BranchId,
+                x.Description,
                 x.Status,
                 x.AssignedMentorUserId,
                 x.AssignedCounsellorUserId,
@@ -373,7 +377,7 @@ internal static class OrganisationEndpoints
             .Where(x => x.OrganisationId == id)
             .Join(db.Profiles.AsNoTracking(), m => m.UserId, p => p.UserId, (m, p) => new OrganisationMemberResponse(
                 m.Id, m.UserId, p.DisplayName, p.AvatarUrl, m.BranchId, m.Status,
-                m.AssignedMentorUserId, m.AssignedCounsellorUserId, m.CreatedAt))
+                m.AssignedMentorUserId, m.AssignedCounsellorUserId, m.CreatedAt, m.Description))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, members, "Members retrieved successfully.");
     }
@@ -409,11 +413,23 @@ internal static class OrganisationEndpoints
         if (member.Status == OrganisationMemberStatus.Approved)
             return EndpointHelpers.Conflict(context, "Member is already approved.");
         member.Approve();
+
+        // Approval is what earns the verified tick — a member is only verified once their
+        // church confirms they attend, not from filling out their profile.
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == member.UserId, cancellationToken);
+        var justVerified = profile is not null && !profile.IsVerified;
+        if (justVerified) profile!.Verify();
+
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(member.UserId, NotificationType.MembershipApproved,
             "Membership approved", "Your membership request has been approved.",
             member.Id, "OrganisationMember", cancellationToken);
+
+        if (justVerified)
+            await notifications.NotifyAsync(member.UserId, NotificationType.ProfileVerified, "Your profile is verified",
+                "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests for any relationship intent.",
+                cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member approved successfully.");
     }
@@ -521,6 +537,67 @@ internal static class OrganisationEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/organisations/{id}/branches/{branch.Id}",
             new { branch.Id }, "Branch created successfully.");
+    }
+
+    // Bulk branch onboarding for churches with many campuses — expects an .xlsx with a header row
+    // of Name/City/Country/Address (Address optional). Rows whose Name already matches an existing
+    // branch (case-insensitive) are skipped rather than overwritten.
+    private static async Task<IResult> ImportBranches(Guid id, HttpContext context, IMirageDbContext db,
+        IFormFile? file, CancellationToken cancellationToken)
+    {
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+        if (file is null || file.Length == 0)
+            return EndpointHelpers.ValidationProblem(context, ("file", "Please choose an .xlsx file to upload."));
+
+        var existingNames = new HashSet<string>(
+            await db.OrganisationBranches.AsNoTracking().Where(x => x.OrganisationId == id)
+                .Select(x => x.Name).ToListAsync(cancellationToken),
+            StringComparer.OrdinalIgnoreCase);
+
+        int created = 0, skipped = 0;
+        try
+        {
+            using var stream = file.OpenReadStream();
+            using var workbook = new ClosedXML.Excel.XLWorkbook(stream);
+            var sheet = workbook.Worksheets.First();
+            var headerRow = sheet.FirstRowUsed();
+            if (headerRow is null)
+                return EndpointHelpers.ValidationProblem(context, ("file", "The file has no header row."));
+
+            var columns = headerRow.CellsUsed()
+                .ToDictionary(c => c.GetString().Trim().ToLowerInvariant(), c => c.Address.ColumnNumber);
+            if (!columns.ContainsKey("name") || !columns.ContainsKey("city"))
+                return EndpointHelpers.ValidationProblem(context,
+                    ("file", "The file must have Name and City columns (Country and Address are optional)."));
+
+            foreach (var row in sheet.RowsUsed().Skip(1))
+            {
+                string Cell(string column) => columns.TryGetValue(column, out var col)
+                    ? row.Cell(col).GetString().Trim() : string.Empty;
+
+                var name = Cell("name");
+                var city = Cell("city");
+                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(city)) continue;
+                if (existingNames.Contains(name)) { skipped++; continue; }
+
+                var country = Cell("country");
+                var address = Cell("address");
+                db.OrganisationBranches.Add(new OrganisationBranch(id, name, city, country,
+                    string.IsNullOrWhiteSpace(address) ? null : address));
+                existingNames.Add(name);
+                created++;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return EndpointHelpers.ValidationProblem(context,
+                ("file", "Could not read the uploaded file — make sure it's a valid .xlsx with Name/City/Country/Address columns."));
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { Created = created, Skipped = skipped },
+            $"Imported {created} branch(es), skipped {skipped} duplicate(s).");
     }
 
     // --- Events + tickets ---

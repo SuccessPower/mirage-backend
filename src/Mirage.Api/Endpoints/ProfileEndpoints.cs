@@ -158,7 +158,6 @@ internal static class ProfileEndpoints
             request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
             request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage,
             request.Occupation);
-        profile.AutoVerifyIfComplete();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }
@@ -170,7 +169,6 @@ internal static class ProfileEndpoints
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         try { profile.SetPhotos(request.PhotoUrls); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
-        profile.AutoVerifyIfComplete();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId, profile.PhotoUrls }, "Profile photos updated successfully.");
     }

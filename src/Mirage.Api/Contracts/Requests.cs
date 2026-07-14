@@ -48,7 +48,7 @@ public sealed record CreateOrganisationRequest(
     string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null,
     string? LogoUrl = null);
 public sealed record InviteOrganisationAdminRequest(string Email);
-public sealed record JoinOrganisationRequest(Guid? BranchId);
+public sealed record JoinOrganisationRequest(Guid? BranchId, string? Description = null);
 public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
 public sealed record CreateBranchRequest(string Name, string City, string Country, string? Address);
 public sealed record CreateVendorRequest(

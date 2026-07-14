@@ -81,18 +81,6 @@ public sealed class UserProfile : Entity
 
     public void Verify() { IsVerified = true; Touch(); }
 
-    // Replaces the old manual-only ChurchAdmin/PlatformAdmin review for the common case: once a
-    // profile has the optional-but-trust-signalling fields filled in and at least two photos, it
-    // auto-verifies instead of waiting in a review queue. Admins can still Verify() manually
-    // (e.g. via VerifyMemberProfile) for anyone who doesn't meet this bar.
-    public void AutoVerifyIfComplete()
-    {
-        if (IsVerified) return;
-        var isComplete = Sex.HasValue && RelationshipStatus.HasValue &&
-            !string.IsNullOrWhiteSpace(Occupation) && PhotoUrls.Length >= 2;
-        if (isComplete) Verify();
-    }
-
     public void MarkMarried() { RelationshipStatus = Mirage.Domain.Enums.RelationshipStatus.Married; Touch(); }
 
     // Self-service "delete my account" — a hard delete of the underlying ApplicationUser isn't

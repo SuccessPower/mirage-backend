@@ -48,6 +48,7 @@ internal static class AdminEndpoints
 
         // Couples overview
         admin.MapGet("/couples", ListCouples);
+        admin.MapGet("/couples/{id:guid}", GetCoupleDetail);
 
         // Organisation admin invites — skips the Pending review queue when redeemed
         admin.MapPost("/organisations/invite", InviteOrganisationAdmin);
@@ -501,6 +502,26 @@ internal static class AdminEndpoints
             })
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, couples, "Couples retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetCoupleDetail(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var couple = await db.Couples.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (couple is null) return EndpointHelpers.NotFound(context, "Couple was not found.");
+
+        var profile1 = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == couple.User1Id, cancellationToken);
+        var profile2 = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == couple.User2Id, cancellationToken);
+
+        return ApiResults.Ok(context, new
+        {
+            couple.Id,
+            couple.Status,
+            couple.CreatedAt,
+            couple.ReviewedAt,
+            User1 = profile1?.ToResponse(false),
+            User2 = profile2?.ToResponse(false)
+        }, "Couple retrieved successfully.");
     }
 
     // --- Organisation admin invites ---

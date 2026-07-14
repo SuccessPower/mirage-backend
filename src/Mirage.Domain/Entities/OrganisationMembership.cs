@@ -48,17 +48,19 @@ public sealed class OrganisationMember : Entity
 {
     private OrganisationMember() { }
 
-    public OrganisationMember(Guid organisationId, Guid userId, Guid? branchId)
+    public OrganisationMember(Guid organisationId, Guid userId, Guid? branchId, string? description = null)
     {
         OrganisationId = organisationId;
         UserId = userId;
         BranchId = branchId;
+        Description = description?.Trim();
     }
 
     public Guid OrganisationId { get; private set; }
     public Organisation? Organisation { get; private set; }
     public Guid UserId { get; private set; }
     public Guid? BranchId { get; private set; }
+    public string? Description { get; private set; }
     public OrganisationMemberStatus Status { get; private set; } = OrganisationMemberStatus.Pending;
     public Guid? AssignedMentorUserId { get; private set; }
     public Guid? AssignedCounsellorUserId { get; private set; }

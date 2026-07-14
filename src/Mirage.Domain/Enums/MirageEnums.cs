@@ -41,6 +41,7 @@ public enum VendorCategory
     MusicAndEntertainment = 6,
     Planning = 7,
     Attire = 8,
+    Jewellery = 10,
     Other = 9
 }
 

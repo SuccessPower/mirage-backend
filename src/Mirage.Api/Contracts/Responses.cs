@@ -62,7 +62,8 @@ public sealed record OrganisationMemberResponse(
     OrganisationMemberStatus Status,
     Guid? AssignedMentorUserId,
     Guid? AssignedCounsellorUserId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? Description = null);
 
 public sealed record OrganisationRosterMemberResponse(
     Guid UserId,
