@@ -13,37 +13,61 @@ namespace Mirage.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "ImageUrl",
-                schema: "mirage",
-                table: "date_requests",
-                type: "character varying(1000)",
-                maxLength: 1000,
-                nullable: true);
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'date_requests' AND column_name = 'ImageUrl'
+                    ) THEN
+                        ALTER TABLE mirage.date_requests ADD COLUMN "ImageUrl" character varying(1000);
+                    END IF;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "RequestorIsRecommended",
-                schema: "mirage",
-                table: "date_requests",
-                type: "boolean",
-                nullable: false,
-                defaultValue: false);
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'date_requests' AND column_name = 'RequestorIsRecommended'
+                    ) THEN
+                        ALTER TABLE mirage.date_requests ADD COLUMN "RequestorIsRecommended" boolean NOT NULL DEFAULT false;
+                    END IF;
 
-            migrationBuilder.AddColumn<bool>(
-                name: "RequestorIsVerified",
-                schema: "mirage",
-                table: "date_requests",
-                type: "boolean",
-                nullable: false,
-                defaultValue: false);
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'date_requests' AND column_name = 'RequestorIsVerified'
+                    ) THEN
+                        ALTER TABLE mirage.date_requests ADD COLUMN "RequestorIsVerified" boolean NOT NULL DEFAULT false;
+                    END IF;
+                END $$;
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(name: "ImageUrl", schema: "mirage", table: "date_requests");
-            migrationBuilder.DropColumn(name: "RequestorIsRecommended", schema: "mirage", table: "date_requests");
-            migrationBuilder.DropColumn(name: "RequestorIsVerified", schema: "mirage", table: "date_requests");
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'date_requests' AND column_name = 'RequestorIsVerified'
+                    ) THEN
+                        ALTER TABLE mirage.date_requests DROP COLUMN "RequestorIsVerified";
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'date_requests' AND column_name = 'RequestorIsRecommended'
+                    ) THEN
+                        ALTER TABLE mirage.date_requests DROP COLUMN "RequestorIsRecommended";
+                    END IF;
+
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'date_requests' AND column_name = 'ImageUrl'
+                    ) THEN
+                        ALTER TABLE mirage.date_requests DROP COLUMN "ImageUrl";
+                    END IF;
+                END $$;
+                """);
         }
     }
 }

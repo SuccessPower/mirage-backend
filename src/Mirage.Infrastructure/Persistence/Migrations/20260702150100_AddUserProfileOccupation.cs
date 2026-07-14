@@ -13,22 +13,33 @@ namespace Mirage.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "Occupation",
-                schema: "mirage",
-                table: "profiles",
-                type: "character varying(160)",
-                maxLength: 160,
-                nullable: true);
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'profiles' AND column_name = 'Occupation'
+                    ) THEN
+                        ALTER TABLE mirage.profiles ADD COLUMN "Occupation" character varying(160);
+                    END IF;
+                END $$;
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropColumn(
-                name: "Occupation",
-                schema: "mirage",
-                table: "profiles");
+            migrationBuilder.Sql("""
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'mirage' AND table_name = 'profiles' AND column_name = 'Occupation'
+                    ) THEN
+                        ALTER TABLE mirage.profiles DROP COLUMN "Occupation";
+                    END IF;
+                END $$;
+                """);
         }
     }
 }
