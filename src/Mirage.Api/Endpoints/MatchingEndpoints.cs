@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
@@ -7,6 +8,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
@@ -32,16 +34,23 @@ internal static class MatchingEndpoints
     }
 
     private static async Task<IResult> Like(LikeProfileRequest request, HttpContext context,
-        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+        IMirageDbContext db, NotificationService notifications, UserManager<ApplicationUser> userManager,
+        CancellationToken cancellationToken)
     {
         var sourceUserId = context.User.GetUserId();
         if (sourceUserId == request.TargetUserId)
             return EndpointHelpers.ValidationProblem(context, ("targetUserId", "A user cannot like themselves."));
+        var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, sourceUserId, userManager,
+            "Confirm your email address before liking or matching with other members.");
+        if (emailForbidden is not null) return emailForbidden;
         var profileStatuses = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId || x.UserId == request.TargetUserId)
             .Select(x => new { x.UserId, x.RelationshipStatus, x.IsVerified })
             .ToListAsync(cancellationToken);
         if (!profileStatuses.Any(x => x.UserId == request.TargetUserId))
+            return EndpointHelpers.NotFound(context, "Target profile was not found.");
+        var targetUser = await userManager.FindByIdAsync(request.TargetUserId.ToString());
+        if (targetUser is null || !targetUser.IsActive)
             return EndpointHelpers.NotFound(context, "Target profile was not found.");
         if (profileStatuses.SingleOrDefault(x => x.UserId == sourceUserId)?.IsVerified != true)
             return EndpointHelpers.Forbidden(context, "Verify your profile before liking or matching with other members.");
@@ -127,51 +136,60 @@ internal static class MatchingEndpoints
         return ApiResults.Ok(context, targetUserIds, "Your likes were retrieved successfully.");
     }
 
-    private static async Task<IResult> GetMatches(HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetMatches(HttpContext context, IMirageDbContext db,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var matches = await db.Matches.AsNoTracking()
             .Where(x => x.User1Id == userId || x.User2Id == userId)
             .OrderByDescending(x => x.MatchedAt).ToListAsync(cancellationToken);
-        var response = await ToMatchResponsesAsync(matches, userId, db, cancellationToken);
+        var response = await ToMatchResponsesAsync(matches, userId, db, userManager, cancellationToken);
         return ApiResults.Ok(context, response, "Matches retrieved successfully.");
     }
 
     private static async Task<IResult> GetMatch(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var match = await db.Matches.AsNoTracking().SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
-        var response = (await ToMatchResponsesAsync([match], userId, db, cancellationToken)).Single();
-        return ApiResults.Ok(context, response, "Match retrieved successfully.");
+        var response = (await ToMatchResponsesAsync([match], userId, db, userManager, cancellationToken)).SingleOrDefault();
+        return response is null
+            ? EndpointHelpers.NotFound(context, "Match was not found.")
+            : ApiResults.Ok(context, response, "Match retrieved successfully.");
     }
 
     // Matches carry only the two user ids — enrich with the other party's display name/avatar
     // so the client doesn't have to fan out N extra profile lookups per match list render.
     private static async Task<List<MatchResponse>> ToMatchResponsesAsync(List<Match> matches, Guid userId,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var otherIds = matches.Select(m => m.User1Id == userId ? m.User2Id : m.User1Id).Distinct().ToList();
         var approvedSpouseIds = await db.Couples.AsNoTracking()
             .Where(c => c.Status == CoupleStatus.Approved && (c.User1Id == userId || c.User2Id == userId))
             .Select(c => c.User1Id == userId ? c.User2Id : c.User1Id)
             .ToListAsync(cancellationToken);
+        var activeIds = await userManager.Users.AsNoTracking()
+            .Where(u => otherIds.Contains(u.Id) && u.IsActive)
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
 
         var profiles = await db.Profiles.AsNoTracking()
-            .Where(p => otherIds.Contains(p.UserId)
+            .Where(p => otherIds.Contains(p.UserId) && activeIds.Contains(p.UserId)
                 && (p.RelationshipStatus != RelationshipStatus.Married || approvedSpouseIds.Contains(p.UserId)))
             .ToDictionaryAsync(p => p.UserId, cancellationToken);
+        var badges = await db.GetOrgBadgesAsync(otherIds, cancellationToken);
 
         return matches.Select(m =>
         {
             var otherId = m.User1Id == userId ? m.User2Id : m.User1Id;
             profiles.TryGetValue(otherId, out var profile);
             if (profile is null) return null;
+            var badge = badges.GetValueOrDefault(otherId);
             return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
                 profile?.IsVerified ?? false, profile?.RelationshipStatus, m.Status, m.ChatRequestedByUserId,
-                m.MatchedAt, m.LastActivityAt);
+                m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName);
         }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
@@ -192,9 +210,12 @@ internal static class MatchingEndpoints
     // Either party can send the first chat request; the other party then approves
     // (opens the thread) or declines by closing the match via the existing Close endpoint.
     private static async Task<IResult> RequestChat(Guid id, HttpContext context, IMirageDbContext db,
-        NotificationService notifications, CancellationToken cancellationToken)
+        NotificationService notifications, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
+            "Confirm your email address before requesting to chat with other members.");
+        if (emailForbidden is not null) return emailForbidden;
         if (!await IsProfileVerifiedAsync(userId, db, cancellationToken))
             return EndpointHelpers.Forbidden(context, "Verify your profile before requesting to chat with other members.");
         var match = await db.Matches.SingleOrDefaultAsync(
@@ -233,9 +254,12 @@ internal static class MatchingEndpoints
     }
 
     private static async Task<IResult> ApproveChatRequest(Guid id, HttpContext context, IMirageDbContext db,
-        NotificationService notifications, CancellationToken cancellationToken)
+        NotificationService notifications, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
+            "Confirm your email address before approving chat requests.");
+        if (emailForbidden is not null) return emailForbidden;
         if (!await IsProfileVerifiedAsync(userId, db, cancellationToken))
             return EndpointHelpers.Forbidden(context, "Verify your profile before approving chat requests.");
         var match = await db.Matches.SingleOrDefaultAsync(

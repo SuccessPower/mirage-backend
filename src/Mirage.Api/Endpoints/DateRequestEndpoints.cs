@@ -30,11 +30,12 @@ internal static class DateRequestEndpoints
     }
 
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db,
-        string? location, RelationshipIntent? intent, int page = 1, int pageSize = 20,
-        CancellationToken cancellationToken = default)
+        UserManager<ApplicationUser> userManager, string? location, RelationshipIntent? intent,
+        int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var userId = context.User.GetUserId();
-        var query = db.DateRequests.AsNoTracking().Where(x => x.Status == DateRequestStatus.Open && x.EndsAt > DateTimeOffset.UtcNow);
+        var query = db.DateRequests.AsNoTracking().Where(x => x.Status == DateRequestStatus.Open && x.EndsAt > DateTimeOffset.UtcNow
+            && userManager.Users.Any(u => u.Id == x.RequestorUserId && u.IsActive));
         if (!string.IsNullOrWhiteSpace(location))
             query = query.Where(x => EF.Functions.ILike(x.LocationArea, $"%{location.Trim()}%"));
         if (intent.HasValue)
@@ -68,9 +69,12 @@ internal static class DateRequestEndpoints
     }
 
     private static async Task<IResult> Create(CreateDateRequestRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
+            "Confirm your email address before posting date requests.");
+        if (emailForbidden is not null) return emailForbidden;
         var profile = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId)
             .Select(x => new { x.IsVerified, x.RelationshipStatus })
@@ -191,9 +195,12 @@ internal static class DateRequestEndpoints
     }
 
     private static async Task<IResult> Accept(Guid id, HttpContext context, IMirageDbContext db,
-        NotificationService notifications, CancellationToken cancellationToken)
+        NotificationService notifications, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
+            "Confirm your email address before accepting date requests.");
+        if (emailForbidden is not null) return emailForbidden;
         var request = await db.DateRequests.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (request is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
         if (request.RequestorUserId == userId || request.Status != DateRequestStatus.Open)

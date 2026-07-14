@@ -48,7 +48,10 @@ public sealed record ProfileResponse(
     Guid? MentorProfileId = null,
     bool? HasApprovedMentorProfile = null,
     bool? IsChurchAdmin = null,
-    bool? IsCounsellor = null);
+    bool? IsCounsellor = null,
+    bool? EmailConfirmed = null,
+    string? OrganisationBadgeUrl = null,
+    string? OrganisationName = null);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,
@@ -59,7 +62,8 @@ public sealed record OrganisationMemberResponse(
     OrganisationMemberStatus Status,
     Guid? AssignedMentorUserId,
     Guid? AssignedCounsellorUserId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? Description = null);
 
 public sealed record OrganisationRosterMemberResponse(
     Guid UserId,
@@ -67,6 +71,25 @@ public sealed record OrganisationRosterMemberResponse(
     string? AvatarUrl);
 
 public sealed record OrganisationBranchResponse(Guid Id, string Name, string City, string Country, string? Address);
+
+// A user's org badge — shown next to their display name wherever it appears, like a Twitter
+// verified checkmark. Populated via IMirageDbContextExtensions.GetOrgBadgesAsync.
+public sealed record OrgBadge(string LogoUrl, string OrganisationName);
+
+public sealed record VendorResponse(
+    Guid Id,
+    Guid OwnerUserId,
+    string BusinessName,
+    VendorCategory Category,
+    string Description,
+    string Email,
+    string Phone,
+    string Address,
+    string City,
+    string Country,
+    string[] PhotoUrls,
+    VendorStatus Status,
+    DateTimeOffset CreatedAt);
 
 public sealed record OrganisationManagerResponse(
     Guid UserId,
@@ -128,7 +151,9 @@ public sealed record CommunityMemberResponse(
     string DisplayName,
     string? AvatarUrl,
     CommunityMemberRole Role,
-    DateTimeOffset JoinedAt);
+    DateTimeOffset JoinedAt,
+    string? OrgBadgeUrl = null,
+    string? OrgName = null);
 
 public sealed record GatheringInviteResponse(
     Guid Id,
@@ -139,7 +164,9 @@ public sealed record GatheringInviteResponse(
     string InviterDisplayName,
     string? InviterAvatarUrl,
     GatheringInviteStatus Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? InviterOrgBadgeUrl = null,
+    string? InviterOrgName = null);
 
 public sealed record CommunityPostResponse(
     Guid Id,
@@ -152,7 +179,9 @@ public sealed record CommunityPostResponse(
     int LikeCount,
     int CommentCount,
     bool LikedByMe,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? AuthorOrgBadgeUrl = null,
+    string? AuthorOrgName = null);
 
 public sealed record CommunityPostCommentResponse(
     Guid Id,
@@ -167,7 +196,9 @@ public sealed record CommunityPostCommentResponse(
     bool LikedByMe,
     bool IsEdited,
     bool IsDeleted,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? AuthorOrgBadgeUrl = null,
+    string? AuthorOrgName = null);
 
 public sealed record CommunityCommentLocationResponse(Guid CommunityId, Guid PostId, Guid CommentId);
 
@@ -216,14 +247,20 @@ public sealed record MentorRequestDetailResponse(
     string Message,
     MentorRequestStatus Status,
     DateTimeOffset CreatedAt,
-    string? MentorPhoneNumber = null);
+    string? MentorPhoneNumber = null,
+    string? MentorOrgBadgeUrl = null,
+    string? MentorOrgName = null,
+    string? MenteeOrgBadgeUrl = null,
+    string? MenteeOrgName = null);
 
 public sealed record MentorMenteeResponse(
     Guid MentorRequestId,
     Guid MenteeUserId,
     string DisplayName,
     string? AvatarUrl,
-    DateTimeOffset AcceptedAt);
+    DateTimeOffset AcceptedAt,
+    string? OrgBadgeUrl = null,
+    string? OrgName = null);
 
 public sealed record CalendarItemResponse(
     string Source,
@@ -240,7 +277,9 @@ public sealed record CoupleResponse(
     string OtherDisplayName,
     Guid RequestedByUserId,
     CoupleStatus Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? OtherOrgBadgeUrl = null,
+    string? OtherOrgName = null);
 
 public sealed record CounsellingMessageResponse(
     Guid Id,
@@ -282,7 +321,11 @@ public sealed record CounsellingSessionResponse(
     DateTimeOffset? UpdatedAt,
     string? CounsellorPhoneNumber = null,
     Guid? PaymentId = null,
-    bool HasRating = false);
+    bool HasRating = false,
+    string? CounsellorOrgBadgeUrl = null,
+    string? CounsellorOrgName = null,
+    string? ClientOrgBadgeUrl = null,
+    string? ClientOrgName = null);
 
 public sealed record MatchResponse(
     Guid Id,
@@ -294,4 +337,6 @@ public sealed record MatchResponse(
     MatchStatus Status,
     Guid? ChatRequestedByUserId,
     DateTimeOffset MatchedAt,
-    DateTimeOffset? LastActivityAt);
+    DateTimeOffset? LastActivityAt,
+    string? OtherOrgBadgeUrl = null,
+    string? OtherOrgName = null);

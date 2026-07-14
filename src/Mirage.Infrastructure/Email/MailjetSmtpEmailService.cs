@@ -41,10 +41,20 @@ public sealed class MailjetSmtpEmailService : IEmailService
             EmailTemplates.Welcome(displayName, appUrl), cancellationToken);
     }
 
+    public Task SendEmailConfirmationAsync(string toEmail, string displayName, string confirmUrl,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, "Confirm your Mirage email address",
+            EmailTemplates.EmailConfirmation(displayName, confirmUrl), cancellationToken);
+
     public Task SendPasswordChangedEmailAsync(string toEmail, string displayName,
         CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, "Your Mirage password was changed",
             EmailTemplates.PasswordChanged(displayName), cancellationToken);
+
+    public Task SendAccountClosedEmailAsync(string toEmail, string displayName, bool permanent,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, permanent ? "Your Mirage account has been deleted" : "Your Mirage account has been deactivated",
+            EmailTemplates.AccountClosed(displayName, permanent), cancellationToken);
 
     public Task SendPasswordResetEmailAsync(string toEmail, string displayName, string resetUrl,
         CancellationToken cancellationToken = default) =>

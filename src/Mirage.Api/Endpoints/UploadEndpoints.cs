@@ -47,6 +47,14 @@ internal static class UploadEndpoints
         {
             folder = $"mirage/profile-photos/{userId}";
         }
+        else if (uploadContext == "vendor-photo")
+        {
+            folder = $"mirage/vendor-photos/{userId}";
+        }
+        else if (uploadContext == "organisation-logo")
+        {
+            folder = $"mirage/org-logos/{userId}";
+        }
         else
         {
             folder = $"mirage/avatars/{userId}";

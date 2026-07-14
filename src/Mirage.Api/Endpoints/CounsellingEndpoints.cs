@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
@@ -7,6 +8,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 // ReSharper disable once RedundantUsingDirective
 
@@ -191,12 +193,13 @@ internal static class CounsellingEndpoints
     }
 
     private static async Task<IResult> ListCounsellors(HttpContext context, IMirageDbContext db,
-        string? specialisation,
+        UserManager<ApplicationUser> userManager, string? specialisation,
         string? language, bool freeOnly = false, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         var currentUserId = context.User.TryGetUserId();
-        var query = db.Counsellors.AsNoTracking().Where(x => x.IsApproved);
+        var query = db.Counsellors.AsNoTracking()
+            .Where(x => x.IsApproved && userManager.Users.Any(u => u.Id == x.UserId && u.IsActive));
         if (currentUserId is not null) query = query.Where(x => x.UserId != currentUserId);
         if (freeOnly) query = query.Where(x => x.AcceptsFreeSessions);
         if (!string.IsNullOrWhiteSpace(specialisation))
@@ -231,22 +234,23 @@ internal static class CounsellingEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var sessions = await db.CounsellingSessions.AsNoTracking()
+        var rows = await db.CounsellingSessions.AsNoTracking()
             .Where(x => x.ClientUserId == userId || x.Counsellor.UserId == userId || x.PartnerUserId == userId)
             .OrderByDescending(x => x.ScheduledAt)
-            .Select(x => new CounsellingSessionResponse(
+            .Select(x => new
+            {
                 x.Id,
                 x.CounsellorId,
-                x.Counsellor.UserId,
-                x.Counsellor.UserProfile.DisplayName,
-                x.Counsellor.UserProfile.AvatarUrl,
+                CounsellorUserId = x.Counsellor.UserId,
+                CounsellorDisplayName = x.Counsellor.UserProfile.DisplayName,
+                CounsellorAvatarUrl = x.Counsellor.UserProfile.AvatarUrl,
                 x.ClientUserId,
-                x.ClientAnonymous && userId == x.Counsellor.UserId
+                ClientDisplayName = x.ClientAnonymous && userId == x.Counsellor.UserId
                     ? "Anonymous client"
                     : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
                         .Select(profile => profile.DisplayName)
                         .SingleOrDefault() ?? "Client",
-                x.ClientAnonymous && userId == x.Counsellor.UserId
+                ClientAvatarUrl = x.ClientAnonymous && userId == x.Counsellor.UserId
                     ? null
                     : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
                         .Select(profile => profile.AvatarUrl)
@@ -261,12 +265,23 @@ internal static class CounsellingEndpoints
                 x.PartnerAccepted,
                 x.CreatedAt,
                 x.UpdatedAt,
-                x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
+                CounsellorPhoneNumber = x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
                     ? x.Counsellor.PhoneNumber
                     : null,
-                x.Payment != null ? x.Payment.Id : (Guid?)null,
-                db.SessionRatings.Any(r => r.SessionId == x.Id)))
+                PaymentId = x.Payment != null ? x.Payment.Id : (Guid?)null,
+                HasRating = db.SessionRatings.Any(r => r.SessionId == x.Id)
+            })
             .ToListAsync(cancellationToken);
+
+        var sessionUserIds = rows.SelectMany(x => new[] { x.CounsellorUserId, x.ClientUserId }).Distinct();
+        var sessionBadges = await db.GetOrgBadgesAsync(sessionUserIds, cancellationToken);
+        var sessions = rows.Select(x => new CounsellingSessionResponse(
+            x.Id, x.CounsellorId, x.CounsellorUserId, x.CounsellorDisplayName, x.CounsellorAvatarUrl, x.ClientUserId,
+            x.ClientDisplayName, x.ClientAvatarUrl, x.Type, x.ScheduledAt, x.Status, x.Topic, x.ClientAnonymous,
+            x.TrustUnlockStatus, x.PartnerUserId, x.PartnerAccepted, x.CreatedAt, x.UpdatedAt, x.CounsellorPhoneNumber,
+            x.PaymentId, x.HasRating,
+            sessionBadges.GetValueOrDefault(x.CounsellorUserId)?.LogoUrl, sessionBadges.GetValueOrDefault(x.CounsellorUserId)?.OrganisationName,
+            sessionBadges.GetValueOrDefault(x.ClientUserId)?.LogoUrl, sessionBadges.GetValueOrDefault(x.ClientUserId)?.OrganisationName)).ToList();
         return ApiResults.Ok(context, sessions, "Counselling sessions retrieved successfully.");
     }
 
@@ -350,19 +365,20 @@ internal static class CounsellingEndpoints
             await FinalizeBookedSessionAsync(session, request, db, notifications, userId, counsellor.UserId,
                 cancellationToken);
 
-        var response = await db.CounsellingSessions.AsNoTracking()
+        var row = await db.CounsellingSessions.AsNoTracking()
             .Where(x => x.Id == session.Id)
-            .Select(x => new CounsellingSessionResponse(
+            .Select(x => new
+            {
                 x.Id,
                 x.CounsellorId,
-                x.Counsellor.UserId,
-                x.Counsellor.UserProfile.DisplayName,
-                x.Counsellor.UserProfile.AvatarUrl,
+                CounsellorUserId = x.Counsellor.UserId,
+                CounsellorDisplayName = x.Counsellor.UserProfile.DisplayName,
+                CounsellorAvatarUrl = x.Counsellor.UserProfile.AvatarUrl,
                 x.ClientUserId,
-                db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                ClientDisplayName = db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
                     .Select(profile => profile.DisplayName)
                     .SingleOrDefault() ?? "Client",
-                db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
+                ClientAvatarUrl = db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
                     .Select(profile => profile.AvatarUrl)
                     .SingleOrDefault(),
                 x.Type,
@@ -375,12 +391,20 @@ internal static class CounsellingEndpoints
                 x.PartnerAccepted,
                 x.CreatedAt,
                 x.UpdatedAt,
-                x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
+                CounsellorPhoneNumber = x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
                     ? x.Counsellor.PhoneNumber
                     : null,
-                x.Payment != null ? x.Payment.Id : (Guid?)null,
-                false))
+                PaymentId = x.Payment != null ? x.Payment.Id : (Guid?)null
+            })
             .SingleAsync(cancellationToken);
+        var rowBadges = await db.GetOrgBadgesAsync([row.CounsellorUserId, row.ClientUserId], cancellationToken);
+        var response = new CounsellingSessionResponse(
+            row.Id, row.CounsellorId, row.CounsellorUserId, row.CounsellorDisplayName, row.CounsellorAvatarUrl,
+            row.ClientUserId, row.ClientDisplayName, row.ClientAvatarUrl, row.Type, row.ScheduledAt, row.Status,
+            row.Topic, row.ClientAnonymous, row.TrustUnlockStatus, row.PartnerUserId, row.PartnerAccepted,
+            row.CreatedAt, row.UpdatedAt, row.CounsellorPhoneNumber, row.PaymentId, false,
+            rowBadges.GetValueOrDefault(row.CounsellorUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.CounsellorUserId)?.OrganisationName,
+            rowBadges.GetValueOrDefault(row.ClientUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.ClientUserId)?.OrganisationName);
 
         return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
             new { Session = response, RequiresPayment = requiresPayment, PaymentId = payment?.Id },
@@ -664,22 +688,23 @@ internal static class CounsellingEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var session = await db.CounsellingSessions.AsNoTracking()
+        var row = await db.CounsellingSessions.AsNoTracking()
             .Where(x => x.Id == id && (x.ClientUserId == userId || x.Counsellor.UserId == userId
                 || x.PartnerUserId == userId))
-            .Select(x => new CounsellingSessionResponse(
+            .Select(x => new
+            {
                 x.Id,
                 x.CounsellorId,
-                x.Counsellor.UserId,
-                x.Counsellor.UserProfile.DisplayName,
-                x.Counsellor.UserProfile.AvatarUrl,
+                CounsellorUserId = x.Counsellor.UserId,
+                CounsellorDisplayName = x.Counsellor.UserProfile.DisplayName,
+                CounsellorAvatarUrl = x.Counsellor.UserProfile.AvatarUrl,
                 x.ClientUserId,
-                x.ClientAnonymous && userId == x.Counsellor.UserId
+                ClientDisplayName = x.ClientAnonymous && userId == x.Counsellor.UserId
                     ? "Anonymous client"
                     : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
                         .Select(profile => profile.DisplayName)
                         .SingleOrDefault() ?? "Client",
-                x.ClientAnonymous && userId == x.Counsellor.UserId
+                ClientAvatarUrl = x.ClientAnonymous && userId == x.Counsellor.UserId
                     ? null
                     : db.Profiles.Where(profile => profile.UserId == x.ClientUserId)
                         .Select(profile => profile.AvatarUrl)
@@ -694,15 +719,24 @@ internal static class CounsellingEndpoints
                 x.PartnerAccepted,
                 x.CreatedAt,
                 x.UpdatedAt,
-                x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
+                CounsellorPhoneNumber = x.Status == SessionStatus.Scheduled || x.Status == SessionStatus.InProgress || x.Status == SessionStatus.Completed
                     ? x.Counsellor.PhoneNumber
                     : null,
-                x.Payment != null ? x.Payment.Id : (Guid?)null,
-                db.SessionRatings.Any(r => r.SessionId == x.Id)))
+                PaymentId = x.Payment != null ? x.Payment.Id : (Guid?)null,
+                HasRating = db.SessionRatings.Any(r => r.SessionId == x.Id)
+            })
             .SingleOrDefaultAsync(cancellationToken);
-        return session is null
-            ? EndpointHelpers.NotFound(context, "Session was not found.")
-            : ApiResults.Ok(context, session, "Session retrieved successfully.");
+        if (row is null) return EndpointHelpers.NotFound(context, "Session was not found.");
+
+        var rowBadges = await db.GetOrgBadgesAsync([row.CounsellorUserId, row.ClientUserId], cancellationToken);
+        var session = new CounsellingSessionResponse(
+            row.Id, row.CounsellorId, row.CounsellorUserId, row.CounsellorDisplayName, row.CounsellorAvatarUrl,
+            row.ClientUserId, row.ClientDisplayName, row.ClientAvatarUrl, row.Type, row.ScheduledAt, row.Status,
+            row.Topic, row.ClientAnonymous, row.TrustUnlockStatus, row.PartnerUserId, row.PartnerAccepted,
+            row.CreatedAt, row.UpdatedAt, row.CounsellorPhoneNumber, row.PaymentId, row.HasRating,
+            rowBadges.GetValueOrDefault(row.CounsellorUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.CounsellorUserId)?.OrganisationName,
+            rowBadges.GetValueOrDefault(row.ClientUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.ClientUserId)?.OrganisationName);
+        return ApiResults.Ok(context, session, "Session retrieved successfully.");
     }
 
     private static async Task<IResult> AcceptSession(Guid id, HttpContext context, IMirageDbContext db,

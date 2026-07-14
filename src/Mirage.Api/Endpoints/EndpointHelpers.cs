@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Middleware;
+using Mirage.Application.Abstractions;
 using Mirage.Application.Common;
 using Mirage.Domain.Entities;
+using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
@@ -17,6 +19,16 @@ internal static class EndpointHelpers
     {
         var value = emailOrUsername.Trim();
         return value.Contains('@') ? userManager.FindByEmailAsync(value) : userManager.FindByNameAsync(value);
+    }
+
+    // Shared gate for user-to-user interactions (likes, chat requests, date requests) — accounts
+    // must confirm their email before they can engage with other members. Returns a Forbidden
+    // IResult when the user hasn't confirmed, or null when they're clear to proceed.
+    public static async Task<IResult?> RequireEmailConfirmedAsync(HttpContext context, Guid userId,
+        UserManager<ApplicationUser> userManager, string detail = "Confirm your email address before interacting with other members.")
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        return user?.EmailConfirmed == true ? null : Forbidden(context, detail);
     }
 
     public static int Age(DateOnly birthDate)
@@ -37,11 +49,50 @@ internal static class EndpointHelpers
         return new PagedResult<T>(items, page, pageSize, total);
     }
 
-    public static ProfileResponse ToResponse(this UserProfile profile, bool isRecommended, string? email = null) =>
+    public static ProfileResponse ToResponse(this UserProfile profile, bool isRecommended, string? email = null,
+        OrgBadge? badge = null) =>
         new(profile.UserId, email, profile.DisplayName, Age(profile.DateOfBirth), profile.DateOfBirth, profile.City, profile.Country,
             profile.Denomination, profile.Intent, profile.Bio, profile.IsVerified, isRecommended,
             profile.SubscriptionTier, profile.AnonymityEnabled, profile.Interests, profile.AvatarUrl, profile.PhotoUrls, profile.Sex, profile.RelationshipStatus,
-            profile.HeightInches, profile.SkinTone, profile.PreferredLanguage, profile.Occupation, profile.CreatedAt);
+            profile.HeightInches, profile.SkinTone, profile.PreferredLanguage, profile.Occupation, profile.CreatedAt,
+            OrganisationBadgeUrl: badge?.LogoUrl, OrganisationName: badge?.OrganisationName);
+
+    // Badge eligibility: an approved member of an org (or the org's own owner/admin), where that
+    // org has a logo uploaded and is itself approved. A user belongs to at most one org at a time
+    // (enforced in OrganisationEndpoints.JoinOrganisation), so this dictionary has at most one
+    // entry per userId.
+    public static async Task<Dictionary<Guid, OrgBadge>> GetOrgBadgesAsync(this IMirageDbContext db,
+        IEnumerable<Guid> userIds, CancellationToken cancellationToken)
+    {
+        var ids = userIds.Distinct().ToArray();
+        if (ids.Length == 0) return new Dictionary<Guid, OrgBadge>();
+
+        var approvedOrgsWithLogo = db.Organisations.AsNoTracking()
+            .Where(o => o.Status == OrganisationStatus.Approved && o.LogoUrl != null);
+
+        var memberBadges = await db.OrganisationMembers.AsNoTracking()
+            .Where(m => ids.Contains(m.UserId) && m.Status == OrganisationMemberStatus.Approved)
+            .Join(approvedOrgsWithLogo, m => m.OrganisationId, o => o.Id,
+                (m, o) => new { m.UserId, o.LogoUrl, o.Name })
+            .ToListAsync(cancellationToken);
+
+        var adminBadges = await approvedOrgsWithLogo
+            .Where(o => ids.Contains(o.AdminUserId))
+            .Select(o => new { UserId = o.AdminUserId, o.LogoUrl, o.Name })
+            .ToListAsync(cancellationToken);
+
+        var result = new Dictionary<Guid, OrgBadge>();
+        foreach (var b in memberBadges.Concat(adminBadges))
+            result[b.UserId] = new OrgBadge(b.LogoUrl!, b.Name);
+        return result;
+    }
+
+    public static async Task<OrgBadge?> GetOrgBadgeAsync(this IMirageDbContext db, Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var badges = await db.GetOrgBadgesAsync([userId], cancellationToken);
+        return badges.GetValueOrDefault(userId);
+    }
 
     public static IResult ValidationProblem(HttpContext context, params (string Field, string Error)[] errors) =>
         ValidationProblem(context,

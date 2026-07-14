@@ -50,6 +50,7 @@ internal static class GatheringInviteEndpoints
         var inviterProfiles = await db.Profiles.AsNoTracking()
             .Where(x => inviterIds.Contains(x.UserId))
             .ToDictionaryAsync(x => x.UserId, x => new { x.DisplayName, x.AvatarUrl }, cancellationToken);
+        var inviterBadges = await db.GetOrgBadgesAsync(inviterIds, cancellationToken);
 
         string TitleFor(GatheringInvite invite) => invite.Kind switch
         {
@@ -67,7 +68,9 @@ internal static class GatheringInviteEndpoints
             inviterProfiles.TryGetValue(x.InviterUserId, out var inviter) ? inviter.DisplayName : "Member",
             inviterProfiles.TryGetValue(x.InviterUserId, out var inviterProfile) ? inviterProfile.AvatarUrl : null,
             x.Status,
-            x.CreatedAt)).ToList();
+            x.CreatedAt,
+            inviterBadges.GetValueOrDefault(x.InviterUserId)?.LogoUrl,
+            inviterBadges.GetValueOrDefault(x.InviterUserId)?.OrganisationName)).ToList();
 
         return ApiResults.Ok(context, response, "Pending invites retrieved successfully.");
     }

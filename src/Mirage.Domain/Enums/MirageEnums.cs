@@ -2,7 +2,7 @@ namespace Mirage.Domain.Enums;
 
 public enum RelationshipIntent { Friendship = 1, Dating = 2, Marriage = 3 }
 public enum Sex { Male = 1, Female = 2 }
-public enum RelationshipStatus { Single = 1, Divorced = 2, Widowed = 3, Separated = 4, Married = 5 }
+public enum RelationshipStatus { Single = 1, Divorced = 2, Widowed = 3, Separated = 4, Married = 5, Engaged = 6, InARelationship = 7 }
 public enum CoupleStatus { Pending = 1, Approved = 2, Declined = 3 }
 public enum SkinTone { Fair = 1, Light = 2, Medium = 3, Tan = 4, Brown = 5, Dark = 6 }
 public enum SubscriptionTier { Free = 1, Plus = 2, Premium = 3 }
@@ -29,6 +29,21 @@ public enum ContentReportReason { Inappropriate = 1, FakeProfile = 2, Harassment
 public enum ContentReportStatus { Pending = 1, UnderReview = 2, ActionTaken = 3, Dismissed = 4 }
 public enum GatheringInviteKind { Community = 1, DateRequest = 2, OrganisationManager = 3 }
 public enum GatheringInviteStatus { Pending = 1, Accepted = 2, Declined = 3 }
+public enum VendorStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
+
+public enum VendorCategory
+{
+    Photography = 1,
+    Catering = 2,
+    Venue = 3,
+    Decor = 4,
+    MakeupAndBeauty = 5,
+    MusicAndEntertainment = 6,
+    Planning = 7,
+    Attire = 8,
+    Jewellery = 10,
+    Other = 9
+}
 
 // Drives the Denomination dropdown on signup. UserProfile.Denomination stays a plain string column
 // (avoids a data migration for existing free-text values) — registration validates the submitted
@@ -80,5 +95,7 @@ public enum NotificationType
     GatheringInviteReceived = 22,
     GatheringInviteAccepted = 23,
     GatheringInviteDeclined = 24,
-    ProfileVerified = 25
+    ProfileVerified = 25,
+    VendorApproved = 26,
+    VendorRejected = 27
 }

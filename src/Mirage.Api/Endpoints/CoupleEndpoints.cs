@@ -34,10 +34,12 @@ internal static class CoupleEndpoints
         var names = await db.Profiles.AsNoTracking()
             .Where(p => otherIds.Contains(p.UserId))
             .ToDictionaryAsync(p => p.UserId, p => p.DisplayName, cancellationToken);
+        var badges = await db.GetOrgBadgesAsync(otherIds, cancellationToken);
 
         var response = couples.Select(x => new CoupleResponse(
             x.Couple.Id, x.OtherUserId, names.GetValueOrDefault(x.OtherUserId, "Unknown"),
-            x.Couple.RequestedByUserId, x.Couple.Status, x.Couple.CreatedAt)).ToList();
+            x.Couple.RequestedByUserId, x.Couple.Status, x.Couple.CreatedAt,
+            badges.GetValueOrDefault(x.OtherUserId)?.LogoUrl, badges.GetValueOrDefault(x.OtherUserId)?.OrganisationName)).ToList();
         return ApiResults.Ok(context, response, "Couple records retrieved successfully.");
     }
 

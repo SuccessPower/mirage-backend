@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
@@ -7,6 +8,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
@@ -135,8 +137,10 @@ internal static class MentorEndpoints
             })
             .ToListAsync(cancellationToken);
 
+        var badges = await db.GetOrgBadgesAsync(mentees.Select(x => x.MenteeUserId), cancellationToken);
         var result = mentees.Select(x => isMentor || x.MenteeUserId == userId || allowMenteesToSeeEachOther
-            ? new MentorMenteeResponse(x.Id, x.MenteeUserId, x.DisplayName, x.AvatarUrl, x.AcceptedAt)
+            ? new MentorMenteeResponse(x.Id, x.MenteeUserId, x.DisplayName, x.AvatarUrl, x.AcceptedAt,
+                badges.GetValueOrDefault(x.MenteeUserId)?.LogoUrl, badges.GetValueOrDefault(x.MenteeUserId)?.OrganisationName)
             : new MentorMenteeResponse(x.Id, x.MenteeUserId, "Fellow mentee", null, x.AcceptedAt));
 
         return ApiResults.Ok(context, result, "Mentees retrieved successfully.");
@@ -275,11 +279,12 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> ListMentors(HttpContext context, IMirageDbContext db,
-        string? denomination, string? areaOfGuidance, bool freeOnly = false,
+        UserManager<ApplicationUser> userManager, string? denomination, string? areaOfGuidance, bool freeOnly = false,
         int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var currentUserId = context.User.TryGetUserId();
-        var query = db.Mentors.AsNoTracking().Where(x => x.IsApproved);
+        var query = db.Mentors.AsNoTracking()
+            .Where(x => x.IsApproved && userManager.Users.Any(u => u.Id == x.UserId && u.IsActive));
         if (currentUserId is not null) query = query.Where(x => x.UserId != currentUserId);
         if (freeOnly) query = query.Where(x => x.AcceptsFreeSessions);
         if (!string.IsNullOrWhiteSpace(denomination))
@@ -506,10 +511,14 @@ internal static class MentorEndpoints
             .Where(x => x.UserId == request.MenteeUserId)
             .Select(x => new { x.DisplayName, x.AvatarUrl })
             .SingleOrDefaultAsync(cancellationToken);
+        var badges = await db.GetOrgBadgesAsync([request.MentorUserId, request.MenteeUserId], cancellationToken);
+        var mentorBadge = badges.GetValueOrDefault(request.MentorUserId);
+        var menteeBadge = badges.GetValueOrDefault(request.MenteeUserId);
 
         var response = new MentorRequestDetailResponse(request.Id, request.MentorProfileId, request.MentorUserId,
             request.MentorName, request.MentorAvatarUrl, request.MenteeUserId, mentee?.DisplayName ?? "Mentee",
-            mentee?.AvatarUrl, request.Message, request.Status, request.CreatedAt, request.MentorPhoneNumber);
+            mentee?.AvatarUrl, request.Message, request.Status, request.CreatedAt, request.MentorPhoneNumber,
+            mentorBadge?.LogoUrl, mentorBadge?.OrganisationName, menteeBadge?.LogoUrl, menteeBadge?.OrganisationName);
         return ApiResults.Ok(context, response, "Mentor request retrieved successfully.");
     }
 

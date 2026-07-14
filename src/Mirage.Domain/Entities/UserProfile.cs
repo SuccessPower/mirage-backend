@@ -82,4 +82,22 @@ public sealed class UserProfile : Entity
     public void Verify() { IsVerified = true; Touch(); }
 
     public void MarkMarried() { RelationshipStatus = Mirage.Domain.Enums.RelationshipStatus.Married; Touch(); }
+
+    // Self-service "delete my account" — a hard delete of the underlying ApplicationUser isn't
+    // safe (matches, messages, payments, and counselling sessions all Restrict-FK to the user),
+    // so deletion instead scrubs everything personally identifying from the profile while leaving
+    // the row (and other users' historical records referencing this UserId) intact. Combined with
+    // ApplicationUser.IsActive = false, the account disappears from Discovery and can't log back in.
+    public void ScrubPersonalData()
+    {
+        DisplayName = "Deleted user";
+        Bio = string.Empty;
+        AvatarUrl = null;
+        PhotoUrls = [];
+        Interests = [];
+        Occupation = null;
+        PreferredLanguage = null;
+        AnonymityEnabled = true;
+        Touch();
+    }
 }

@@ -23,6 +23,10 @@ public sealed record RefreshRequest(string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ForgotPasswordRequest(string Email);
 public sealed record ResetPasswordRequest(string Email, string Token, string NewPassword);
+public sealed record ConfirmEmailRequest(string Email, string Token);
+public sealed record ResendConfirmationEmailRequest(string Email);
+public sealed record DeactivateAccountRequest(string CurrentPassword);
+public sealed record DeleteAccountRequest(string CurrentPassword);
 public sealed record UpdateProfileRequest(
     string DisplayName,
     string City,
@@ -41,11 +45,19 @@ public sealed record UpdateProfileRequest(
     string? Occupation = null);
 public sealed record SetProfilePhotosRequest(string[] PhotoUrls);
 public sealed record CreateOrganisationRequest(
-    string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null);
+    string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null,
+    string? LogoUrl = null);
 public sealed record InviteOrganisationAdminRequest(string Email);
-public sealed record JoinOrganisationRequest(Guid? BranchId);
+public sealed record JoinOrganisationRequest(Guid? BranchId, string? Description = null);
 public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
 public sealed record CreateBranchRequest(string Name, string City, string Country, string? Address);
+public sealed record CreateVendorRequest(
+    string BusinessName, VendorCategory Category, string Description, string Email, string Phone,
+    string Address, string City, string Country);
+public sealed record UpdateVendorRequest(
+    string BusinessName, VendorCategory Category, string Description, string Email, string Phone,
+    string Address, string City, string Country);
+public sealed record SetVendorPhotosRequest(string[] PhotoUrls);
 public sealed record CreateMentorPostRequest(string Content, string? ImageUrl);
 public sealed record SendMentorGroupMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record ScheduleMentorMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);

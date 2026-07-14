@@ -30,8 +30,12 @@ internal static class AuthEndpoints
         group.MapPost("/logout", Logout).RequireAuthorization();
         group.MapPost("/logout-all", LogoutAll).RequireAuthorization();
         group.MapPost("/change-password", ChangePassword).RequireAuthorization();
+        group.MapPost("/deactivate-account", DeactivateAccount).RequireAuthorization();
+        group.MapPost("/delete-account", DeleteAccount).RequireAuthorization();
         group.MapPost("/forgot-password", ForgotPassword);
         group.MapPost("/reset-password", ResetPassword);
+        group.MapPost("/confirm-email", ConfirmEmail);
+        group.MapPost("/resend-confirmation", ResendConfirmation);
         group.MapGet("/sessions", GetSessions).RequireAuthorization();
         return api;
     }
@@ -117,6 +121,11 @@ internal static class AuthEndpoints
                     user.WelcomeEmailSentAt = DateTimeOffset.UtcNow;
                     await db.SaveChangesAsync(cancellationToken);
                 }
+
+                var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
+                var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
+                var confirmUrl = $"{appUrl}/confirm-email?email={Uri.EscapeDataString(user.Email!)}&token={Uri.EscapeDataString(confirmToken)}";
+                await emailService.SendEmailConfirmationAsync(user.Email!, request.DisplayName, confirmUrl, cancellationToken);
 
                 var databaseMs = registrationStopwatch.Elapsed.TotalMilliseconds - databaseStarted;
                 ResponseTimeMiddleware.SetServerTiming(context, "password", passwordHashingMs);
@@ -508,19 +517,82 @@ internal static class AuthEndpoints
                     .ToDictionary(x => x.Key, x => x.Select(error => error.Description).ToArray()),
                 "Password change failed.");
 
-        var tokens = await db.RefreshTokens
-            .Where(x => x.UserId == user.Id && x.RevokedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow)
-            .ToListAsync(cancellationToken);
-        foreach (var token in tokens) token.Revoke();
-        await db.SaveChangesAsync(cancellationToken);
+        var revokedSessions = await RevokeAllSessionsAsync(user.Id, db, cancellationToken);
 
         var displayName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
         if (user.Email is not null)
             await emailService.SendPasswordChangedEmailAsync(user.Email, displayName ?? "there", cancellationToken);
 
-        return ApiResults.Ok(context, new { revokedSessions = tokens.Count },
+        return ApiResults.Ok(context, new { revokedSessions },
             "Password changed successfully. Sign in again on all devices.");
+    }
+
+    private static async Task<IResult> DeactivateAccount(DeactivateAccountRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, MirageDbContext db, IEmailService emailService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+            return EndpointHelpers.ValidationProblem(context, ("currentPassword", "Current password is required."));
+
+        var user = await userManager.FindByIdAsync(context.User.GetUserId().ToString());
+        if (user is null) return EndpointHelpers.NotFound(context, "User account was not found.");
+        if (!await userManager.CheckPasswordAsync(user, request.CurrentPassword))
+            return EndpointHelpers.ValidationProblem(context, ("currentPassword", "Current password is incorrect."));
+
+        user.IsActive = false;
+        await userManager.UpdateAsync(user);
+        await RevokeAllSessionsAsync(user.Id, db, cancellationToken);
+
+        var displayName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        if (user.Email is not null)
+            await emailService.SendAccountClosedEmailAsync(user.Email, displayName ?? "there", permanent: false, cancellationToken);
+
+        return ApiResults.Ok(context, new { }, "Your account has been deactivated. Contact support to reactivate it.");
+    }
+
+    private static async Task<IResult> DeleteAccount(DeleteAccountRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, MirageDbContext db, IEmailService emailService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword))
+            return EndpointHelpers.ValidationProblem(context, ("currentPassword", "Current password is required."));
+
+        var user = await userManager.FindByIdAsync(context.User.GetUserId().ToString());
+        if (user is null) return EndpointHelpers.NotFound(context, "User account was not found.");
+        if (!await userManager.CheckPasswordAsync(user, request.CurrentPassword))
+            return EndpointHelpers.ValidationProblem(context, ("currentPassword", "Current password is incorrect."));
+
+        var displayName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        var email = user.Email;
+
+        // Hard-deleting the ApplicationUser row isn't safe — matches, messages, payments, and
+        // counselling sessions all Restrict-FK to the user, so other members' history would break.
+        // Instead we deactivate the login and scrub the profile of anything personally identifying.
+        user.IsActive = false;
+        await userManager.UpdateAsync(user);
+
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == user.Id, cancellationToken);
+        profile?.ScrubPersonalData();
+
+        await RevokeAllSessionsAsync(user.Id, db, cancellationToken);
+
+        if (email is not null)
+            await emailService.SendAccountClosedEmailAsync(email, displayName ?? "there", permanent: true, cancellationToken);
+
+        return ApiResults.Ok(context, new { }, "Your account has been deleted.");
+    }
+
+    private static async Task<int> RevokeAllSessionsAsync(Guid userId, MirageDbContext db, CancellationToken cancellationToken)
+    {
+        var tokens = await db.RefreshTokens
+            .Where(x => x.UserId == userId && x.RevokedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow)
+            .ToListAsync(cancellationToken);
+        foreach (var token in tokens) token.Revoke();
+        await db.SaveChangesAsync(cancellationToken);
+        return tokens.Count;
     }
 
     private static async Task<IResult> ForgotPassword(ForgotPasswordRequest request, HttpContext context,
@@ -580,6 +652,53 @@ internal static class AuthEndpoints
             await emailService.SendPasswordChangedEmailAsync(user.Email, displayName ?? "there", cancellationToken);
 
         return ApiResults.Ok(context, new { }, "Password reset successfully. Sign in with your new password.");
+    }
+
+    private static async Task<IResult> ConfirmEmail(ConfirmEmailRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Token))
+            return EndpointHelpers.ValidationProblem(context, ("token", "Email and token are required."));
+
+        var user = await userManager.FindByEmailAsync(request.Email.Trim());
+        if (user is null)
+            return EndpointHelpers.ValidationProblem(context,
+                new Dictionary<string, string[]> { ["token"] = ["This confirmation link is invalid or has expired."] },
+                "Email confirmation failed.");
+
+        if (user.EmailConfirmed)
+            return ApiResults.Ok(context, new { }, "Your email is already confirmed.");
+
+        var result = await userManager.ConfirmEmailAsync(user, request.Token);
+        if (!result.Succeeded)
+            return EndpointHelpers.ValidationProblem(context,
+                new Dictionary<string, string[]> { ["token"] = ["This confirmation link is invalid or has expired."] },
+                "Email confirmation failed.");
+
+        return ApiResults.Ok(context, new { }, "Your email has been confirmed. You can now like, match, and chat with other members.");
+    }
+
+    private static async Task<IResult> ResendConfirmation(ResendConfirmationEmailRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, MirageDbContext db, IEmailService emailService,
+        IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return EndpointHelpers.ValidationProblem(context, ("email", "Email is required."));
+
+        var user = await userManager.FindByEmailAsync(request.Email.Trim());
+        if (user is not null && !user.EmailConfirmed && user.Email is not null)
+        {
+            var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
+            var displayName = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == user.Id).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+            var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
+            var confirmUrl = $"{appUrl}/confirm-email?email={Uri.EscapeDataString(user.Email)}&token={Uri.EscapeDataString(token)}";
+            await emailService.SendEmailConfirmationAsync(user.Email, displayName ?? "there", confirmUrl, cancellationToken);
+        }
+
+        // Always report success, whether or not the email is registered or already confirmed, so
+        // this endpoint can't be used to enumerate accounts.
+        return ApiResults.Ok(context, new { }, "If an account exists and needs confirmation, a new link has been sent.");
     }
 
     private static async Task<IResult> GetSessions(HttpContext context, MirageDbContext db,

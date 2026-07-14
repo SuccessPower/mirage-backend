@@ -8,7 +8,13 @@ public interface IEmailService
     // and retry later on failure instead of assuming it always went out.
     Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default);
 
+    Task SendEmailConfirmationAsync(string toEmail, string displayName, string confirmUrl,
+        CancellationToken cancellationToken = default);
+
     Task SendPasswordChangedEmailAsync(string toEmail, string displayName,
+        CancellationToken cancellationToken = default);
+
+    Task SendAccountClosedEmailAsync(string toEmail, string displayName, bool permanent,
         CancellationToken cancellationToken = default);
 
     Task SendPasswordResetEmailAsync(string toEmail, string displayName, string resetUrl,
