@@ -398,6 +398,9 @@ internal static class MentorEndpoints
             return EndpointHelpers.ValidationProblem(context, ("message", "A message is required."));
 
         var userId = context.User.GetUserId();
+        if (!await db.Profiles.AsNoTracking().AnyAsync(x => x.UserId == userId && x.IsVerified, cancellationToken))
+            return EndpointHelpers.Forbidden(context, "Verify your profile before requesting mentorship.");
+
         var mentor = await db.Mentors.AsNoTracking()
             .Where(x => x.Id == mentorId && x.IsApproved)
             .Select(x => new { x.UserId })

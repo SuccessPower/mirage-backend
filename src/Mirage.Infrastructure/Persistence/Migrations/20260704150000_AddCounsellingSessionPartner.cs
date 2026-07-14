@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Mirage.Infrastructure.Persistence.Migrations;
 
+[DbContext(typeof(MirageDbContext))]
 [Migration("20260704150000_AddCounsellingSessionPartner")]
 public sealed class AddCounsellingSessionPartner : Migration
 {

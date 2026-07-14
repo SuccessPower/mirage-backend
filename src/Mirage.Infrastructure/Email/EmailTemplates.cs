@@ -42,50 +42,63 @@ public static class EmailTemplates
                 ["CURRENCY"] = currency
             });
 
-    // One dedicated, purpose-styled template per in-app NotificationType (icon + accent color vary
-    // by type; headline/body stay dynamic since callers already compose type-specific copy).
-    private static readonly Dictionary<NotificationType, (string Template, string Color)> TypeTemplates = new()
+    // All in-app NotificationTypes render through the single "notification" template now —
+    // they only ever differed by an eyebrow label and an accent color, so one shared file
+    // (see Templates/notification.html) replaces what used to be ~23 near-duplicate files.
+    private static readonly Dictionary<NotificationType, (string Label, string Color)> TypeLabels = new()
     {
-        [NotificationType.NewLike] = ("new-like", Purple),
-        [NotificationType.NewMatch] = ("new-match", Teal),
-        [NotificationType.DateRequestAccepted] = ("date-request-accepted", Purple),
-        [NotificationType.DateRequestSelected] = ("date-request-selected", Amber),
-        [NotificationType.MentorRequestReceived] = ("mentor-request-received", Purple),
-        [NotificationType.MentorRequestAccepted] = ("mentor-request-accepted", Teal),
-        [NotificationType.MentorRequestDeclined] = ("mentor-request-declined", Amber),
-        [NotificationType.SessionBooked] = ("session-booked", Purple),
-        [NotificationType.SessionAccepted] = ("session-accepted", Teal),
-        [NotificationType.SessionDeclined] = ("session-declined", Amber),
-        [NotificationType.NewMessage] = ("new-message", Purple),
-        [NotificationType.ChatRequestReceived] = ("chat-request-received", Purple),
-        [NotificationType.ChatRequestApproved] = ("chat-request-approved", Teal),
-        [NotificationType.OrganisationApproved] = ("organisation-approved", Teal),
-        [NotificationType.OrganisationRejected] = ("organisation-rejected", Amber),
-        [NotificationType.CounsellorApproved] = ("counsellor-approved", Teal),
-        [NotificationType.MembershipApproved] = ("membership-approved", Teal),
-        [NotificationType.MembershipRejected] = ("membership-rejected", Amber),
-        [NotificationType.Mention] = ("mention", Purple),
-        [NotificationType.CounsellorApplicationReceived] = ("counsellor-application-received", Purple),
-        [NotificationType.GatheringInviteReceived] = ("gathering-invite-received", Purple),
-        [NotificationType.GatheringInviteAccepted] = ("gathering-invite-accepted", Teal),
-        [NotificationType.GatheringInviteDeclined] = ("gathering-invite-declined", Amber)
+        [NotificationType.NewLike] = ("New like", Purple),
+        [NotificationType.NewMatch] = ("New match", Teal),
+        [NotificationType.DateRequestAccepted] = ("Date request", Purple),
+        [NotificationType.DateRequestSelected] = ("You've been selected", Amber),
+        [NotificationType.MentorRequestReceived] = ("Mentorship", Purple),
+        [NotificationType.MentorRequestAccepted] = ("Mentorship", Teal),
+        [NotificationType.MentorRequestDeclined] = ("Mentorship", Amber),
+        [NotificationType.SessionBooked] = ("Counselling session", Purple),
+        [NotificationType.SessionAccepted] = ("Counselling session", Teal),
+        [NotificationType.SessionDeclined] = ("Counselling session", Amber),
+        [NotificationType.NewMessage] = ("New message", Purple),
+        [NotificationType.ChatRequestReceived] = ("Chat request", Purple),
+        [NotificationType.ChatRequestApproved] = ("Chat request", Teal),
+        [NotificationType.OrganisationApproved] = ("Organisation", Teal),
+        [NotificationType.OrganisationRejected] = ("Organisation", Amber),
+        [NotificationType.CounsellorApproved] = ("Counsellor", Teal),
+        [NotificationType.MembershipApproved] = ("Membership", Teal),
+        [NotificationType.MembershipRejected] = ("Membership", Amber),
+        [NotificationType.Mention] = ("Mention", Purple),
+        [NotificationType.CounsellorApplicationReceived] = ("Counsellor application", Purple),
+        [NotificationType.GatheringInviteReceived] = ("Gathering invite", Purple),
+        [NotificationType.GatheringInviteAccepted] = ("Gathering invite", Teal),
+        [NotificationType.GatheringInviteDeclined] = ("Gathering invite", Amber),
+        [NotificationType.ProfileVerified] = ("Verification", Teal)
     };
 
-    public static bool HasTemplate(NotificationType type) => TypeTemplates.ContainsKey(type);
+    public static bool HasTemplate(NotificationType type) => TypeLabels.ContainsKey(type);
 
     public static string Notification(NotificationType type, string displayName, string title, string body,
         string? actionUrl, string? actionLabel)
     {
-        if (!TypeTemplates.TryGetValue(type, out var meta))
+        if (!TypeLabels.TryGetValue(type, out var meta))
             throw new ArgumentOutOfRangeException(nameof(type), type, "No email template is registered for this notification type.");
 
         var cta = actionUrl is null ? "" : TemplateEngine.PrimaryButton(actionUrl, actionLabel ?? "View in Mirage", meta.Color);
-        return TemplateEngine.RenderPage(meta.Template, body,
+        return TemplateEngine.RenderPage("notification", body,
             new Dictionary<string, string>
             {
                 [DisplayNameToken] = displayName,
                 ["TITLE"] = title,
-                ["BODY"] = body
+                ["BODY"] = body,
+                ["LABEL"] = meta.Label,
+                ["COLOR"] = meta.Color,
+                ["COLOR_TINT"] = Tint(meta.Color)
             }, cta);
     }
+
+    private static string Tint(string color) => color switch
+    {
+        Purple => "rgba(108,78,242,0.14)",
+        Teal => "rgba(37,194,160,0.14)",
+        Amber => "rgba(245,158,11,0.14)",
+        _ => "rgba(108,78,242,0.14)"
+    };
 }

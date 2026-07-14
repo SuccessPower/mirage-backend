@@ -70,21 +70,29 @@ public static class DatabaseInitialiser
         });
     }
 
-    // Promotes an already-registered account to PlatformAdmin on startup, driven by config
+    // Promotes already-registered accounts to PlatformAdmin on startup, driven by config
     // (e.g. SuperAdmin__Email env var) rather than any seeded/default credentials — there is
     // no built-in admin account. Register normally first, then set this to your own email.
+    // Accepts a comma-separated list so multiple admins can be granted from one env var; each
+    // account must already exist (the seeder never creates a user, only grants the role).
     private static async Task SeedSuperAdminAsync(IServiceProvider services, IConfiguration configuration,
         CancellationToken cancellationToken)
     {
-        var email = configuration["SuperAdmin:Email"];
-        if (string.IsNullOrWhiteSpace(email)) return;
+        var raw = configuration["SuperAdmin:Email"];
+        if (string.IsNullOrWhiteSpace(raw)) return;
+
+        var emails = raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (emails.Length == 0) return;
 
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        var user = await userManager.FindByEmailAsync(email.Trim());
-        if (user is null) return;
+        foreach (var email in emails)
+        {
+            var user = await userManager.FindByEmailAsync(email);
+            if (user is null) continue;
 
-        if (!await userManager.IsInRoleAsync(user, MirageRoles.PlatformAdmin))
-            await userManager.AddToRoleAsync(user, MirageRoles.PlatformAdmin);
+            if (!await userManager.IsInRoleAsync(user, MirageRoles.PlatformAdmin))
+                await userManager.AddToRoleAsync(user, MirageRoles.PlatformAdmin);
+        }
     }
 
     private static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken)

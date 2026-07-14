@@ -99,9 +99,11 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<JitsiService>();
+builder.Services.AddScoped<WelcomeEmailBackfillService>();
+builder.Services.AddHostedService<WelcomeEmailBackfillWorker>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
-builder.Services.AddHttpClient<IEmailService, ResendEmailService>();
+builder.Services.AddHttpClient<IEmailService, MailjetSmtpEmailService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()

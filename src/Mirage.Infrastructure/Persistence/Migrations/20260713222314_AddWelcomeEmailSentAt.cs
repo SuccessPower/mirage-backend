@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore.Infrastructure;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,19 +6,16 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     /// <inheritdoc />
-    [DbContext(typeof(Mirage.Infrastructure.Persistence.MirageDbContext))]
-    [Migration("20260702150000_AddOrgEventImageUrl")]
-    public partial class AddOrgEventImageUrl : Migration
+    public partial class AddWelcomeEmailSentAt : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "ImageUrl",
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "WelcomeEmailSentAt",
                 schema: "mirage",
-                table: "org_events",
-                type: "character varying(1000)",
-                maxLength: 1000,
+                table: "AspNetUsers",
+                type: "timestamp with time zone",
                 nullable: true);
         }
 
@@ -26,9 +23,9 @@ namespace Mirage.Infrastructure.Persistence.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropColumn(
-                name: "ImageUrl",
+                name: "WelcomeEmailSentAt",
                 schema: "mirage",
-                table: "org_events");
+                table: "AspNetUsers");
         }
     }
 }

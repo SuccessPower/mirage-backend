@@ -1,9 +1,11 @@
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace Mirage.Infrastructure.Persistence.Migrations;
 
+[DbContext(typeof(MirageDbContext))]
 [Migration("20260704130000_AddCounsellorFreeSessionGate")]
 public sealed class AddCounsellorFreeSessionGate : Migration
 {

@@ -4,7 +4,9 @@ namespace Mirage.Application.Abstractions;
 
 public interface IEmailService
 {
-    Task SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default);
+    // Returns whether the send succeeded, so callers can record delivery (e.g. WelcomeEmailSentAt)
+    // and retry later on failure instead of assuming it always went out.
+    Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default);
 
     Task SendPasswordChangedEmailAsync(string toEmail, string displayName,
         CancellationToken cancellationToken = default);
