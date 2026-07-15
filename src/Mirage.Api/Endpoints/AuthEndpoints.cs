@@ -655,7 +655,7 @@ internal static class AuthEndpoints
     }
 
     private static async Task<IResult> ConfirmEmail(ConfirmEmailRequest request, HttpContext context,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, MirageDbContext db, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Token))
             return EndpointHelpers.ValidationProblem(context, ("token", "Email and token are required."));
@@ -674,6 +674,13 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context,
                 new Dictionary<string, string[]> { ["token"] = ["This confirmation link is invalid or has expired."] },
                 "Email confirmation failed.");
+
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == user.Id, cancellationToken);
+        if (profile is not null && !profile.IsVerified)
+        {
+            profile.Verify();
+            await db.SaveChangesAsync(cancellationToken);
+        }
 
         return ApiResults.Ok(context, new { }, "Your email has been confirmed. You can now like, match, and chat with other members.");
     }

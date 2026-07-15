@@ -42,7 +42,11 @@ public enum VendorCategory
     Planning = 7,
     Attire = 8,
     Jewellery = 10,
-    Other = 9
+    Other = 9,
+    Mc = 11,
+    ChristianDj = 12,
+    ChristianLiveBand = 13,
+    EventPlanner = 14
 }
 
 // Drives the Denomination dropdown on signup. UserProfile.Denomination stays a plain string column
