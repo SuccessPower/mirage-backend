@@ -43,6 +43,7 @@ internal static class ProfileEndpoints
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
         string? myCountry = null;
+        Sex? mySex = null;
         if (currentUserId.HasValue)
         {
             var me = currentUserId.Value;
@@ -56,11 +57,17 @@ internal static class ProfileEndpoints
             query = query.Where(x => !likedIds.Contains(x.UserId) && !matchedIds.Contains(x.UserId));
 
             var mine = await db.Profiles.AsNoTracking().Where(x => x.UserId == me)
-                .Select(x => new { x.City, x.Country }).SingleOrDefaultAsync(cancellationToken);
+                .Select(x => new { x.City, x.Country, x.Sex }).SingleOrDefaultAsync(cancellationToken);
             myCity = mine?.City;
             myCountry = mine?.Country;
+            mySex = mine?.Sex;
         }
         if (intent.HasValue) query = query.Where(x => x.Intent == intent);
+
+        // Dating and marriage are opposite-sex only; friendship has no gender restriction.
+        // Skipped entirely if either party's sex isn't on file, rather than hiding everyone.
+        if (intent is RelationshipIntent.Dating or RelationshipIntent.Marriage && mySex.HasValue)
+            query = query.Where(x => x.Sex != null && x.Sex != mySex);
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))
             query = query.Where(x => EF.Functions.ILike(x.Denomination, $"%{denomination.Trim()}%"));
