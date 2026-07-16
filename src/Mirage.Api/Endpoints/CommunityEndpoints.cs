@@ -200,8 +200,8 @@ internal static class CommunityEndpoints
 
         var userId = context.User.GetUserId();
         var role = await GetActiveMemberRoleAsync(id, userId, db, cancellationToken);
-        if (role is null) return EndpointHelpers.Forbidden(context);
-        if (role is not (CommunityMemberRole.Owner or CommunityMemberRole.Moderator))
+        var isCommunityAdmin = role is CommunityMemberRole.Owner or CommunityMemberRole.Moderator;
+        if (!isCommunityAdmin && !context.User.IsInRole(MirageRoles.PlatformAdmin))
             return EndpointHelpers.Forbidden(context);
 
         var community = await db.Communities
