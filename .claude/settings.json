@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:faithtabernacle.org.ng)",
+      "WebFetch(domain:www.championsroyalassemblyng.org)",
+      "WebFetch(domain:rhemachapelonline.com)",
+      "WebFetch(domain:www.cac-worldwide.org)",
+      "WebFetch(domain:christapostolicchurch.org.ng)",
+      "WebFetch(domain:www.championsroyalassembly.org)",
+      "WebFetch(domain:rhemachapelagege.org)",
+      "WebFetch(domain:thecccworldwide.org)",
+      "WebFetch(domain:christembassy.org)",
+      "WebFetch(domain:www.cbcn.org.ng)",
+      "WebFetch(domain:www.rccg.org)",
+      "WebFetch(domain:dunamisgospel.org)",
+      "WebFetch(domain:www.mountainoffire.org)",
+      "WebFetch(domain:dclm.org)",
+      "WebFetch(domain:smhos.org)",
+      "WebFetch(domain:coza.org.ng)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:daystarng.org)",
+      "WebFetch(domain:houseontherock.org.ng)",
+      "WebFetch(domain:joincci.org)",
+      "WebFetch(domain:elevationng.org)",
+      "WebFetch(domain:trinityhouseng.org)",
+      "WebFetch(domain:tlccrm.org)",
+      "WebFetch(domain:thispresenthouse.org)",
+      "WebFetch(domain:www.glahq.org)",
+      "WebFetch(domain:www.dominioncity.cc)",
+      "WebFetch(domain:higherlifeassembly.com)",
+      "WebFetch(domain:streamsofjoy.org)",
+      "WebFetch(domain:thecitadelglobal.org)",
+      "WebFetch(domain:anglican-nig.org)",
+      "WebFetch(domain:www.higherlifeassembly.com)",
+      "Bash(python3 -c ' *)",
+      "WebFetch(domain:www.wearecedars.com)",
+      "WebFetch(domain:harvesthousecc.org)",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/payazaafrica/mirage-backend/seed-data/nigerian-churches-seed.json'\\)\\); print\\('OK, total entries:', len\\(d\\)\\)\")"
+    ]
+  }
+}

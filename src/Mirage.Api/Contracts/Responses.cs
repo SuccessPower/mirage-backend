@@ -51,7 +51,8 @@ public sealed record ProfileResponse(
     bool? IsCounsellor = null,
     bool? EmailConfirmed = null,
     string? OrganisationBadgeUrl = null,
-    string? OrganisationName = null);
+    string? OrganisationName = null,
+    bool IsProfileComplete = true);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,
@@ -72,9 +73,37 @@ public sealed record OrganisationRosterMemberResponse(
 
 public sealed record OrganisationBranchResponse(Guid Id, string Name, string City, string Country, string? Address);
 
+// Used by the public church typeahead at signup — only Approved organisations are searchable,
+// with their branches inlined so the UI can offer branch selection in the same step.
+public sealed record ChurchSearchResultResponse(
+    Guid Id,
+    string Name,
+    string Denomination,
+    string Country,
+    string? LogoUrl,
+    string? WebsiteUrl,
+    OrganisationBranchResponse[] Branches);
+
+public sealed record AdminOrganisationSummaryResponse(
+    Guid Id,
+    string Name,
+    string Denomination,
+    string Country,
+    string? LogoUrl,
+    string? WebsiteUrl,
+    OrganisationStatus Status,
+    Guid AdminUserId,
+    string? AdminDisplayName,
+    string? AdminEmail,
+    int ApprovedMemberCount,
+    int PendingMemberCount,
+    int BranchCount,
+    int ManagerCount,
+    DateTimeOffset CreatedAt);
+
 // A user's org badge — shown next to their display name wherever it appears, like a Twitter
 // verified checkmark. Populated via IMirageDbContextExtensions.GetOrgBadgesAsync.
-public sealed record OrgBadge(string LogoUrl, string OrganisationName);
+public sealed record OrgBadge(string? LogoUrl, string OrganisationName);
 
 public sealed record VendorResponse(
     Guid Id,
@@ -181,7 +210,12 @@ public sealed record CommunityPostResponse(
     bool LikedByMe,
     DateTimeOffset CreatedAt,
     string? AuthorOrgBadgeUrl = null,
-    string? AuthorOrgName = null);
+    string? AuthorOrgName = null,
+    int UpvoteCount = 0,
+    int DownvoteCount = 0,
+    sbyte? MyVote = null,
+    CommunityVoteColor VoteColor = CommunityVoteColor.White,
+    bool IsHidden = false);
 
 public sealed record CommunityPostCommentResponse(
     Guid Id,
@@ -198,7 +232,12 @@ public sealed record CommunityPostCommentResponse(
     bool IsDeleted,
     DateTimeOffset CreatedAt,
     string? AuthorOrgBadgeUrl = null,
-    string? AuthorOrgName = null);
+    string? AuthorOrgName = null,
+    int UpvoteCount = 0,
+    int DownvoteCount = 0,
+    sbyte? MyVote = null,
+    CommunityVoteColor VoteColor = CommunityVoteColor.White,
+    bool IsHidden = false);
 
 public sealed record CommunityCommentLocationResponse(Guid CommunityId, Guid PostId, Guid CommentId);
 

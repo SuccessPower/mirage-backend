@@ -105,6 +105,21 @@ internal static class CoupleEndpoints
 
         await db.SaveChangesAsync(cancellationToken);
 
+        // Each spouse joins the Married community of their own church (they may attend different
+        // ones) — gated on the mutual Couple approval above, not a self-reported RelationshipStatus.
+        foreach (var spouseId in new[] { couple.User1Id, couple.User2Id })
+        {
+            var organisationId = await db.OrganisationMembers.AsNoTracking()
+                .Where(x => x.UserId == spouseId && x.Status != OrganisationMemberStatus.Removed &&
+                            x.Status != OrganisationMemberStatus.Rejected)
+                .Select(x => (Guid?)x.OrganisationId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (organisationId.HasValue)
+                await ChurchCommunityService.JoinChurchCommunityAsync(db, organisationId.Value,
+                    Community.ChurchMarriedCategory, spouseId, cancellationToken);
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
         await notifications.NotifyAsync(couple.RequestedByUserId, NotificationType.NewMatch, "Couple link approved",
             "Your spouse approved your couple link. You're now shown as a married couple.",
             couple.Id, "Couple", cancellationToken);

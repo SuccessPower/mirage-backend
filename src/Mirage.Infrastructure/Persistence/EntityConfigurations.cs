@@ -36,6 +36,7 @@ public sealed class OrganisationConfiguration : IEntityTypeConfiguration<Organis
         b.Property(x => x.Name).HasMaxLength(200);
         b.Property(x => x.RegistrationNumber).HasMaxLength(100);
         b.Property(x => x.LogoUrl).HasMaxLength(1000);
+        b.Property(x => x.WebsiteUrl).HasMaxLength(1000);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AdminUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -136,12 +137,15 @@ public sealed class CommunityConfiguration : IEntityTypeConfiguration<Community>
         b.ToTable("communities");
         b.HasIndex(x => x.Status);
         b.HasIndex(x => x.Category);
+        b.HasIndex(x => new { x.OrganisationId, x.Category }).IsUnique()
+            .HasFilter("\"OrganisationId\" IS NOT NULL");
         b.Property(x => x.Name).HasMaxLength(120);
         b.Property(x => x.Category).HasMaxLength(80);
         b.Property(x => x.Description).HasMaxLength(1000);
         b.Property(x => x.AvatarUrl).HasMaxLength(1000);
         b.Property(x => x.AvatarKey).HasMaxLength(80);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Organisation>().WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
@@ -163,6 +167,7 @@ public sealed class CommunityPostConfiguration : IEntityTypeConfiguration<Commun
     {
         b.ToTable("community_posts");
         b.HasIndex(x => new { x.CommunityId, x.CreatedAt });
+        b.HasIndex(x => new { x.CommunityId, x.IsHidden });
         b.Property(x => x.Body).HasMaxLength(2000);
         b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.HasOne(x => x.Community).WithMany(x => x.Posts).HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
@@ -181,6 +186,18 @@ public sealed class CommunityPostLikeConfiguration : IEntityTypeConfiguration<Co
     }
 }
 
+public sealed class CommunityPostVoteConfiguration : IEntityTypeConfiguration<CommunityPostVote>
+{
+    public void Configure(EntityTypeBuilder<CommunityPostVote> b)
+    {
+        b.ToTable("community_post_votes");
+        b.HasIndex(x => new { x.PostId, x.UserId }).IsUnique();
+        b.Property(x => x.Value).HasColumnType("smallint");
+        b.HasOne(x => x.Post).WithMany(x => x.Votes).HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CommunityPostCommentConfiguration : IEntityTypeConfiguration<CommunityPostComment>
 {
     public void Configure(EntityTypeBuilder<CommunityPostComment> b)
@@ -188,6 +205,7 @@ public sealed class CommunityPostCommentConfiguration : IEntityTypeConfiguration
         b.ToTable("community_post_comments");
         b.HasIndex(x => new { x.PostId, x.CreatedAt });
         b.HasIndex(x => x.ParentCommentId);
+        b.HasIndex(x => new { x.PostId, x.IsHidden });
         b.Property(x => x.Body).HasMaxLength(2000);
         b.Property(x => x.MentionedUserIds).HasColumnType("uuid[]");
         b.HasOne(x => x.Post).WithMany(x => x.Comments).HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
@@ -203,6 +221,18 @@ public sealed class CommunityPostCommentLikeConfiguration : IEntityTypeConfigura
         b.ToTable("community_post_comment_likes");
         b.HasIndex(x => new { x.CommentId, x.UserId }).IsUnique();
         b.HasOne(x => x.Comment).WithMany(x => x.Likes).HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class CommunityPostCommentVoteConfiguration : IEntityTypeConfiguration<CommunityPostCommentVote>
+{
+    public void Configure(EntityTypeBuilder<CommunityPostCommentVote> b)
+    {
+        b.ToTable("community_post_comment_votes");
+        b.HasIndex(x => new { x.CommentId, x.UserId }).IsUnique();
+        b.Property(x => x.Value).HasColumnType("smallint");
+        b.HasOne(x => x.Comment).WithMany(x => x.Votes).HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
