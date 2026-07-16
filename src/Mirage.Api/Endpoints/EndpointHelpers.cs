@@ -73,10 +73,16 @@ internal static class EndpointHelpers
         var approvedOrgs = db.Organisations.AsNoTracking()
             .Where(o => o.Status == OrganisationStatus.Approved);
 
+        // Ordered oldest-first so the dictionary assignment below lands on the most recently
+        // reviewed row last. The invariant is now enforced at both join and approve time, so this
+        // is only a safety net for any stale duplicate Approved rows left over from before that
+        // was true — it shouldn't matter for new data, but keeps old accounts from resolving to
+        // a non-deterministic (effectively random) church if they do have leftover duplicates.
         var memberBadges = await db.OrganisationMembers.AsNoTracking()
             .Where(m => ids.Contains(m.UserId) && m.Status == OrganisationMemberStatus.Approved)
             .Join(approvedOrgs, m => m.OrganisationId, o => o.Id,
-                (m, o) => new { m.UserId, o.LogoUrl, o.Name })
+                (m, o) => new { m.UserId, o.LogoUrl, o.Name, m.ReviewedAt })
+            .OrderBy(x => x.ReviewedAt ?? DateTimeOffset.MinValue)
             .ToListAsync(cancellationToken);
 
         var adminBadges = await approvedOrgs
@@ -85,7 +91,9 @@ internal static class EndpointHelpers
             .ToListAsync(cancellationToken);
 
         var result = new Dictionary<Guid, OrgBadge>();
-        foreach (var b in memberBadges.Concat(adminBadges))
+        foreach (var b in memberBadges)
+            result[b.UserId] = new OrgBadge(b.LogoUrl, b.Name);
+        foreach (var b in adminBadges)
             result[b.UserId] = new OrgBadge(b.LogoUrl, b.Name);
         return result;
     }
