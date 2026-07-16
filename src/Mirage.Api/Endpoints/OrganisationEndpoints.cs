@@ -40,6 +40,7 @@ internal static class OrganisationEndpoints
         // Membership: users request to join, ChurchAdmin approves/rejects/removes/assigns
         organisations.MapGet("/mine", ListMyMemberships).RequireAuthorization();
         organisations.MapPost("/{id:guid}/join", JoinOrganisation).RequireAuthorization();
+        organisations.MapDelete("/{id:guid}/membership", LeaveOrganisation).RequireAuthorization();
         organisations.MapGet("/{id:guid}/members", ListMembers).RequireAuthorization(MiragePolicy.ChurchAdmin);
         organisations.MapGet("/{id:guid}/roster", ListRoster).RequireAuthorization();
         organisations.MapPatch("/{id:guid}/members/{memberId:guid}/approve", ApproveMember).RequireAuthorization(MiragePolicy.ChurchAdmin);
@@ -474,6 +475,16 @@ internal static class OrganisationEndpoints
         if (member is null) return EndpointHelpers.NotFound(context, "Member was not found.");
         if (member.Status == OrganisationMemberStatus.Approved)
             return EndpointHelpers.Conflict(context, "Member is already approved.");
+
+        // Same "one organisation at a time" invariant enforced at request-join time (see
+        // JoinOrganisation) — also enforced here, since approval is the other path that can
+        // otherwise leave a user with two simultaneous Approved rows (and an ambiguous badge).
+        if (await db.OrganisationMembers.AnyAsync(x => x.UserId == member.UserId && x.OrganisationId != id &&
+            (x.Status == OrganisationMemberStatus.Pending || x.Status == OrganisationMemberStatus.Approved),
+            cancellationToken))
+            return EndpointHelpers.Conflict(context,
+                "This member already belongs to another organisation. They must leave it before this request can be approved.");
+
         member.Approve();
 
         // Approval is what earns the verified tick — a member is only verified once their
@@ -481,6 +492,9 @@ internal static class OrganisationEndpoints
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == member.UserId, cancellationToken);
         var justVerified = profile is not null && !profile.IsVerified;
         if (justVerified) profile!.Verify();
+
+        await ChurchCommunityService.JoinChurchCommunityAsync(db, id, Community.ChurchGeneralCategory,
+            member.UserId, cancellationToken);
 
         await db.SaveChangesAsync(cancellationToken);
 
@@ -531,6 +545,12 @@ internal static class OrganisationEndpoints
             x => x.Id == memberId && x.OrganisationId == id, cancellationToken);
         if (member is null) return EndpointHelpers.NotFound(context, "Member was not found.");
         member.Reject();
+
+        // No-op if they were never actually added to the church community (the common case —
+        // a Pending request being rejected), but covers rejecting an already-Approved member too.
+        await ChurchCommunityService.LeaveChurchCommunityAsync(db, id, Community.ChurchGeneralCategory,
+            member.UserId, cancellationToken);
+
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(member.UserId, NotificationType.MembershipRejected,
@@ -550,8 +570,34 @@ internal static class OrganisationEndpoints
             x => x.Id == memberId && x.OrganisationId == id, cancellationToken);
         if (member is null) return EndpointHelpers.NotFound(context, "Member was not found.");
         member.Remove();
+
+        await ChurchCommunityService.LeaveChurchCommunityAsync(db, id, Community.ChurchGeneralCategory,
+            member.UserId, cancellationToken);
+
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member removed successfully.");
+    }
+
+    // Self-service counterpart to RemoveMember — lets a member leave their own church rather
+    // than requiring a ChurchAdmin to remove them. Enforces the same "one organisation at a
+    // time" rule elsewhere: this is the only way out once you've joined.
+    private static async Task<IResult> LeaveOrganisation(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var member = await db.OrganisationMembers.SingleOrDefaultAsync(
+            x => x.OrganisationId == id && x.UserId == userId &&
+                (x.Status == OrganisationMemberStatus.Pending || x.Status == OrganisationMemberStatus.Approved),
+            cancellationToken);
+        if (member is null) return EndpointHelpers.NotFound(context, "You do not have an active membership in this organisation.");
+
+        member.Remove();
+
+        await ChurchCommunityService.LeaveChurchCommunityAsync(db, id, Community.ChurchGeneralCategory,
+            userId, cancellationToken);
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { member.Id, member.Status }, "You have left this organisation.");
     }
 
     private static async Task<IResult> AssignMember(Guid id, Guid memberId, AssignMemberRequest request,
