@@ -23,6 +23,9 @@ internal static class OrganisationEndpoints
                     .OrderBy(x => x.Name).ToListAsync(ct),
                 "Organisations retrieved successfully."));
         organisations.MapPost("/", Create).RequireAuthorization();
+        organisations.MapGet("/search", Search);
+        organisations.MapGet("/{id:guid}", GetById);
+        organisations.MapPatch("/{id:guid}", UpdateDetails).RequireAuthorization();
 
         // PlatformAdmin: review pending orgs
         organisations.MapGet("/pending", ListPending).RequireAuthorization(MiragePolicy.PlatformAdmin);
@@ -79,7 +82,7 @@ internal static class OrganisationEndpoints
 
         var userId = context.User.GetUserId();
         var organisation = new Organisation(userId, request.Name, request.Denomination,
-            request.Country, request.RegistrationNumber, request.LogoUrl);
+            request.Country, request.RegistrationNumber, request.LogoUrl, request.WebsiteUrl);
 
         // A PlatformAdmin-issued invite lets this org skip the Pending review queue entirely.
         if (!string.IsNullOrWhiteSpace(request.InviteToken))
@@ -110,6 +113,65 @@ internal static class OrganisationEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/organisations/{organisation.Id}",
             new { organisation.Id, organisation.Status }, "Organisation submitted successfully.");
+    }
+
+    private static async Task<IResult> GetById(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var organisation = await db.Organisations.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        return organisation is null
+            ? EndpointHelpers.NotFound(context, "Organisation was not found.")
+            : ApiResults.Ok(context, organisation, "Organisation retrieved successfully.");
+    }
+
+    // Org admin/manager (or PlatformAdmin) updating their church's logo and/or website after
+    // creation — branches already have their own endpoints (CreateBranch/ImportBranches below).
+    private static async Task<IResult> UpdateDetails(Guid id, UpdateOrganisationDetailsRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var forbidden = await RequireOrgAdmin(id, context, db, cancellationToken);
+        if (forbidden is not null) return forbidden;
+
+        var org = await db.Organisations.SingleAsync(x => x.Id == id, cancellationToken);
+        org.SetLogo(request.LogoUrl);
+        org.SetWebsite(request.WebsiteUrl);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new { org.Id, org.LogoUrl, org.WebsiteUrl }, "Organisation updated successfully.");
+    }
+
+    // Public church typeahead for signup — only Approved organisations are searchable, with
+    // branches inlined so the UI can offer branch selection in the same step. If nothing matches,
+    // the frontend falls back to letting the user propose a new church (see RegisterRequest).
+    private static async Task<IResult> Search(HttpContext context, IMirageDbContext db, string? query,
+        CancellationToken cancellationToken)
+    {
+        var orgsQuery = db.Organisations.AsNoTracking()
+            .Where(x => x.Status == OrganisationStatus.Approved);
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var value = $"%{query.Trim()}%";
+            orgsQuery = orgsQuery.Where(x => EF.Functions.ILike(x.Name, value) ||
+                                             EF.Functions.ILike(x.Denomination, value));
+        }
+
+        var orgs = await orgsQuery.OrderBy(x => x.Name).Take(20)
+            .Select(x => new { x.Id, x.Name, x.Denomination, x.Country, x.LogoUrl, x.WebsiteUrl })
+            .ToListAsync(cancellationToken);
+
+        var orgIds = orgs.Select(x => x.Id).ToArray();
+        var branches = await db.OrganisationBranches.AsNoTracking()
+            .Where(x => orgIds.Contains(x.OrganisationId))
+            .OrderBy(x => x.Name)
+            .Select(x => new { x.OrganisationId, Branch = new OrganisationBranchResponse(x.Id, x.Name, x.City, x.Country, x.Address) })
+            .ToListAsync(cancellationToken);
+        var branchesByOrg = branches.GroupBy(x => x.OrganisationId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Branch).ToArray());
+
+        var response = orgs.Select(x => new ChurchSearchResultResponse(x.Id, x.Name, x.Denomination, x.Country,
+            x.LogoUrl, x.WebsiteUrl, branchesByOrg.GetValueOrDefault(x.Id, []))).ToArray();
+        return ApiResults.Ok(context, response, "Churches retrieved successfully.");
     }
 
     private static async Task<IResult> Recommend(CreateRecommendationRequest request, HttpContext context,

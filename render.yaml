@@ -29,3 +29,5 @@ services:
         value: "30"
       - key: Swagger__Enabled
         value: "true"
+      - key: Google__ClientId
+        value: "924927421966-qcqec2u9kpeggje18p29d08u7ohb69fd.apps.googleusercontent.com"

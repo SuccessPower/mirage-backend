@@ -142,6 +142,7 @@ For an existing Render service, configure these under **Environment**:
 | `Database__CommandTimeoutSeconds` | `30` |
 | `Swagger__Enabled` | `true` |
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `Google__ClientId` | Google OAuth Client ID (not secret — no client secret is needed, sign-in verifies an ID token server-side) |
 
 `PORT` is provided automatically by Render.
 

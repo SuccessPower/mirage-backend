@@ -1,12 +1,14 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Security.Cryptography;
+using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Mirage.Api.Contracts;
 using Mirage.Api.Middleware;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -26,6 +28,7 @@ internal static class AuthEndpoints
         group.MapPost("/register/counsellor/independent", RegisterIndependentCounsellor);
         group.MapPost("/register/mentor", RegisterMentor);
         group.MapPost("/login", Login);
+        group.MapPost("/google", GoogleAuth);
         group.MapPost("/refresh", Refresh);
         group.MapPost("/logout", Logout).RequireAuthorization();
         group.MapPost("/logout-all", LogoutAll).RequireAuthorization();
@@ -107,13 +110,31 @@ internal static class AuthEndpoints
                     DateTimeOffset.UtcNow.AddDays(refreshDays));
                 var accessToken = tokens.CreateAccessToken(user, [MirageRoles.User]);
 
+                var churchSelection = await ChurchSelectionResolver.ResolveAsync(user.Id, request.Denomination,
+                    request.Country, request.OrganisationId, request.BranchId, request.NewOrganisationName,
+                    request.NewOrganisationRegistrationNumber, request.NewBranchName, request.NewBranchCity,
+                    context, db, cancellationToken);
+                if (churchSelection.Error is not null) return churchSelection.Error;
+
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
                     request.Country, request.Denomination, request.Intent, request.Bio, request.Sex,
                     request.RelationshipStatus, request.Occupation));
                 db.RefreshTokens.Add(refreshToken);
+                if (churchSelection.OrganisationId.HasValue)
+                    db.OrganisationMembers.Add(new OrganisationMember(
+                        churchSelection.OrganisationId.Value, user.Id, churchSelection.BranchId));
                 await db.SaveChangesAsync(cancellationToken);
+
+                // Joining a church's community is immediate — it isn't gated on the ChurchAdmin
+                // approving the OrganisationMember row above, which stays Pending for that review.
+                if (churchSelection.OrganisationId.HasValue)
+                {
+                    await ChurchCommunityService.JoinChurchCommunityAsync(db, churchSelection.OrganisationId.Value,
+                        Community.ChurchGeneralCategory, user.Id, cancellationToken);
+                    await db.SaveChangesAsync(cancellationToken);
+                }
 
                 var welcomeEmailSent = await emailService.SendWelcomeEmailAsync(user.Email!, request.DisplayName, cancellationToken);
                 if (welcomeEmailSent)
@@ -448,6 +469,109 @@ internal static class AuthEndpoints
         return ApiResults.Ok(context,
             await IssueTokens(user, roles, db, tokens, configuration, cancellationToken),
             "Login completed successfully.");
+    }
+
+    // Google Identity Services ID-token flow — the frontend never sees a client secret, it just
+    // hands us the ID token Google issued after the user picked an account. We verify it against
+    // our own Client ID and trust Google's own email verification, since that's what "Sign in
+    // with Google" is vouching for. Works for both first-time signup and returning login: an
+    // existing account by email just gets tokens issued; a new one is created with a minimal
+    // profile that IsProfileComplete gates until they fill in the rest (see CompleteProfile below).
+    private static async Task<IResult> GoogleAuth(GoogleAuthRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager, IMemoryCache cache, MirageDbContext db, TokenService tokens,
+        IConfiguration configuration, IEmailService emailService, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.IdToken))
+            return EndpointHelpers.ValidationProblem(context, ("idToken", "Google ID token is required."));
+
+        var clientId = configuration["Google:ClientId"];
+        if (string.IsNullOrWhiteSpace(clientId))
+            return EndpointHelpers.Problem(context, StatusCodes.Status500InternalServerError,
+                "Google sign-in unavailable", "Google sign-in is not configured on this deployment.");
+
+        GoogleJsonWebSignature.Payload payload;
+        try
+        {
+            payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken,
+                new GoogleJsonWebSignature.ValidationSettings { Audience = [clientId] });
+        }
+        catch (InvalidJwtException)
+        {
+            return EndpointHelpers.Problem(context, StatusCodes.Status401Unauthorized,
+                "Authentication failed", "This Google sign-in could not be verified.");
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.Email) || !payload.EmailVerified)
+            return EndpointHelpers.Problem(context, StatusCodes.Status401Unauthorized,
+                "Authentication failed", "Your Google account's email must be verified.");
+
+        var existingUser = await userManager.FindByEmailAsync(payload.Email);
+        if (existingUser is not null)
+        {
+            if (!existingUser.IsActive)
+                return EndpointHelpers.Problem(context, StatusCodes.Status401Unauthorized,
+                    "Authentication failed", "This account is unavailable.");
+            var existingRoles = await userManager.GetRolesAsync(existingUser);
+            return ApiResults.Ok(context,
+                await IssueTokens(existingUser, existingRoles, db, tokens, configuration, cancellationToken),
+                "Signed in with Google successfully.");
+        }
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            Email = payload.Email,
+            NormalizedEmail = userManager.NormalizeEmail(payload.Email),
+            UserName = payload.Email,
+            NormalizedUserName = userManager.NormalizeName(payload.Email),
+            EmailConfirmed = true,
+            LockoutEnabled = true,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+
+        var strategy = db.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
+            {
+                var roleId = await cache.GetOrCreateAsync(IdentityCacheKeys.DefaultUserRoleId, async entry =>
+                {
+                    entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(1);
+                    return await db.Roles.AsNoTracking()
+                        .Where(x => x.NormalizedName == MirageRoles.User.ToUpperInvariant())
+                        .Select(x => x.Id)
+                        .SingleAsync(cancellationToken);
+                });
+
+                var displayName = string.IsNullOrWhiteSpace(payload.Name) ? payload.Email.Split('@')[0] : payload.Name;
+                var refreshValue = tokens.CreateRefreshToken();
+                var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+                var accessToken = tokens.CreateAccessToken(user, [MirageRoles.User]);
+
+                db.Users.Add(user);
+                db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
+                db.Profiles.Add(new UserProfile(user.Id, displayName, payload.Picture));
+                db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
+                await db.SaveChangesAsync(cancellationToken);
+
+                if (await emailService.SendWelcomeEmailAsync(user.Email!, displayName, cancellationToken))
+                {
+                    user.WelcomeEmailSentAt = DateTimeOffset.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+
+                return ApiResults.Ok(context, new AuthResponse(accessToken.Token, accessToken.ExpiresAt, refreshValue),
+                    "Account created with Google successfully.");
+            });
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException
+                                                 { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            return EndpointHelpers.ValidationProblem(context,
+                new Dictionary<string, string[]> { ["DuplicateUserName"] = ["An account with this email already exists."] },
+                "Registration validation failed.");
+        }
     }
 
     private static async Task<IResult> Refresh(RefreshRequest request, HttpContext context, MirageDbContext db,

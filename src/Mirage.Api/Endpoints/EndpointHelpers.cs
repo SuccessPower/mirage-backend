@@ -55,7 +55,8 @@ internal static class EndpointHelpers
             profile.Denomination, profile.Intent, profile.Bio, profile.IsVerified, isRecommended,
             profile.SubscriptionTier, profile.AnonymityEnabled, profile.Interests, profile.AvatarUrl, profile.PhotoUrls, profile.Sex, profile.RelationshipStatus,
             profile.HeightInches, profile.SkinTone, profile.PreferredLanguage, profile.Occupation, profile.CreatedAt,
-            OrganisationBadgeUrl: badge?.LogoUrl, OrganisationName: badge?.OrganisationName);
+            OrganisationBadgeUrl: badge?.LogoUrl, OrganisationName: badge?.OrganisationName,
+            IsProfileComplete: profile.IsProfileComplete);
 
     // Badge eligibility: an approved member of an org (or the org's own owner/admin), where that
     // org has a logo uploaded and is itself approved. A user belongs to at most one org at a time
@@ -67,23 +68,25 @@ internal static class EndpointHelpers
         var ids = userIds.Distinct().ToArray();
         if (ids.Length == 0) return new Dictionary<Guid, OrgBadge>();
 
-        var approvedOrgsWithLogo = db.Organisations.AsNoTracking()
-            .Where(o => o.Status == OrganisationStatus.Approved && o.LogoUrl != null);
+        // No longer requires a LogoUrl — the frontend badge falls back to a colored shield with
+        // the church's initial when LogoUrl is null, so membership alone should still show a badge.
+        var approvedOrgs = db.Organisations.AsNoTracking()
+            .Where(o => o.Status == OrganisationStatus.Approved);
 
         var memberBadges = await db.OrganisationMembers.AsNoTracking()
             .Where(m => ids.Contains(m.UserId) && m.Status == OrganisationMemberStatus.Approved)
-            .Join(approvedOrgsWithLogo, m => m.OrganisationId, o => o.Id,
+            .Join(approvedOrgs, m => m.OrganisationId, o => o.Id,
                 (m, o) => new { m.UserId, o.LogoUrl, o.Name })
             .ToListAsync(cancellationToken);
 
-        var adminBadges = await approvedOrgsWithLogo
+        var adminBadges = await approvedOrgs
             .Where(o => ids.Contains(o.AdminUserId))
             .Select(o => new { UserId = o.AdminUserId, o.LogoUrl, o.Name })
             .ToListAsync(cancellationToken);
 
         var result = new Dictionary<Guid, OrgBadge>();
         foreach (var b in memberBadges.Concat(adminBadges))
-            result[b.UserId] = new OrgBadge(b.LogoUrl!, b.Name);
+            result[b.UserId] = new OrgBadge(b.LogoUrl, b.Name);
         return result;
     }
 

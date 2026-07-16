@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260716094015_AddOrganisationWebsiteUrl")]
+    partial class AddOrganisationWebsiteUrl
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -298,15 +301,9 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("HiddenAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
-
-                    b.Property<bool>("IsHidden")
-                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -316,8 +313,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasIndex("AuthorUserId");
 
                     b.HasIndex("CommunityId", "CreatedAt");
-
-                    b.HasIndex("CommunityId", "IsHidden");
 
                     b.ToTable("community_posts", "mirage");
                 });
@@ -339,16 +334,10 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("HiddenAt")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsEdited")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsHidden")
                         .HasColumnType("boolean");
 
                     b.Property<Guid[]>("MentionedUserIds")
@@ -371,8 +360,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasIndex("ParentCommentId");
 
                     b.HasIndex("PostId", "CreatedAt");
-
-                    b.HasIndex("PostId", "IsHidden");
 
                     b.ToTable("community_post_comments", "mirage");
                 });
@@ -405,37 +392,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("community_post_comment_likes", "mirage");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostCommentVote", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CommentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<short>("Value")
-                        .HasColumnType("smallint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("CommentId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("community_post_comment_votes", "mirage");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostLike", b =>
                 {
                     b.Property<Guid>("Id")
@@ -462,37 +418,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("community_post_likes", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostVote", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("PostId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<short>("Value")
-                        .HasColumnType("smallint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("PostId", "UserId")
-                        .IsUnique();
-
-                    b.ToTable("community_post_votes", "mirage");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.ContentReport", b =>
@@ -2089,9 +2014,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text[]");
 
-                    b.Property<bool>("IsProfileComplete")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("IsVerified")
                         .HasColumnType("boolean");
 
@@ -2429,44 +2351,10 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Comment");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostCommentVote", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.CommunityPostComment", "Comment")
-                        .WithMany("Votes")
-                        .HasForeignKey("CommentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Comment");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostLike", b =>
                 {
                     b.HasOne("Mirage.Domain.Entities.CommunityPost", "Post")
                         .WithMany("Likes")
-                        .HasForeignKey("PostId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Post");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostVote", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.CommunityPost", "Post")
-                        .WithMany("Votes")
                         .HasForeignKey("PostId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -3049,8 +2937,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Comments");
 
                     b.Navigation("Likes");
-
-                    b.Navigation("Votes");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.CommunityPostComment", b =>
@@ -3058,8 +2944,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Likes");
 
                     b.Navigation("Replies");
-
-                    b.Navigation("Votes");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellingSession", b =>

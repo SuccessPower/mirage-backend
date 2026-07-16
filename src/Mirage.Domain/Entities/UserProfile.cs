@@ -22,6 +22,24 @@ public sealed class UserProfile : Entity
         Sex = sex;
         RelationshipStatus = relationshipStatus;
         Occupation = occupation?.Trim();
+        IsProfileComplete = true;
+    }
+
+    // Minimal profile created from a Google sign-in — Google only ever gives us a name, email,
+    // and picture, so the required fields (DOB, city, country, denomination, intent, bio) start
+    // blank/placeholder and IsProfileComplete stays false until CompleteProfile() runs.
+    public UserProfile(Guid userId, string displayName, string? avatarUrl)
+    {
+        UserId = userId;
+        DisplayName = displayName.Trim();
+        DateOfBirth = default;
+        City = string.Empty;
+        Country = string.Empty;
+        Denomination = string.Empty;
+        Intent = RelationshipIntent.Friendship;
+        Bio = string.Empty;
+        AvatarUrl = avatarUrl?.Trim();
+        IsProfileComplete = false;
     }
 
     public Guid UserId { get; private set; }
@@ -44,6 +62,7 @@ public sealed class UserProfile : Entity
     public SkinTone? SkinTone { get; private set; }
     public string? PreferredLanguage { get; private set; }
     public string? Occupation { get; private set; }
+    public bool IsProfileComplete { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
         RelationshipIntent intent, string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null,
@@ -65,6 +84,24 @@ public sealed class UserProfile : Entity
         if (skinTone is not null) SkinTone = skinTone;
         if (preferredLanguage is not null) PreferredLanguage = preferredLanguage.Trim();
         if (occupation is not null) Occupation = occupation.Trim();
+        Touch();
+    }
+
+    // One-time completion for a minimal Google sign-in profile — fills in the fields normal
+    // registration collects up front (DOB is otherwise never settable after account creation).
+    public void CompleteProfile(DateOnly dateOfBirth, string city, string country, string denomination,
+        RelationshipIntent intent, string bio, Sex? sex, RelationshipStatus? relationshipStatus, string? occupation)
+    {
+        DateOfBirth = dateOfBirth;
+        City = city.Trim();
+        Country = country.Trim();
+        Denomination = denomination.Trim();
+        Intent = intent;
+        Bio = bio.Trim();
+        if (sex is not null) Sex = sex;
+        if (relationshipStatus is not null) RelationshipStatus = relationshipStatus;
+        if (occupation is not null) Occupation = occupation.Trim();
+        IsProfileComplete = true;
         Touch();
     }
 
