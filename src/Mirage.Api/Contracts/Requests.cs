@@ -16,9 +16,18 @@ public sealed record RegisterRequest(
     string Bio,
     Sex? Sex = null,
     RelationshipStatus? RelationshipStatus = null,
-    string? Occupation = null);
+    string? Occupation = null,
+    // Church selection at signup — pick an existing organisation/branch, or propose a new one
+    // (submitted for PlatformAdmin review, same as CreateOrganisationRequest) when it isn't listed.
+    Guid? OrganisationId = null,
+    Guid? BranchId = null,
+    string? NewOrganisationName = null,
+    string? NewOrganisationRegistrationNumber = null,
+    string? NewBranchName = null,
+    string? NewBranchCity = null);
 
 public sealed record LoginRequest(string Email, string Password);
+public sealed record GoogleAuthRequest(string IdToken);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 public sealed record ForgotPasswordRequest(string Email);
@@ -44,9 +53,33 @@ public sealed record UpdateProfileRequest(
     string? PreferredLanguage = null,
     string? Occupation = null);
 public sealed record SetProfilePhotosRequest(string[] PhotoUrls);
+public sealed record CompleteProfileRequest(
+    DateOnly DateOfBirth,
+    string City,
+    string Country,
+    string Denomination,
+    RelationshipIntent Intent,
+    string Bio,
+    Sex? Sex = null,
+    RelationshipStatus? RelationshipStatus = null,
+    string? Occupation = null,
+    Guid? OrganisationId = null,
+    Guid? BranchId = null,
+    string? NewOrganisationName = null,
+    string? NewOrganisationRegistrationNumber = null,
+    string? NewBranchName = null,
+    string? NewBranchCity = null);
+public sealed record JoinChurchRequest(
+    Guid? OrganisationId = null,
+    Guid? BranchId = null,
+    string? NewOrganisationName = null,
+    string? NewOrganisationRegistrationNumber = null,
+    string? NewBranchName = null,
+    string? NewBranchCity = null);
 public sealed record CreateOrganisationRequest(
     string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null,
-    string? LogoUrl = null);
+    string? LogoUrl = null, string? WebsiteUrl = null);
+public sealed record UpdateOrganisationDetailsRequest(string? LogoUrl, string? WebsiteUrl);
 public sealed record InviteOrganisationAdminRequest(string Email);
 public sealed record JoinOrganisationRequest(Guid? BranchId, string? Description = null);
 public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
@@ -68,6 +101,8 @@ public sealed record CreateCommunityRequest(
     string? AvatarUrl = null,
     string? AvatarKey = null);
 public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? AvatarKey);
+public sealed record UpdateCommunityMemberRoleRequest(CommunityMemberRole Role);
+public sealed record CastVoteRequest(sbyte Value);
 public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);

@@ -1,0 +1,646 @@
+[
+  {
+    "name": "The Redeemed Christian Church of God (RCCG)",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Redemption Camp, Ogun State (Lagos-Ibadan Expressway)",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Enoch Adejare Adeboye (General Overseer)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.rccg.org",
+    "branches": [
+      { "name": "RCCG Christ the Redeemer's Parish (Province 20 HQ)", "city": "Lagos" },
+      { "name": "RCCG City of David Parish", "city": "Victoria Island, Lagos" },
+      { "name": "RCCG Jesus House", "city": "Abuja" },
+      { "name": "RCCG Throneroom", "city": "Lekki, Lagos" }
+    ]
+  },
+  {
+    "name": "Living Faith Church Worldwide (Winners Chapel)",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Canaanland, Ota, Ogun State",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Bishop David Oyedepo (Presiding Bishop)",
+    "logoUrl": null,
+    "websiteUrl": "https://faithtabernacle.org.ng",
+    "branches": [
+      { "name": "Faith Tabernacle (Canaanland)", "city": "Ota, Ogun State" },
+      { "name": "Winners Chapel Maryland", "city": "Lagos" },
+      { "name": "Winners Chapel Abuja", "city": "Abuja" },
+      { "name": "Winners Chapel Port Harcourt", "city": "Port Harcourt" }
+    ]
+  },
+  {
+    "name": "Dunamis International Gospel Centre",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Abuja",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Dr. Paul Enenche (Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://dunamisgospel.org",
+    "branches": [
+      { "name": "Glory Dome", "city": "Abuja" },
+      { "name": "Dunamis Lagos", "city": "Lagos" },
+      { "name": "Dunamis Port Harcourt", "city": "Port Harcourt" }
+    ]
+  },
+  {
+    "name": "Mountain of Fire and Miracles Ministries (MFM)",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Onike, Yaba, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Dr. Daniel Kolawole Olukoya (General Overseer)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.mountainoffire.org",
+    "branches": [
+      { "name": "MFM Prayer City", "city": "Ibafo, Ogun State" },
+      { "name": "MFM International Headquarters", "city": "Yaba, Lagos" },
+      { "name": "MFM Wuse", "city": "Abuja" }
+    ]
+  },
+  {
+    "name": "Christ Embassy (Believers LoveWorld Inc.)",
+    "denomination": "Charismatic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Chris Oyakhilome (President/Founder)",
+    "logoUrl": null,
+    "websiteUrl": "https://christembassy.org",
+    "branches": [
+      { "name": "Christ Embassy Lagos Zone 2", "city": "Lagos" },
+      { "name": "Christ Embassy Abuja", "city": "Abuja" },
+      { "name": "Loveworld Convention Centre", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Deeper Christian Life Ministry",
+    "denomination": "Evangelical",
+    "headquartersCity": "Gbagada, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor William Folorunso Kumuyi (General Superintendent)",
+    "logoUrl": null,
+    "websiteUrl": "https://dclm.org",
+    "branches": [
+      { "name": "Deeper Life Camp Ground (Km 42, Lagos-Ibadan Expressway)", "city": "Ogun State" },
+      { "name": "Deeper Life Gbagada Headquarters", "city": "Lagos" },
+      { "name": "Deeper Life Abuja", "city": "Abuja" }
+    ]
+  },
+  {
+    "name": "Christ Apostolic Church (CAC) Worldwide",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Ibadan",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor (Prophet) Samuel Olusegun Oladele (President, CAC Worldwide)",
+    "logoUrl": null,
+    "websiteUrl": null,
+    "branches": [
+      { "name": "CAC Agbala Itura (Ori-Oke)", "city": "Ibadan" },
+      { "name": "CAC Ayo Ni O", "city": "Ibadan" },
+      { "name": "CAC Sango", "city": "Ibadan" }
+    ]
+  },
+  {
+    "name": "The Redeemed Evangelical Mission (TREM)",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Bishop Mike Okonkwo (Presiding Bishop/Founder)",
+    "logoUrl": null,
+    "websiteUrl": "https://trem.org",
+    "branches": [
+      { "name": "TREM City of David", "city": "Lagos" },
+      { "name": "TREM Ikeja", "city": "Lagos" },
+      { "name": "TREM Abuja", "city": "Abuja" }
+    ]
+  },
+  {
+    "name": "Daystar Christian Centre",
+    "denomination": "Charismatic",
+    "headquartersCity": "Oregun, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Sam Adeyemi (Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://daystarng.org",
+    "branches": [
+      { "name": "Daystar Oregun", "city": "Lagos" },
+      { "name": "Daystar Lekki", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "House on the Rock",
+    "denomination": "Charismatic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Paul Adefarasin (Presiding Bishop)",
+    "logoUrl": null,
+    "websiteUrl": "https://houseontherock.org.ng",
+    "branches": [
+      { "name": "House on the Rock Lekki (The Rock Cathedral)", "city": "Lagos" },
+      { "name": "House on the Rock Ikeja", "city": "Lagos" },
+      { "name": "House on the Rock Abuja", "city": "Abuja" }
+    ]
+  },
+  {
+    "name": "Fountain of Life Church",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Ilupeju/Lekki, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Taiwo Odukoya (Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.tfolc.org",
+    "branches": [
+      { "name": "Fountain of Life Church Ilupeju", "city": "Lagos" },
+      { "name": "Fountain of Life Church Lekki", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Salvation Ministries",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Port Harcourt",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor David Ibiyeomie (Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://smhos.org",
+    "branches": [
+      { "name": "Glorious Land (Salvation Ministries HQ)", "city": "Port Harcourt" },
+      { "name": "Salvation Ministries Lagos", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Commonwealth of Zion Assembly (COZA)",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Abuja",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Biodun Fatoyinbo (Global Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://coza.org.ng",
+    "branches": [
+      { "name": "COZA Central Wuse", "city": "Abuja" },
+      { "name": "COZA Guzape", "city": "Abuja" },
+      { "name": "COZA Lagos", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Catholic Church in Nigeria",
+    "denomination": "Catholic",
+    "headquartersCity": "Abuja",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Archbishop Matthew Man-Oso Ndagoso (President, Catholic Bishops' Conference of Nigeria, elected Feb 2026)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.cbcn.org.ng",
+    "branches": [
+      { "name": "Archdiocese of Lagos", "city": "Lagos" },
+      { "name": "Archdiocese of Abuja", "city": "Abuja" },
+      { "name": "Archdiocese of Onitsha", "city": "Onitsha" },
+      { "name": "Archdiocese of Ibadan", "city": "Ibadan" }
+    ]
+  },
+  {
+    "name": "Church of Nigeria (Anglican Communion)",
+    "denomination": "Anglican",
+    "headquartersCity": "Abuja",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Most Revd Dr. Henry Chukwudum Ndukuba (Primate of All Nigeria)",
+    "logoUrl": null,
+    "websiteUrl": "https://anglican-nig.org",
+    "branches": [
+      { "name": "Cathedral Church of the Advent, Life Camp", "city": "Abuja" },
+      { "name": "Diocese of Lagos (Cathedral Church of Christ, Marina)", "city": "Lagos" },
+      { "name": "Diocese of Ibadan", "city": "Ibadan" }
+    ]
+  },
+  {
+    "name": "Celestial Church of Christ",
+    "denomination": "Other",
+    "headquartersCity": "Ketu (Imeko/Lagos)",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "His Eminence Rev. Pastor Emmanuel Mobiyina Oshoffa (Pastor and Supreme Head, Worldwide) - note: leadership contested among rival factions",
+    "logoUrl": null,
+    "websiteUrl": "https://thecccworldwide.org",
+    "branches": [
+      { "name": "Bethel Cathedral, Ketu", "city": "Lagos" },
+      { "name": "Imeko Holy City parish", "city": "Imeko, Ogun State" }
+    ]
+  },
+  {
+    "name": "Cherubim and Seraphim Movement Church",
+    "denomination": "Other",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "unknown (fragmented into multiple independent branches/factions; a widely recognized recent Baba Aladura figure is Prophet Dr. Emmanuel Abiodun Alogbo of one C&S faction, installed 2024)",
+    "logoUrl": null,
+    "websiteUrl": null,
+    "branches": [
+      { "name": "Cherubim and Seraphim Church, Oke-Sinai", "city": "Lagos" },
+      { "name": "Cherubim and Seraphim Ayo Ni O", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Assemblies of God Nigeria",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Dr. Abel Amadi (General Superintendent, elected 2022)",
+    "logoUrl": null,
+    "websiteUrl": "https://agnigeria.org",
+    "branches": [
+      { "name": "Assemblies of God Onike", "city": "Lagos" },
+      { "name": "Assemblies of God Owerri District", "city": "Owerri" }
+    ]
+  },
+  {
+    "name": "Celebration Church International (CCI)",
+    "denomination": "Charismatic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Emmanuel Iren (Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://joincci.org",
+    "branches": [
+      { "name": "Celebr8 Centre (Global Headquarters)", "city": "Lagos" },
+      { "name": "Celebration Church Ikeja", "city": "Lagos" },
+      { "name": "Celebration Church Ago (CCI Ago)", "city": "Lagos" },
+      { "name": "Celebration Church Abuja", "city": "Abuja" },
+      { "name": "Celebration Church Port Harcourt", "city": "Port Harcourt" }
+    ]
+  },
+  {
+    "name": "The Elevation Church",
+    "denomination": "NonDenominational",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Godman Akinlabi (Global Lead Pastor, with Pastor Bola Akinlabi)",
+    "logoUrl": null,
+    "websiteUrl": "https://elevationng.org",
+    "branches": [
+      { "name": "TEC Jakande Lekki", "city": "Lagos" },
+      { "name": "TEC Maryland", "city": "Lagos" },
+      { "name": "TEC Ikoyi", "city": "Lagos" },
+      { "name": "TEC Greater Lekki", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Trinity House",
+    "denomination": "NonDenominational",
+    "headquartersCity": "Victoria Island, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Ituah Ighodalo (Founder/Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://trinityhouseng.org",
+    "branches": [
+      { "name": "Trinity House Victoria Island", "city": "Lagos" },
+      { "name": "Trinity House Ikeja", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "The Lord's Chosen Charismatic Revival Ministries",
+    "denomination": "Charismatic",
+    "headquartersCity": "Amuwo Odofin, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Lazarus Muoka (Founder/General Overseer)",
+    "logoUrl": null,
+    "websiteUrl": "https://tlccrm.org",
+    "branches": [
+      { "name": "Lord's Chosen International Headquarters", "city": "Amuwo Odofin, Lagos" },
+      { "name": "Lord's Chosen Abuja", "city": "Abuja" },
+      { "name": "Lord's Chosen Port Harcourt", "city": "Port Harcourt" }
+    ]
+  },
+  {
+    "name": "Champions Royal Assembly",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Kubwa, Abuja",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Joshua Iginla (Founder/Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": null,
+    "branches": [
+      { "name": "Champions Royal Assembly Auditorium", "city": "Kubwa, Abuja" },
+      { "name": "Champions Royal Assembly Lagos", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "This Present House (House of Freedom)",
+    "denomination": "Charismatic",
+    "headquartersCity": "Victoria Island, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Tony Rapu (Founder)",
+    "logoUrl": null,
+    "websiteUrl": "https://thispresenthouse.org",
+    "branches": [
+      { "name": "This Present House Victoria Island", "city": "Lagos" },
+      { "name": "The Waterbrook Church", "city": "Victoria Island, Lagos" },
+      { "name": "God Bless Nigeria Church", "city": "Lagos" },
+      { "name": "The Potter's House Costain", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Guiding Light Assembly",
+    "denomination": "Charismatic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Wale Adefarasin (Founder/General Overseer)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.glahq.org",
+    "branches": [
+      { "name": "Guiding Light Assembly Headquarters", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Rhema Chapel International Churches",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Ilorin, Kwara State",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. George Adegboye (President/Founder)",
+    "logoUrl": null,
+    "websiteUrl": null,
+    "branches": [
+      { "name": "Rhema Chapel Agege", "city": "Lagos" },
+      { "name": "Rhema Chapel Festac", "city": "Lagos" },
+      { "name": "Rhema Chapel Ibadan", "city": "Ibadan" }
+    ]
+  },
+  {
+    "name": "Dominion City",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Ajah, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor David Ogbueli (Founder/Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.dominioncity.cc",
+    "branches": [
+      { "name": "Dominion City Lagos Headquarters", "city": "Ajah, Lagos" },
+      { "name": "Dominion City Abuja", "city": "Abuja" },
+      { "name": "Dominion City Enugu (origin, Nsukka)", "city": "Enugu" }
+    ]
+  },
+  {
+    "name": "Higher Life Assembly",
+    "denomination": "Charismatic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Bunmi Awonuga (Founder/Lead Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://higherlifeassembly.com",
+    "branches": [
+      { "name": "Higher Life Assembly Headquarters", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Streams of Joy International",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Abuja",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Jerry Eze (Founder/Lead Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://streamsofjoy.org",
+    "branches": [
+      { "name": "Streams of Joy Abuja", "city": "Abuja" },
+      { "name": "Streams of Joy Umuahia (origin)", "city": "Umuahia" },
+      { "name": "Streams of Joy Lagos", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Citadel Global Community Church",
+    "denomination": "Charismatic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Dr. Tunde Bakare (Founder/Serving Overseer)",
+    "logoUrl": null,
+    "websiteUrl": "https://thecitadelglobal.org",
+    "branches": [
+      { "name": "The Citadel Auditorium", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "HarvestHouse Christian Center",
+    "denomination": "Evangelical",
+    "headquartersCity": "Ibadan",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Gbeminiyi (Niyi) Eboda (Senior Pastor/Founder)",
+    "logoUrl": null,
+    "websiteUrl": "https://harvesthousecc.org",
+    "branches": [
+      { "name": "HarvestHouse Alpha Cathedral", "city": "Akobo, Ibadan" },
+      { "name": "HarvestHouse Metro Church", "city": "Adeoyo Junction, Ring Road, Ibadan" },
+      { "name": "HarvestHouse Life Center", "city": "Old-Ife Road, Ibadan" },
+      { "name": "HarvestHouse Lagos (Novus Centre)", "city": "Maryland, Lagos" },
+      { "name": "HarvestHouse Abuja (Merit House)", "city": "Maitama, Abuja" },
+      { "name": "Cedars House of Grace", "city": "Lekki, Lagos" }
+    ]
+  },
+  {
+    "name": "Cedars House of Grace",
+    "denomination": "Evangelical",
+    "headquartersCity": "Lekki, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Gbeminiyi (Niyi) Eboda (Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.wearecedars.com",
+    "branches": [
+      { "name": "Cedars House of Grace (Lekki campus of HarvestHouse Christian Center)", "city": "Lekki, Lagos" }
+    ]
+  },
+  {
+    "name": "Evangelical Church Winning All (ECWA)",
+    "denomination": "Evangelical",
+    "headquartersCity": "Jos, Plateau State",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Dr. Job Ayuba Bagat Mallam (President, elected 2024)",
+    "logoUrl": null,
+    "websiteUrl": "https://ecwaglobal.org",
+    "branches": [
+      { "name": "ECWA Good News Church, Jos", "city": "Jos" },
+      { "name": "ECWA Bishara (No. 1), Kano", "city": "Kano" },
+      { "name": "ECWA Headquarters DCC, Jos", "city": "Jos" }
+    ]
+  },
+  {
+    "name": "Nigerian Baptist Convention",
+    "denomination": "Baptist",
+    "headquartersCity": "Ibadan",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Dr. Israel Adélaní Àkànjí (President)",
+    "logoUrl": null,
+    "websiteUrl": "https://nigerianbaptist.org",
+    "branches": [
+      { "name": "First Baptist Church, Idi-Aba (founding church, est. 1850)", "city": "Abeokuta" },
+      { "name": "Nigerian Baptist Theological Seminary", "city": "Ogbomoso" }
+    ]
+  },
+  {
+    "name": "United Evangelical Church (formerly Qua Iboe Church)",
+    "denomination": "Evangelical",
+    "headquartersCity": "Uyo, Akwa Ibom State",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "unknown (national leadership contested following 2011 renaming from Qua Iboe Church)",
+    "logoUrl": null,
+    "websiteUrl": "https://unitedevangelicalchurch.org",
+    "branches": [
+      { "name": "Qua Iboe Church, Ewet Offot", "city": "Uyo" },
+      { "name": "Qua Iboe Church, Oku", "city": "Oku, Akwa Ibom State" }
+    ]
+  },
+  {
+    "name": "The Apostolic Church Nigeria",
+    "denomination": "Apostolic",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Dr. Lawrence O. Oladele (National President, elected 2025)",
+    "logoUrl": null,
+    "websiteUrl": "https://tacn-lawna.org",
+    "branches": [
+      { "name": "The Apostolic Church Nigeria LAWNA Territorial Headquarters", "city": "Lagos" },
+      { "name": "The Apostolic Church Nigeria Igboland Territory", "city": "Owerri" }
+    ]
+  },
+  {
+    "name": "Foursquare Gospel Church in Nigeria",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Yaba, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Sam Aboyeji (General Overseer/Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://foursquare.org.ng",
+    "branches": [
+      { "name": "Foursquare Gospel Church National Headquarters, Yaba", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "The Synagogue, Church of All Nations (SCOAN)",
+    "denomination": "Charismatic",
+    "headquartersCity": "Ikotun-Egbe, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Evelyn Joshua (Senior Pastor and Leader, since 2024)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.scoan.org",
+    "branches": [
+      { "name": "SCOAN International Headquarters, Ikotun-Egbe", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Household of God Church International Ministries",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Oregun, Ikeja, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Chris Okotie (Founder/Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "http://householdofgod.org.ng",
+    "branches": [
+      { "name": "Household of God Church, Oregun", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Methodist Church Nigeria",
+    "denomination": "Methodist",
+    "headquartersCity": "Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "His Eminence Dr. Oliver Ali Abah (Prelate, elected 2022)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.methodistnigeria.org",
+    "branches": [
+      { "name": "Wesley House (Prelate's Office)", "city": "Lagos" },
+      { "name": "Methodist Church Nigeria, Lagos Mainland Diocese", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Word of Life Bible Church",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Warri, Delta State",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Ayo Oritsejafor (Founder/Senior Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.ayo-oritsejafor.org",
+    "branches": [
+      { "name": "Word of Life Bible Church, Ajamimogha Road (Headquarters)", "city": "Warri" },
+      { "name": "Word of Life Bible Church, Arrow of Deliverance Branch", "city": "Warri" }
+    ]
+  },
+  {
+    "name": "Global Impact Church",
+    "denomination": "Charismatic",
+    "headquartersCity": "Ogudu, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Yemi Davids (Founding/Lead Pastor, with Pastor Bimbo Davids)",
+    "logoUrl": null,
+    "websiteUrl": "https://globalimpactng.org",
+    "branches": [
+      { "name": "Global Impact Church, The Goodland", "city": "Ogudu, Lagos" }
+    ]
+  },
+  {
+    "name": "Sword of the Spirit Ministries (Christ Life Church)",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Ibadan",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Bishop Francis Wale Oke (Founder/Presiding Bishop)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.swordofthespiritministries.org",
+    "branches": [
+      { "name": "Christ Life Church, Sword of the Spirit Headquarters", "city": "Ibadan" }
+    ]
+  },
+  {
+    "name": "The Zoe Household Global",
+    "denomination": "Pentecostal",
+    "headquartersCity": "Ikeja, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Dolapo Lawal (Lead Pastor)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.zoehousehold.org",
+    "branches": [
+      { "name": "The Zoe Household, Omole Phase 1", "city": "Ikeja, Lagos" }
+    ]
+  },
+  {
+    "name": "Grace Family International Church",
+    "denomination": "NonDenominational",
+    "headquartersCity": "Ikeja, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rev. Dr. Yinka Ojo (President/Senior Pastor, with Rev. Mrs. Adeola Ojo)",
+    "logoUrl": null,
+    "websiteUrl": "https://gracefamilyinternationalchurch.org",
+    "branches": [
+      { "name": "Grace Family International Church, Alausa", "city": "Ikeja, Lagos" },
+      { "name": "Grace Family International Church (founding congregation)", "city": "Ibadan" }
+    ]
+  },
+  {
+    "name": "Brotherhood of the Cross and Star",
+    "denomination": "Other",
+    "headquartersCity": "Calabar",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "His Holiness Olumba Olumba Obu (Leader, Unified Universal Theocratic Council, since 2001)",
+    "logoUrl": null,
+    "websiteUrl": "https://www.ooobcs.org",
+    "branches": [
+      { "name": "Brotherhood of the Cross and Star World Headquarters, Ambo Street", "city": "Calabar" }
+    ]
+  },
+  {
+    "name": "Presbyterian Church of Nigeria",
+    "denomination": "Presbyterian",
+    "headquartersCity": "Aba",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Rt. Rev. Ekpenyong Nyong Akpanika (Moderator/Prelate)",
+    "logoUrl": null,
+    "websiteUrl": "https://pcnonline.ng",
+    "branches": [
+      { "name": "Presbyterian Church of Nigeria General Assembly Office", "city": "Aba" },
+      { "name": "Presbyterian Church of Nigeria, Apapa Parish", "city": "Lagos" }
+    ]
+  },
+  {
+    "name": "Seventh-day Adventist Church in Nigeria (Western Nigeria Union Conference)",
+    "denomination": "Adventist",
+    "headquartersCity": "Ikeja, Lagos",
+    "headquartersCountry": "Nigeria",
+    "leadPastor": "Pastor Ezekiel Atolagbe Adeleye (President, Western Nigeria Union Conference)",
+    "logoUrl": null,
+    "websiteUrl": "https://wnucadventist.org",
+    "branches": [
+      { "name": "Western Nigeria Union Conference Headquarters", "city": "Ikeja, Lagos" },
+      { "name": "Eastern Nigeria Union Conference Headquarters", "city": "Abayi, Osisioma, Abia State" }
+    ]
+  }
+]

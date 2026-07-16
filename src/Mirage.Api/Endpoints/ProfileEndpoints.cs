@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
+using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
@@ -19,6 +21,8 @@ internal static class ProfileEndpoints
         group.MapGet("/me", GetMine).RequireAuthorization();
         group.MapPut("/me", UpdateMine).RequireAuthorization();
         group.MapPut("/me/photos", UpdateMyPhotos).RequireAuthorization();
+        group.MapPost("/me/complete", CompleteProfile).RequireAuthorization();
+        group.MapPost("/me/church", JoinChurch).RequireAuthorization();
         return api;
     }
 
@@ -35,6 +39,10 @@ internal static class ProfileEndpoints
 
         // Deactivated/deleted accounts (ApplicationUser.IsActive = false) never surface here.
         query = query.Where(x => db.Users.Any(u => u.Id == x.UserId && u.IsActive));
+
+        // A Google sign-in that hasn't finished CompleteProfile yet has a sentinel DOB and blank
+        // city/denomination — not fit to show in Discovery until they fill it in.
+        query = query.Where(x => x.IsProfileComplete);
 
         // Approved couples are off the market entirely, for everyone.
         query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
@@ -183,5 +191,90 @@ internal static class ProfileEndpoints
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId, profile.PhotoUrls }, "Profile photos updated successfully.");
+    }
+
+    // One-time completion of a minimal Google sign-in profile — fills in DOB/city/etc. that
+    // registration would normally collect up front, and optionally joins a church in the same step
+    // (same self-service church search/propose flow as RegisterRequest).
+    private static async Task<IResult> CompleteProfile(CompleteProfileRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var errors = ValidateCompleteProfile(request);
+        if (errors.Length > 0) return EndpointHelpers.ValidationProblem(context, errors);
+
+        var userId = context.User.GetUserId();
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+        if (profile.IsProfileComplete)
+            return EndpointHelpers.Conflict(context, "Your profile is already complete.");
+
+        var churchSelection = await ChurchSelectionResolver.ResolveAsync(userId, request.Denomination, request.Country,
+            request.OrganisationId, request.BranchId, request.NewOrganisationName,
+            request.NewOrganisationRegistrationNumber, request.NewBranchName, request.NewBranchCity,
+            context, db, cancellationToken);
+        if (churchSelection.Error is not null) return churchSelection.Error;
+
+        profile.CompleteProfile(request.DateOfBirth, request.City, request.Country, request.Denomination,
+            request.Intent, request.Bio, request.Sex, request.RelationshipStatus, request.Occupation);
+
+        if (churchSelection.OrganisationId.HasValue)
+            db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (churchSelection.OrganisationId.HasValue)
+        {
+            await ChurchCommunityService.JoinChurchCommunityAsync(db, churchSelection.OrganisationId.Value,
+                Community.ChurchGeneralCategory, userId, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        return ApiResults.Ok(context, new { profile.UserId, profile.IsProfileComplete }, "Profile completed successfully.");
+    }
+
+    private static (string Field, string Error)[] ValidateCompleteProfile(CompleteProfileRequest request)
+    {
+        var errors = new List<(string, string)>();
+        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+            errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
+        if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
+        if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));
+        if (!string.IsNullOrWhiteSpace(request.Denomination) &&
+            !Enum.TryParse<ChristianDenomination>(request.Denomination, ignoreCase: true, out _))
+            errors.Add(("denomination", "Select a valid denomination."));
+        return errors.ToArray();
+    }
+
+    // The lighter "add your church" nudge for a profile that's already complete but skipped
+    // picking a church at signup — same resolver, just without the rest of profile completion.
+    private static async Task<IResult> JoinChurch(JoinChurchRequest request, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+
+        if (await db.OrganisationMembers.AnyAsync(x => x.UserId == userId &&
+                x.Status != OrganisationMemberStatus.Removed && x.Status != OrganisationMemberStatus.Rejected,
+                cancellationToken))
+            return EndpointHelpers.Conflict(context, "You already belong to another organisation. Leave it before joining a new one.");
+
+        var churchSelection = await ChurchSelectionResolver.ResolveAsync(userId, profile.Denomination, profile.Country,
+            request.OrganisationId, request.BranchId, request.NewOrganisationName,
+            request.NewOrganisationRegistrationNumber, request.NewBranchName, request.NewBranchCity,
+            context, db, cancellationToken);
+        if (churchSelection.Error is not null) return churchSelection.Error;
+        if (churchSelection.OrganisationId is null)
+            return EndpointHelpers.ValidationProblem(context, ("organisationId", "Select or propose a church."));
+
+        db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
+        await db.SaveChangesAsync(cancellationToken);
+
+        await ChurchCommunityService.JoinChurchCommunityAsync(db, churchSelection.OrganisationId.Value,
+            Community.ChurchGeneralCategory, userId, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new { OrganisationId = churchSelection.OrganisationId },
+            "Church joined successfully.");
     }
 }

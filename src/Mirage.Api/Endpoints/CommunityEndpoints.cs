@@ -23,6 +23,7 @@ internal static class CommunityEndpoints
         communities.MapPost("/", Create);
         communities.MapPatch("/{id:guid}/avatar", UpdateAvatar);
         communities.MapGet("/{id:guid}/members", ListMembers);
+        communities.MapPatch("/{id:guid}/members/{userId:guid}/role", UpdateMemberRole);
         communities.MapPost("/{id:guid}/join", Join);
         communities.MapDelete("/{id:guid}/membership", Leave);
         communities.MapPost("/{id:guid}/invites", InviteMember);
@@ -30,12 +31,18 @@ internal static class CommunityEndpoints
         communities.MapPost("/{id:guid}/posts", CreatePost);
         communities.MapPost("/posts/{postId:guid}/likes", LikePost);
         communities.MapDelete("/posts/{postId:guid}/likes", UnlikePost);
+        communities.MapPost("/posts/{postId:guid}/votes", CastPostVote);
+        communities.MapDelete("/posts/{postId:guid}/votes", RemovePostVote);
+        communities.MapPatch("/posts/{postId:guid}/unhide", UnhidePost);
         communities.MapGet("/posts/{postId:guid}/comments", ListComments);
         communities.MapPost("/posts/{postId:guid}/comments", CreateComment);
         communities.MapPatch("/comments/{commentId:guid}", EditComment);
         communities.MapDelete("/comments/{commentId:guid}", DeleteComment);
         communities.MapPost("/comments/{commentId:guid}/likes", LikeComment);
         communities.MapDelete("/comments/{commentId:guid}/likes", UnlikeComment);
+        communities.MapPost("/comments/{commentId:guid}/votes", CastCommentVote);
+        communities.MapDelete("/comments/{commentId:guid}/votes", RemoveCommentVote);
+        communities.MapPatch("/comments/{commentId:guid}/unhide", UnhideComment);
         communities.MapGet("/comments/{commentId:guid}/location", GetCommentLocation);
         return api;
     }
@@ -240,6 +247,33 @@ internal static class CommunityEndpoints
         return ApiResults.Ok(context, members, "Community members retrieved successfully.");
     }
 
+    // Owners/Moderators can promote another active member to Moderator, or an Owner can demote a
+    // Moderator back to Member. Nobody can reassign the Owner role itself — ownership transfer isn't
+    // supported yet, and there's always exactly one Owner (seeded at community creation).
+    private static async Task<IResult> UpdateMemberRole(Guid id, Guid userId, UpdateCommunityMemberRoleRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var actorId = context.User.GetUserId();
+        var actorRole = await GetActiveMemberRoleAsync(id, actorId, db, cancellationToken);
+        if (actorRole is not (CommunityMemberRole.Owner or CommunityMemberRole.Moderator))
+            return EndpointHelpers.Forbidden(context);
+        if (request.Role == CommunityMemberRole.Owner)
+            return EndpointHelpers.ValidationProblem(context, ("role", "Ownership cannot be reassigned this way."));
+
+        var member = await db.CommunityMembers.SingleOrDefaultAsync(
+            x => x.CommunityId == id && x.UserId == userId && x.LeftAt == null, cancellationToken);
+        if (member is null) return EndpointHelpers.NotFound(context, "Community member was not found.");
+        if (member.Role == CommunityMemberRole.Owner)
+            return EndpointHelpers.Conflict(context, "The community owner's role cannot be changed.");
+        if (actorRole == CommunityMemberRole.Moderator && request.Role == CommunityMemberRole.Moderator)
+            return EndpointHelpers.Forbidden(context);
+
+        member.ChangeRole(request.Role);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { member.Id, member.UserId, member.Role },
+            "Community member role updated successfully.");
+    }
+
     private static async Task<IResult> Join(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -326,11 +360,15 @@ internal static class CommunityEndpoints
         int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
     {
         var userId = context.User.GetUserId();
-        var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
-        if (!isMember) return EndpointHelpers.Forbidden(context);
+        var role = await GetActiveMemberRoleAsync(id, userId, db, cancellationToken);
+        if (role is null) return EndpointHelpers.Forbidden(context);
+        var canSeeHidden = role is CommunityMemberRole.Owner or CommunityMemberRole.Moderator ||
+            context.User.IsInRole(MirageRoles.PlatformAdmin);
 
-        var paged = await db.CommunityPosts.AsNoTracking()
-            .Where(x => x.CommunityId == id)
+        var query = db.CommunityPosts.AsNoTracking().Where(x => x.CommunityId == id);
+        if (!canSeeHidden) query = query.Where(x => !x.IsHidden);
+
+        var paged = await query
             .OrderByDescending(post => post.CreatedAt)
             .Select(post => new
             {
@@ -350,6 +388,10 @@ internal static class CommunityEndpoints
                 LikeCount = post.Likes.Count,
                 CommentCount = post.Comments.Count,
                 LikedByMe = post.Likes.Any(like => like.UserId == userId),
+                UpvoteCount = post.Votes.Count(v => v.Value > 0),
+                DownvoteCount = post.Votes.Count(v => v.Value < 0),
+                MyVote = post.Votes.Where(v => v.UserId == userId).Select(v => (sbyte?)v.Value).FirstOrDefault(),
+                post.IsHidden,
                 post.CreatedAt
             })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
@@ -358,7 +400,9 @@ internal static class CommunityEndpoints
         var posts = new Mirage.Application.Common.PagedResult<CommunityPostResponse>(
             paged.Items.Select(x => new CommunityPostResponse(x.Id, x.CommunityId, x.AuthorUserId, x.AuthorName,
                 x.AuthorAvatarUrl, x.Body, x.ImageUrl, x.LikeCount, x.CommentCount, x.LikedByMe, x.CreatedAt,
-                badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl, badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName)).ToList(),
+                badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl, badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName,
+                x.UpvoteCount, x.DownvoteCount, x.MyVote,
+                CommunityVoteScoring.ColorFor(x.UpvoteCount, x.DownvoteCount), x.IsHidden)).ToList(),
             paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, posts, "Community posts retrieved successfully.");
@@ -433,6 +477,77 @@ internal static class CommunityEndpoints
         return ApiResults.Ok(context, new { postId }, "Community post unliked successfully.");
     }
 
+    private static async Task<IResult> CastPostVote(Guid postId, CastVoteRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.Value != 1 && request.Value != -1)
+            return EndpointHelpers.ValidationProblem(context, ("value", "Vote value must be 1 (up) or -1 (down)."));
+
+        var userId = context.User.GetUserId();
+        var post = await db.CommunityPosts.SingleOrDefaultAsync(x => x.Id == postId, cancellationToken);
+        if (post is null) return EndpointHelpers.NotFound(context, "Community post was not found.");
+
+        var isMember = await IsActiveMemberAsync(post.CommunityId, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        var vote = await db.CommunityPostVotes.SingleOrDefaultAsync(
+            x => x.PostId == postId && x.UserId == userId, cancellationToken);
+        if (vote is null) db.CommunityPostVotes.Add(new CommunityPostVote(postId, userId, request.Value));
+        else vote.ChangeValue(request.Value);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var downvotes = await db.CommunityPostVotes.CountAsync(x => x.PostId == postId && x.Value < 0, cancellationToken);
+        if (CommunityVoteScoring.ShouldHide(downvotes))
+        {
+            post.Hide();
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var upvotes = await db.CommunityPostVotes.CountAsync(x => x.PostId == postId && x.Value > 0, cancellationToken);
+        return ApiResults.Ok(context,
+            new { postId, upvoteCount = upvotes, downvoteCount = downvotes, myVote = request.Value,
+                voteColor = CommunityVoteScoring.ColorFor(upvotes, downvotes), isHidden = post.IsHidden },
+            "Vote recorded successfully.");
+    }
+
+    private static async Task<IResult> RemovePostVote(Guid postId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var vote = await db.CommunityPostVotes.SingleOrDefaultAsync(
+            x => x.PostId == postId && x.UserId == userId, cancellationToken);
+        if (vote is null) return EndpointHelpers.NotFound(context, "Vote was not found.");
+
+        var isMember = await IsActiveMemberAsync(
+            await db.CommunityPosts.AsNoTracking().Where(x => x.Id == postId).Select(x => x.CommunityId).SingleAsync(cancellationToken),
+            userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        db.CommunityPostVotes.Remove(vote);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var upvotes = await db.CommunityPostVotes.CountAsync(x => x.PostId == postId && x.Value > 0, cancellationToken);
+        var downvotes = await db.CommunityPostVotes.CountAsync(x => x.PostId == postId && x.Value < 0, cancellationToken);
+        return ApiResults.Ok(context,
+            new { postId, upvoteCount = upvotes, downvoteCount = downvotes, voteColor = CommunityVoteScoring.ColorFor(upvotes, downvotes) },
+            "Vote removed successfully.");
+    }
+
+    private static async Task<IResult> UnhidePost(Guid postId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var post = await db.CommunityPosts.SingleOrDefaultAsync(x => x.Id == postId, cancellationToken);
+        if (post is null) return EndpointHelpers.NotFound(context, "Community post was not found.");
+
+        var canModerate = await CanModerateCommunityAsync(post.CommunityId, context, db, cancellationToken);
+        if (!canModerate) return EndpointHelpers.Forbidden(context);
+        if (!post.IsHidden) return EndpointHelpers.Conflict(context, "This post is not hidden.");
+
+        post.Unhide();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { postId, post.IsHidden }, "Post restored successfully.");
+    }
+
     private static async Task<IResult> ListComments(Guid postId, HttpContext context, IMirageDbContext db,
         int page = 1, int pageSize = 100, CancellationToken cancellationToken = default)
     {
@@ -443,11 +558,15 @@ internal static class CommunityEndpoints
             .SingleOrDefaultAsync(cancellationToken);
         if (communityId is null) return EndpointHelpers.NotFound(context, "Community post was not found.");
 
-        var isMember = await IsActiveMemberAsync(communityId.Value, userId, db, cancellationToken);
-        if (!isMember) return EndpointHelpers.Forbidden(context);
+        var role = await GetActiveMemberRoleAsync(communityId.Value, userId, db, cancellationToken);
+        if (role is null) return EndpointHelpers.Forbidden(context);
+        var canSeeHidden = role is CommunityMemberRole.Owner or CommunityMemberRole.Moderator ||
+            context.User.IsInRole(MirageRoles.PlatformAdmin);
 
-        var paged = await db.CommunityPostComments.AsNoTracking()
-            .Where(x => x.PostId == postId)
+        var query = db.CommunityPostComments.AsNoTracking().Where(x => x.PostId == postId);
+        if (!canSeeHidden) query = query.Where(x => !x.IsHidden);
+
+        var paged = await query
             .OrderBy(comment => comment.CreatedAt)
             .Select(comment => new
             {
@@ -469,6 +588,10 @@ internal static class CommunityEndpoints
                 LikedByMe = comment.Likes.Any(like => like.UserId == userId),
                 comment.IsEdited,
                 comment.IsDeleted,
+                UpvoteCount = comment.Votes.Count(v => v.Value > 0),
+                DownvoteCount = comment.Votes.Count(v => v.Value < 0),
+                MyVote = comment.Votes.Where(v => v.UserId == userId).Select(v => (sbyte?)v.Value).FirstOrDefault(),
+                comment.IsHidden,
                 comment.CreatedAt
             })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
@@ -478,7 +601,9 @@ internal static class CommunityEndpoints
             paged.Items.Select(x => new CommunityPostCommentResponse(x.Id, x.PostId, x.AuthorUserId, x.AuthorName,
                 x.AuthorAvatarUrl, x.ParentCommentId, x.Body, x.MentionedUserIds, x.LikeCount, x.LikedByMe, x.IsEdited,
                 x.IsDeleted, x.CreatedAt, badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl,
-                badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName)).ToList(),
+                badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName,
+                x.UpvoteCount, x.DownvoteCount, x.MyVote,
+                CommunityVoteScoring.ColorFor(x.UpvoteCount, x.DownvoteCount), x.IsHidden)).ToList(),
             paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, comments, "Community post comments retrieved successfully.");
@@ -617,6 +742,81 @@ internal static class CommunityEndpoints
         return ApiResults.Ok(context, new { commentId }, "Comment unliked successfully.");
     }
 
+    private static async Task<IResult> CastCommentVote(Guid commentId, CastVoteRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.Value != 1 && request.Value != -1)
+            return EndpointHelpers.ValidationProblem(context, ("value", "Vote value must be 1 (up) or -1 (down)."));
+
+        var userId = context.User.GetUserId();
+        var comment = await db.CommunityPostComments.SingleOrDefaultAsync(x => x.Id == commentId, cancellationToken);
+        if (comment is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+
+        var communityId = await db.CommunityPostComments.AsNoTracking()
+            .Where(x => x.Id == commentId).Select(x => x.Post.CommunityId).SingleAsync(cancellationToken);
+        var isMember = await IsActiveMemberAsync(communityId, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        var vote = await db.CommunityPostCommentVotes.SingleOrDefaultAsync(
+            x => x.CommentId == commentId && x.UserId == userId, cancellationToken);
+        if (vote is null) db.CommunityPostCommentVotes.Add(new CommunityPostCommentVote(commentId, userId, request.Value));
+        else vote.ChangeValue(request.Value);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var downvotes = await db.CommunityPostCommentVotes.CountAsync(x => x.CommentId == commentId && x.Value < 0, cancellationToken);
+        if (CommunityVoteScoring.ShouldHide(downvotes))
+        {
+            comment.Hide();
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var upvotes = await db.CommunityPostCommentVotes.CountAsync(x => x.CommentId == commentId && x.Value > 0, cancellationToken);
+        return ApiResults.Ok(context,
+            new { commentId, upvoteCount = upvotes, downvoteCount = downvotes, myVote = request.Value,
+                voteColor = CommunityVoteScoring.ColorFor(upvotes, downvotes), isHidden = comment.IsHidden },
+            "Vote recorded successfully.");
+    }
+
+    private static async Task<IResult> RemoveCommentVote(Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var vote = await db.CommunityPostCommentVotes.SingleOrDefaultAsync(
+            x => x.CommentId == commentId && x.UserId == userId, cancellationToken);
+        if (vote is null) return EndpointHelpers.NotFound(context, "Vote was not found.");
+
+        var communityId = await db.CommunityPostComments.AsNoTracking()
+            .Where(x => x.Id == commentId).Select(x => x.Post.CommunityId).SingleAsync(cancellationToken);
+        var isMember = await IsActiveMemberAsync(communityId, userId, db, cancellationToken);
+        if (!isMember) return EndpointHelpers.Forbidden(context);
+
+        db.CommunityPostCommentVotes.Remove(vote);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var upvotes = await db.CommunityPostCommentVotes.CountAsync(x => x.CommentId == commentId && x.Value > 0, cancellationToken);
+        var downvotes = await db.CommunityPostCommentVotes.CountAsync(x => x.CommentId == commentId && x.Value < 0, cancellationToken);
+        return ApiResults.Ok(context,
+            new { commentId, upvoteCount = upvotes, downvoteCount = downvotes, voteColor = CommunityVoteScoring.ColorFor(upvotes, downvotes) },
+            "Vote removed successfully.");
+    }
+
+    private static async Task<IResult> UnhideComment(Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var comment = await db.CommunityPostComments.SingleOrDefaultAsync(x => x.Id == commentId, cancellationToken);
+        if (comment is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+
+        var communityId = await db.CommunityPostComments.AsNoTracking()
+            .Where(x => x.Id == commentId).Select(x => x.Post.CommunityId).SingleAsync(cancellationToken);
+        var canModerate = await CanModerateCommunityAsync(communityId, context, db, cancellationToken);
+        if (!canModerate) return EndpointHelpers.Forbidden(context);
+        if (!comment.IsHidden) return EndpointHelpers.Conflict(context, "This comment is not hidden.");
+
+        comment.Unhide();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { commentId, comment.IsHidden }, "Comment restored successfully.");
+    }
+
     private static async Task<IResult> GetCommentLocation(Guid commentId, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -648,4 +848,14 @@ internal static class CommunityEndpoints
                         x.Community.Status == CommunityStatus.Active)
             .Select(x => (CommunityMemberRole?)x.Role)
             .SingleOrDefaultAsync(cancellationToken);
+
+    // Who may unhide vote-hidden content: that community's own Owner/Moderator, or PlatformAdmin
+    // anywhere — matches the review-scope decided for the downvote auto-hide feature.
+    private static async Task<bool> CanModerateCommunityAsync(Guid communityId, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (context.User.IsInRole(MirageRoles.PlatformAdmin)) return true;
+        var role = await GetActiveMemberRoleAsync(communityId, context.User.GetUserId(), db, cancellationToken);
+        return role is CommunityMemberRole.Owner or CommunityMemberRole.Moderator;
+    }
 }

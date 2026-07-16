@@ -10,6 +10,7 @@ public enum OrganisationStatus { Pending = 1, Approved = 2, Rejected = 3, Suspen
 public enum OrganisationMemberStatus { Pending = 1, Approved = 2, Rejected = 3, Removed = 4 }
 public enum CommunityStatus { Active = 1, Archived = 2 }
 public enum CommunityMemberRole { Owner = 1, Moderator = 2, Member = 3 }
+public enum CommunityVoteColor { White = 1, Amber = 2, Green = 3, Red = 4 }
 public enum DateRequestStatus { Open = 1, Confirmed = 2, Completed = 3, Cancelled = 4, Expired = 5 }
 public enum DateAcceptanceStatus { Pending = 1, Selected = 2, Declined = 3, Withdrawn = 4 }
 public enum SessionType { Group = 1, Personal = 2, Couples = 3 }
@@ -44,8 +45,8 @@ public enum VendorCategory
     Jewellery = 10,
     Other = 9,
     Mc = 11,
-    ChristianDj = 12,
-    ChristianLiveBand = 13,
+    Dj = 12,
+    LiveBand = 13,
     EventPlanner = 14
 }
 
