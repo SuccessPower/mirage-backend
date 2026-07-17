@@ -22,6 +22,7 @@ public sealed class UserProfileConfiguration : IEntityTypeConfiguration<UserProf
         b.Property(x => x.PhotoUrls).HasColumnType("text[]");
         b.Property(x => x.PreferredLanguage).HasMaxLength(60);
         b.Property(x => x.Occupation).HasMaxLength(160);
+        b.Property(x => x.SignupIpAddress).HasMaxLength(45);
         b.HasOne<ApplicationUser>().WithOne().HasForeignKey<UserProfile>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

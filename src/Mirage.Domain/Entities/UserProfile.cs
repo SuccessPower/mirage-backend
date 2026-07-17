@@ -9,7 +9,7 @@ public sealed class UserProfile : Entity
 
     public UserProfile(Guid userId, string displayName, DateOnly dateOfBirth, string city, string country,
         string denomination, RelationshipIntent intent, string bio, Sex? sex = null,
-        RelationshipStatus? relationshipStatus = null, string? occupation = null)
+        RelationshipStatus? relationshipStatus = null, string? occupation = null, string? signupIpAddress = null)
     {
         UserId = userId;
         DisplayName = displayName.Trim();
@@ -22,13 +22,14 @@ public sealed class UserProfile : Entity
         Sex = sex;
         RelationshipStatus = relationshipStatus;
         Occupation = occupation?.Trim();
+        SignupIpAddress = signupIpAddress;
         IsProfileComplete = true;
     }
 
     // Minimal profile created from a Google sign-in — Google only ever gives us a name, email,
     // and picture, so the required fields (DOB, city, country, denomination, intent, bio) start
     // blank/placeholder and IsProfileComplete stays false until CompleteProfile() runs.
-    public UserProfile(Guid userId, string displayName, string? avatarUrl)
+    public UserProfile(Guid userId, string displayName, string? avatarUrl, string? signupIpAddress = null)
     {
         UserId = userId;
         DisplayName = displayName.Trim();
@@ -39,6 +40,7 @@ public sealed class UserProfile : Entity
         Intent = RelationshipIntent.Friendship;
         Bio = string.Empty;
         AvatarUrl = avatarUrl?.Trim();
+        SignupIpAddress = signupIpAddress;
         IsProfileComplete = false;
     }
 
@@ -62,6 +64,7 @@ public sealed class UserProfile : Entity
     public SkinTone? SkinTone { get; private set; }
     public string? PreferredLanguage { get; private set; }
     public string? Occupation { get; private set; }
+    public string? SignupIpAddress { get; private set; }
     public bool IsProfileComplete { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,

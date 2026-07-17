@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
+using System.Net;
 using System.Security.Cryptography;
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
@@ -120,7 +121,7 @@ internal static class AuthEndpoints
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
                     request.Country, request.Denomination, request.Intent, request.Bio, request.Sex,
-                    request.RelationshipStatus, request.Occupation));
+                    request.RelationshipStatus, request.Occupation, GetClientIpAddress(context)));
                 db.RefreshTokens.Add(refreshToken);
                 if (churchSelection.OrganisationId.HasValue)
                     db.OrganisationMembers.Add(new OrganisationMember(
@@ -551,7 +552,7 @@ internal static class AuthEndpoints
 
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
-                db.Profiles.Add(new UserProfile(user.Id, displayName, payload.Picture));
+                db.Profiles.Add(new UserProfile(user.Id, displayName, payload.Picture, GetClientIpAddress(context)));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
                 await db.SaveChangesAsync(cancellationToken);
 
@@ -858,6 +859,20 @@ internal static class AuthEndpoints
         db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
         await db.SaveChangesAsync(cancellationToken);
         return new AuthResponse(access.Token, access.ExpiresAt, refreshValue);
+    }
+
+    // Prefers the frontend-supplied X-Client-IP (populated from a browser-side IP lookup), since
+    // ForwardedHeadersMiddleware's view of RemoteIpAddress isn't reliable behind every load
+    // balancer topology. This is a best-effort signal for location prefill/consistency, not a
+    // hard security control — a direct API caller can send any value here.
+    private static string? GetClientIpAddress(HttpContext context)
+    {
+        if (context.Request.Headers.TryGetValue("X-Client-IP", out var header))
+        {
+            var candidate = header.ToString().Trim();
+            if (IPAddress.TryParse(candidate, out _)) return candidate;
+        }
+        return context.Connection.RemoteIpAddress?.ToString();
     }
 
     private static (string Field, string Error)[] Validate(RegisterRequest request)
