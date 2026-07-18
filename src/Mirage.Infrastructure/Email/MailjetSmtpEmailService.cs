@@ -34,11 +34,12 @@ public sealed class MailjetSmtpEmailService : IEmailService
         }
     }
 
-    public Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default)
+    public Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, string? confirmUrl = null,
+        CancellationToken cancellationToken = default)
     {
         var appUrl = _config["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
         return SendAsync(toEmail, $"Welcome to Mirage, {displayName}!",
-            EmailTemplates.Welcome(displayName, appUrl), cancellationToken);
+            EmailTemplates.Welcome(displayName, appUrl, confirmUrl), cancellationToken);
     }
 
     public Task SendEmailConfirmationAsync(string toEmail, string displayName, string confirmUrl,

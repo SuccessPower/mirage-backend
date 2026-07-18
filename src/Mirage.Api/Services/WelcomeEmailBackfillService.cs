@@ -31,7 +31,7 @@ public sealed class WelcomeEmailBackfillService(MirageDbContext db, IEmailServic
                 .Select(p => p.DisplayName)
                 .FirstOrDefaultAsync(cancellationToken) ?? "there";
 
-            var sent = await email.SendWelcomeEmailAsync(user.Email!, displayName, cancellationToken);
+            var sent = await email.SendWelcomeEmailAsync(user.Email!, displayName, cancellationToken: cancellationToken);
             if (!sent)
             {
                 logger.LogWarning("Welcome email backfill: send failed for UserId {UserId} — will retry next run.", user.Id);
