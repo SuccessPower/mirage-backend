@@ -10,10 +10,19 @@ public static class EmailTemplates
     private const string Teal = "#25C2A0";
     private const string Amber = "#F59E0B";
 
-    public static string Welcome(string displayName, string appUrl) =>
-        TemplateEngine.RenderPage("welcome", $"Welcome to Mirage, {displayName} — your relationship journey starts now.",
+    // confirmUrl is supplied when this welcome email also serves as the account's confirmation
+    // email (see AuthEndpoints.Register) — it renders a "Confirm your email" button up top so the
+    // one message covers both jobs instead of the user waiting on/receiving a second email.
+    public static string Welcome(string displayName, string appUrl, string? confirmUrl = null)
+    {
+        var cta = confirmUrl is null ? "" : TemplateEngine.PrimaryButton(confirmUrl, "Confirm your email");
+        var preheader = confirmUrl is null
+            ? $"Welcome to Mirage, {displayName} — your relationship journey starts now."
+            : $"Welcome to Mirage, {displayName} — confirm your email to start liking, matching, and chatting.";
+        return TemplateEngine.RenderPage("welcome", preheader,
             new Dictionary<string, string> { [DisplayNameToken] = displayName },
-            ctaBlock: "").Replace("{{APP_URL}}", appUrl);
+            ctaBlock: cta).Replace("{{APP_URL}}", appUrl);
+    }
 
     public static string EmailConfirmation(string displayName, string confirmUrl) =>
         TemplateEngine.RenderPage("email-confirmation", "Confirm your email to start liking, matching, and chatting on Mirage.",

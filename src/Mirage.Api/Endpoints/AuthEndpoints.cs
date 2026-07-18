@@ -143,10 +143,11 @@ internal static class AuthEndpoints
                 var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
                 var confirmUrl = $"{appUrl}/confirm-email?email={Uri.EscapeDataString(user.Email!)}&token={Uri.EscapeDataString(confirmToken)}";
 
-                // Welcome/confirmation emails are dispatched off the request path so the client gets its
-                // response immediately — the outbound Mailjet calls otherwise add seconds of latency here.
-                // WelcomeEmailBackfillWorker sweeps for missed WelcomeEmailSentAt as a safety net, and
-                // /auth/resend-confirmation covers a dropped confirmation email.
+                // The welcome email doubles as the confirmation email (one send, not two) and is
+                // dispatched off the request path so the client gets its response immediately — the
+                // outbound Mailjet call otherwise adds seconds of latency here. WelcomeEmailBackfillWorker
+                // sweeps for missed WelcomeEmailSentAt as a safety net, and /auth/resend-confirmation
+                // covers a dropped confirmation link.
                 var userId = user.Id;
                 var userEmail = user.Email!;
                 var displayName = request.DisplayName;
@@ -159,7 +160,7 @@ internal static class AuthEndpoints
                         var scopedDb = scope.ServiceProvider.GetRequiredService<MirageDbContext>();
 
                         var welcomeEmailSent = await scopedEmailService.SendWelcomeEmailAsync(
-                            userEmail, displayName, CancellationToken.None);
+                            userEmail, displayName, confirmUrl, CancellationToken.None);
                         if (welcomeEmailSent)
                         {
                             var trackedUser = await scopedDb.Users.FindAsync([userId], CancellationToken.None);
@@ -169,9 +170,6 @@ internal static class AuthEndpoints
                                 await scopedDb.SaveChangesAsync(CancellationToken.None);
                             }
                         }
-
-                        await scopedEmailService.SendEmailConfirmationAsync(
-                            userEmail, displayName, confirmUrl, CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
@@ -586,7 +584,7 @@ internal static class AuthEndpoints
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
                 await db.SaveChangesAsync(cancellationToken);
 
-                if (await emailService.SendWelcomeEmailAsync(user.Email!, displayName, cancellationToken))
+                if (await emailService.SendWelcomeEmailAsync(user.Email!, displayName, cancellationToken: cancellationToken))
                 {
                     user.WelcomeEmailSentAt = DateTimeOffset.UtcNow;
                     await db.SaveChangesAsync(cancellationToken);
