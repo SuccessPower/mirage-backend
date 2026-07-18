@@ -66,6 +66,65 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
+    public void Profile_vote_rejects_self_vote()
+    {
+        var userId = Guid.NewGuid();
+        Assert.Throws<InvalidOperationException>(() => new ProfileVote(userId, userId, 1));
+    }
+
+    [Fact]
+    public void Profile_vote_value_can_change()
+    {
+        var vote = new ProfileVote(Guid.NewGuid(), Guid.NewGuid(), 1);
+        vote.ChangeValue(-1);
+        Assert.Equal(-1, vote.Value);
+    }
+
+    [Fact]
+    public void Couple_friendship_starts_active_and_can_end()
+    {
+        var friendship = new CoupleFriendship(Guid.NewGuid(), Guid.NewGuid());
+        Assert.Equal(CoupleFriendshipStatus.Active, friendship.Status);
+        friendship.End();
+        Assert.Equal(CoupleFriendshipStatus.Ended, friendship.Status);
+        Assert.NotNull(friendship.EndedAt);
+    }
+
+    [Fact]
+    public void Ended_couple_friendship_cannot_be_ended_again()
+    {
+        var friendship = new CoupleFriendship(Guid.NewGuid(), Guid.NewGuid());
+        friendship.End();
+        Assert.Throws<InvalidOperationException>(friendship.End);
+    }
+
+    [Fact]
+    public void Couple_friendship_can_reactivate_after_ending()
+    {
+        var friendship = new CoupleFriendship(Guid.NewGuid(), Guid.NewGuid());
+        friendship.End();
+        friendship.Reactivate();
+        Assert.Equal(CoupleFriendshipStatus.Active, friendship.Status);
+        Assert.Null(friendship.EndedAt);
+    }
+
+    [Fact]
+    public void Active_couple_friendship_cannot_reactivate()
+    {
+        var friendship = new CoupleFriendship(Guid.NewGuid(), Guid.NewGuid());
+        Assert.Throws<InvalidOperationException>(friendship.Reactivate);
+    }
+
+    [Fact]
+    public void Couple_friend_message_trims_content_and_requires_image_attachment()
+    {
+        var message = new CoupleFriendMessage(Guid.NewGuid(), Guid.NewGuid(), "  hello  ");
+        Assert.Equal("hello", message.Content);
+        Assert.Throws<ArgumentException>(() =>
+            new CoupleFriendMessage(Guid.NewGuid(), Guid.NewGuid(), "pic", MessageType.Image, null));
+    }
+
+    [Fact]
     public void Recommendation_can_be_revoked()
     {
         var recommendation = new Recommendation(Guid.NewGuid(), Guid.NewGuid(), null, "Trusted member");

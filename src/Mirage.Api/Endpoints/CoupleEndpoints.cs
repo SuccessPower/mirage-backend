@@ -15,10 +15,122 @@ internal static class CoupleEndpoints
     {
         var group = api.MapGroup("/couples").WithTags("Couples").RequireAuthorization();
         group.MapGet("/mine", GetMine);
+        group.MapGet("/discover", DiscoverCouples);
         group.MapPost("/invite", Invite);
         group.MapPatch("/{id:guid}/approve", Approve);
         group.MapPatch("/{id:guid}/decline", Decline);
+        group.MapPost("/{id:guid}/befriend", BefriendCouple);
         return group;
+    }
+
+    // Couples are only visible to other married members — the couple feed replaces the singles
+    // feed for anyone in an approved couple.
+    private static async Task<Guid?> GetMyApprovedCoupleIdAsync(Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken) =>
+        await db.Couples.AsNoTracking()
+            .Where(c => c.Status == CoupleStatus.Approved && (c.User1Id == userId || c.User2Id == userId))
+            .Select(c => (Guid?)c.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static async Task<IResult> DiscoverCouples(HttpContext context, MirageDbContext db,
+        int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+    {
+        var userId = context.User.GetUserId();
+        var myCoupleId = await GetMyApprovedCoupleIdAsync(userId, db, cancellationToken);
+        if (myCoupleId is null)
+            return EndpointHelpers.Forbidden(context, "Only married members can view and befriend couples.");
+
+        var myCity = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.City).SingleOrDefaultAsync(cancellationToken);
+
+        var activeCompleteProfiles = db.Profiles.AsNoTracking()
+            .Where(p => p.IsProfileComplete && db.Users.Any(u => u.Id == p.UserId && u.IsActive));
+
+        var pagedCouples = await db.Couples.AsNoTracking()
+            .Where(c => c.Status == CoupleStatus.Approved && c.Id != myCoupleId
+                && activeCompleteProfiles.Any(p => p.UserId == c.User1Id)
+                && activeCompleteProfiles.Any(p => p.UserId == c.User2Id))
+            .OrderByDescending(c => myCity != null && db.Profiles.Any(p =>
+                (p.UserId == c.User1Id || p.UserId == c.User2Id) && p.City == myCity))
+            .ThenByDescending(c => db.Profiles.Any(p =>
+                (p.UserId == c.User1Id || p.UserId == c.User2Id) && p.IsVerified))
+            .ThenByDescending(c => c.ReviewedAt)
+            .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        var partnerIds = pagedCouples.Items
+            .SelectMany(c => new[] { c.User1Id, c.User2Id }).Distinct().ToArray();
+        var profiles = await db.Profiles.AsNoTracking()
+            .Where(p => partnerIds.Contains(p.UserId))
+            .ToDictionaryAsync(p => p.UserId, cancellationToken);
+        var badges = await db.GetOrgBadgesAsync(partnerIds, cancellationToken);
+        var friendCoupleIds = await db.CoupleFriendships.AsNoTracking()
+            .Where(f => f.FriendUserId == userId && f.Status == CoupleFriendshipStatus.Active)
+            .Select(f => f.CoupleId)
+            .ToListAsync(cancellationToken);
+
+        CouplePartnerSummary ToSummary(Guid partnerId)
+        {
+            var profile = profiles[partnerId];
+            var badge = badges.GetValueOrDefault(partnerId);
+            return new CouplePartnerSummary(profile.UserId, profile.DisplayName,
+                EndpointHelpers.Age(profile.DateOfBirth), profile.AvatarUrl, profile.Bio, profile.City,
+                profile.Country, profile.Denomination, profile.IsVerified, badge?.LogoUrl, badge?.OrganisationName);
+        }
+
+        var response = new Mirage.Application.Common.PagedResult<CoupleCardResponse>(
+            pagedCouples.Items.Select(c => new CoupleCardResponse(
+                c.Id, ToSummary(c.User1Id), ToSummary(c.User2Id),
+                friendCoupleIds.Contains(c.Id), c.ReviewedAt)).ToList(),
+            pagedCouples.Page, pagedCouples.PageSize, pagedCouples.TotalCount);
+        return ApiResults.Ok(context, response, "Couples retrieved successfully.");
+    }
+
+    private static async Task<IResult> BefriendCouple(Guid id, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var myCoupleId = await GetMyApprovedCoupleIdAsync(userId, db, cancellationToken);
+        if (myCoupleId is null)
+            return EndpointHelpers.Forbidden(context, "Only married members can view and befriend couples.");
+
+        var couple = await db.Couples.AsNoTracking()
+            .SingleOrDefaultAsync(c => c.Id == id && c.Status == CoupleStatus.Approved, cancellationToken);
+        if (couple is null) return EndpointHelpers.NotFound(context, "Couple was not found.");
+        if (couple.Id == myCoupleId || couple.User1Id == userId || couple.User2Id == userId)
+            return EndpointHelpers.ValidationProblem(context, ("id", "You cannot befriend your own couple."));
+
+        var capHit = await ConversationLimits.CheckAsync(context, userId, db, cancellationToken);
+        if (capHit is not null) return capHit;
+
+        var friendship = await db.CoupleFriendships.SingleOrDefaultAsync(
+            f => f.CoupleId == id && f.FriendUserId == userId, cancellationToken);
+        if (friendship is null)
+        {
+            friendship = new CoupleFriendship(id, userId);
+            db.CoupleFriendships.Add(friendship);
+        }
+        else if (friendship.Status == CoupleFriendshipStatus.Active)
+        {
+            return EndpointHelpers.Conflict(context, "You are already friends with this couple.");
+        }
+        else
+        {
+            friendship.Reactivate();
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var myName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        foreach (var partnerId in new[] { couple.User1Id, couple.User2Id })
+        {
+            await notifications.NotifyAsync(partnerId, NotificationType.CoupleFriendshipCreated,
+                "New couple friend", $"{myName} is now friends with you as a couple. Say hello in your shared conversation.",
+                friendship.Id, "CoupleFriendship", cancellationToken);
+        }
+
+        return ApiResults.Created(context, $"/api/v1/couple-friendships/{friendship.Id}",
+            new { friendship.Id, friendship.CoupleId, friendship.Status },
+            "You are now friends with this couple.");
     }
 
     private static async Task<IResult> GetMine(HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)

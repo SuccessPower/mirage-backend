@@ -49,6 +49,9 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<MentorMeeting> MentorMeetings => Set<MentorMeeting>();
     public DbSet<MentorMessage> MentorMessages => Set<MentorMessage>();
     public DbSet<Couple> Couples => Set<Couple>();
+    public DbSet<CoupleFriendship> CoupleFriendships => Set<CoupleFriendship>();
+    public DbSet<CoupleFriendMessage> CoupleFriendMessages => Set<CoupleFriendMessage>();
+    public DbSet<ProfileVote> ProfileVotes => Set<ProfileVote>();
     public DbSet<OrganisationAdminInvite> OrganisationAdminInvites => Set<OrganisationAdminInvite>();
     public DbSet<CounsellingMessage> CounsellingMessages => Set<CounsellingMessage>();
     public DbSet<CounsellingMeeting> CounsellingMeetings => Set<CounsellingMeeting>();

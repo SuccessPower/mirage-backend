@@ -12,137 +12,148 @@ public sealed class AddCommunities : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.CreateTable(
-            name: "communities",
-            schema: "mirage",
-            columns: table => new
-            {
-                Id = table.Column<Guid>(type: "uuid", nullable: false),
-                CreatedByUserId = table.Column<Guid>(type: "uuid", nullable: false),
-                Name = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
-                Category = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: false),
-                Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
-                Status = table.Column<int>(type: "integer", nullable: false),
-                CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-            },
-            constraints: table =>
-            {
-                table.PrimaryKey("PK_communities", x => x.Id);
-                table.ForeignKey(
-                    name: "FK_communities_AspNetUsers_CreatedByUserId",
-                    column: x => x.CreatedByUserId,
-                    principalSchema: "mirage",
-                    principalTable: "AspNetUsers",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Restrict);
-            });
+        migrationBuilder.Sql("""
+            CREATE TABLE IF NOT EXISTS mirage.communities (
+                "Id" uuid NOT NULL,
+                "CreatedByUserId" uuid NOT NULL,
+                "Name" character varying(120) NOT NULL,
+                "Category" character varying(80) NOT NULL,
+                "Description" character varying(1000) NOT NULL,
+                "Status" integer NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL
+            );
 
-        migrationBuilder.CreateTable(
-            name: "community_members",
-            schema: "mirage",
-            columns: table => new
-            {
-                Id = table.Column<Guid>(type: "uuid", nullable: false),
-                CommunityId = table.Column<Guid>(type: "uuid", nullable: false),
-                UserId = table.Column<Guid>(type: "uuid", nullable: false),
-                Role = table.Column<int>(type: "integer", nullable: false),
-                LeftAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-            },
-            constraints: table =>
-            {
-                table.PrimaryKey("PK_community_members", x => x.Id);
-                table.ForeignKey(
-                    name: "FK_community_members_AspNetUsers_UserId",
-                    column: x => x.UserId,
-                    principalSchema: "mirage",
-                    principalTable: "AspNetUsers",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Cascade);
-                table.ForeignKey(
-                    name: "FK_community_members_communities_CommunityId",
-                    column: x => x.CommunityId,
-                    principalSchema: "mirage",
-                    principalTable: "communities",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Cascade);
-            });
+            CREATE TABLE IF NOT EXISTS mirage.community_members (
+                "Id" uuid NOT NULL,
+                "CommunityId" uuid NOT NULL,
+                "UserId" uuid NOT NULL,
+                "Role" integer NOT NULL,
+                "LeftAt" timestamp with time zone NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL
+            );
 
-        migrationBuilder.CreateTable(
-            name: "community_posts",
-            schema: "mirage",
-            columns: table => new
-            {
-                Id = table.Column<Guid>(type: "uuid", nullable: false),
-                CommunityId = table.Column<Guid>(type: "uuid", nullable: false),
-                AuthorUserId = table.Column<Guid>(type: "uuid", nullable: false),
-                Body = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: false),
-                CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-            },
-            constraints: table =>
-            {
-                table.PrimaryKey("PK_community_posts", x => x.Id);
-                table.ForeignKey(
-                    name: "FK_community_posts_AspNetUsers_AuthorUserId",
-                    column: x => x.AuthorUserId,
-                    principalSchema: "mirage",
-                    principalTable: "AspNetUsers",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Restrict);
-                table.ForeignKey(
-                    name: "FK_community_posts_communities_CommunityId",
-                    column: x => x.CommunityId,
-                    principalSchema: "mirage",
-                    principalTable: "communities",
-                    principalColumn: "Id",
-                    onDelete: ReferentialAction.Cascade);
-            });
+            CREATE TABLE IF NOT EXISTS mirage.community_posts (
+                "Id" uuid NOT NULL,
+                "CommunityId" uuid NOT NULL,
+                "AuthorUserId" uuid NOT NULL,
+                "Body" character varying(2000) NOT NULL,
+                "CreatedAt" timestamp with time zone NOT NULL,
+                "UpdatedAt" timestamp with time zone NOT NULL
+            );
 
-        migrationBuilder.CreateIndex(
-            name: "IX_communities_Category",
-            schema: "mirage",
-            table: "communities",
-            column: "Category");
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'PK_communities'
+                      AND conrelid = 'mirage.communities'::regclass
+                ) THEN
+                    ALTER TABLE mirage.communities
+                    ADD CONSTRAINT "PK_communities" PRIMARY KEY ("Id");
+                END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_communities_CreatedByUserId",
-            schema: "mirage",
-            table: "communities",
-            column: "CreatedByUserId");
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'FK_communities_AspNetUsers_CreatedByUserId'
+                      AND conrelid = 'mirage.communities'::regclass
+                ) THEN
+                    ALTER TABLE mirage.communities
+                    ADD CONSTRAINT "FK_communities_AspNetUsers_CreatedByUserId"
+                    FOREIGN KEY ("CreatedByUserId")
+                    REFERENCES mirage."AspNetUsers" ("Id")
+                    ON DELETE RESTRICT;
+                END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_communities_Status",
-            schema: "mirage",
-            table: "communities",
-            column: "Status");
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'PK_community_members'
+                      AND conrelid = 'mirage.community_members'::regclass
+                ) THEN
+                    ALTER TABLE mirage.community_members
+                    ADD CONSTRAINT "PK_community_members" PRIMARY KEY ("Id");
+                END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_community_members_CommunityId_UserId",
-            schema: "mirage",
-            table: "community_members",
-            columns: ["CommunityId", "UserId"],
-            unique: true);
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'FK_community_members_AspNetUsers_UserId'
+                      AND conrelid = 'mirage.community_members'::regclass
+                ) THEN
+                    ALTER TABLE mirage.community_members
+                    ADD CONSTRAINT "FK_community_members_AspNetUsers_UserId"
+                    FOREIGN KEY ("UserId")
+                    REFERENCES mirage."AspNetUsers" ("Id")
+                    ON DELETE CASCADE;
+                END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_community_members_UserId_LeftAt",
-            schema: "mirage",
-            table: "community_members",
-            columns: ["UserId", "LeftAt"]);
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'FK_community_members_communities_CommunityId'
+                      AND conrelid = 'mirage.community_members'::regclass
+                ) THEN
+                    ALTER TABLE mirage.community_members
+                    ADD CONSTRAINT "FK_community_members_communities_CommunityId"
+                    FOREIGN KEY ("CommunityId")
+                    REFERENCES mirage.communities ("Id")
+                    ON DELETE CASCADE;
+                END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_community_posts_AuthorUserId",
-            schema: "mirage",
-            table: "community_posts",
-            column: "AuthorUserId");
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'PK_community_posts'
+                      AND conrelid = 'mirage.community_posts'::regclass
+                ) THEN
+                    ALTER TABLE mirage.community_posts
+                    ADD CONSTRAINT "PK_community_posts" PRIMARY KEY ("Id");
+                END IF;
 
-        migrationBuilder.CreateIndex(
-            name: "IX_community_posts_CommunityId_CreatedAt",
-            schema: "mirage",
-            table: "community_posts",
-            columns: ["CommunityId", "CreatedAt"]);
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'FK_community_posts_AspNetUsers_AuthorUserId'
+                      AND conrelid = 'mirage.community_posts'::regclass
+                ) THEN
+                    ALTER TABLE mirage.community_posts
+                    ADD CONSTRAINT "FK_community_posts_AspNetUsers_AuthorUserId"
+                    FOREIGN KEY ("AuthorUserId")
+                    REFERENCES mirage."AspNetUsers" ("Id")
+                    ON DELETE RESTRICT;
+                END IF;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'FK_community_posts_communities_CommunityId'
+                      AND conrelid = 'mirage.community_posts'::regclass
+                ) THEN
+                    ALTER TABLE mirage.community_posts
+                    ADD CONSTRAINT "FK_community_posts_communities_CommunityId"
+                    FOREIGN KEY ("CommunityId")
+                    REFERENCES mirage.communities ("Id")
+                    ON DELETE CASCADE;
+                END IF;
+            END $$;
+
+            CREATE INDEX IF NOT EXISTS "IX_communities_Category"
+                ON mirage.communities ("Category");
+
+            CREATE INDEX IF NOT EXISTS "IX_communities_CreatedByUserId"
+                ON mirage.communities ("CreatedByUserId");
+
+            CREATE INDEX IF NOT EXISTS "IX_communities_Status"
+                ON mirage.communities ("Status");
+
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_community_members_CommunityId_UserId"
+                ON mirage.community_members ("CommunityId", "UserId");
+
+            CREATE INDEX IF NOT EXISTS "IX_community_members_UserId_LeftAt"
+                ON mirage.community_members ("UserId", "LeftAt");
+
+            CREATE INDEX IF NOT EXISTS "IX_community_posts_AuthorUserId"
+                ON mirage.community_posts ("AuthorUserId");
+
+            CREATE INDEX IF NOT EXISTS "IX_community_posts_CommunityId_CreatedAt"
+                ON mirage.community_posts ("CommunityId", "CreatedAt");
+            """);
     }
 
     protected override void Down(MigrationBuilder migrationBuilder)
