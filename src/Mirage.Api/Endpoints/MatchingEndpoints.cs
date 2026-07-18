@@ -76,20 +76,26 @@ internal static class MatchingEndpoints
 
             return EndpointHelpers.Forbidden(context, "Married users can view and share profiles, but cannot engage in matching.");
         }
-        if (await db.Likes.AnyAsync(x => x.SourceUserId == sourceUserId && x.TargetUserId == request.TargetUserId,
-                cancellationToken))
+        var user1Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? sourceUserId : request.TargetUserId;
+        var user2Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? request.TargetUserId : sourceUserId;
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.User1Id == user1Id && x.User2Id == user2Id, cancellationToken);
+
+        if (match?.Status == MatchStatus.Blocked)
+            return EndpointHelpers.Conflict(context, "This match is blocked.");
+
+        // A repeat like is only a conflict while the pair still has a live match — a Closed
+        // one is revived below, so ending a conversation is never a permanent dead end.
+        var alreadyLiked = await db.Likes.AnyAsync(
+            x => x.SourceUserId == sourceUserId && x.TargetUserId == request.TargetUserId, cancellationToken);
+        if (alreadyLiked && (match is null || match.Status != MatchStatus.Closed))
             return EndpointHelpers.Conflict(context, "Like already recorded.");
 
         // A like always opens or approves a chat request, so the free-tier conversation cap applies here.
         var capHit = await ConversationLimits.CheckAsync(context, sourceUserId, db, cancellationToken);
         if (capHit is not null) return capHit;
 
-        db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
-
-        var user1Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? sourceUserId : request.TargetUserId;
-        var user2Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? request.TargetUserId : sourceUserId;
-        var match = await db.Matches.SingleOrDefaultAsync(
-            x => x.User1Id == user1Id && x.User2Id == user2Id, cancellationToken);
+        if (!alreadyLiked) db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
 
         var sourceName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
@@ -105,6 +111,16 @@ internal static class MatchingEndpoints
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
                 "New chat request", $"{sourceName} liked your profile and wants to start chatting.",
+                match.Id, "Match", cancellationToken);
+        }
+        else if (match.Status == MatchStatus.Closed)
+        {
+            // A previously-ended conversation restarts as a fresh chat request the other
+            // party must approve again.
+            match.ReopenRequest(sourceUserId);
+            await db.SaveChangesAsync(cancellationToken);
+            await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
+                "New chat request", $"{sourceName} wants to reconnect and start chatting again.",
                 match.Id, "Match", cancellationToken);
         }
         else if (match.Status == MatchStatus.PendingRequest && match.ChatRequestedByUserId != sourceUserId)
@@ -135,8 +151,14 @@ internal static class MatchingEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        // Likes whose match has since been closed are omitted so the client treats those
+        // people as fresh again — the pair can restart via a new like (see Like above).
         var targetUserIds = await db.Likes.AsNoTracking()
             .Where(x => x.SourceUserId == userId)
+            .Where(x => !db.Matches.Any(m =>
+                ((m.User1Id == userId && m.User2Id == x.TargetUserId)
+                    || (m.User1Id == x.TargetUserId && m.User2Id == userId))
+                && m.Status == MatchStatus.Closed))
             .Select(x => x.TargetUserId)
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, targetUserIds, "Your likes were retrieved successfully.");

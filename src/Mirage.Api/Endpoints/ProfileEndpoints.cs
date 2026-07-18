@@ -112,12 +112,18 @@ internal static class ProfileEndpoints
             var me = currentUserId.Value;
             query = query.Where(x => x.UserId != me);
 
-            // Once you've liked or matched someone, they drop out of discovery for good —
-            // no re-surfacing people you've already acted on.
+            // Once you've liked or matched someone, they drop out of discovery — unless that
+            // conversation has since been ended (match Closed), in which case they resurface
+            // and a fresh like restarts the request/approve handshake.
             var likedIds = db.Likes.Where(x => x.SourceUserId == me).Select(x => x.TargetUserId);
-            var matchedIds = db.Matches.Where(x => x.User1Id == me || x.User2Id == me)
+            var openMatchedIds = db.Matches
+                .Where(x => (x.User1Id == me || x.User2Id == me) && x.Status != MatchStatus.Closed)
                 .Select(x => x.User1Id == me ? x.User2Id : x.User1Id);
-            query = query.Where(x => !likedIds.Contains(x.UserId) && !matchedIds.Contains(x.UserId));
+            var closedMatchedIds = db.Matches
+                .Where(x => (x.User1Id == me || x.User2Id == me) && x.Status == MatchStatus.Closed)
+                .Select(x => x.User1Id == me ? x.User2Id : x.User1Id);
+            query = query.Where(x => !openMatchedIds.Contains(x.UserId)
+                && !(likedIds.Contains(x.UserId) && !closedMatchedIds.Contains(x.UserId)));
 
             // Downvotes are a personal, permanent hide for the viewer's own feed.
             var downvotedIds = db.ProfileVotes.Where(v => v.VoterUserId == me && v.Value < 0)
