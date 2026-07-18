@@ -6,6 +6,7 @@ using Google.Apis.Auth;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Mirage.Api.Contracts;
 using Mirage.Api.Middleware;
 using Mirage.Api.Security;
@@ -50,6 +51,7 @@ internal static class AuthEndpoints
         IMemoryCache cache,
         MirageDbContext db, TokenService tokens, IConfiguration configuration, ILoggerFactory loggerFactory,
         IEmailService emailService,
+        IServiceScopeFactory scopeFactory,
         CancellationToken cancellationToken)
     {
         var errors = Validate(request);
@@ -137,17 +139,45 @@ internal static class AuthEndpoints
                     await db.SaveChangesAsync(cancellationToken);
                 }
 
-                var welcomeEmailSent = await emailService.SendWelcomeEmailAsync(user.Email!, request.DisplayName, cancellationToken);
-                if (welcomeEmailSent)
-                {
-                    user.WelcomeEmailSentAt = DateTimeOffset.UtcNow;
-                    await db.SaveChangesAsync(cancellationToken);
-                }
-
                 var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
                 var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
                 var confirmUrl = $"{appUrl}/confirm-email?email={Uri.EscapeDataString(user.Email!)}&token={Uri.EscapeDataString(confirmToken)}";
-                await emailService.SendEmailConfirmationAsync(user.Email!, request.DisplayName, confirmUrl, cancellationToken);
+
+                // Welcome/confirmation emails are dispatched off the request path so the client gets its
+                // response immediately — the outbound Mailjet calls otherwise add seconds of latency here.
+                // WelcomeEmailBackfillWorker sweeps for missed WelcomeEmailSentAt as a safety net, and
+                // /auth/resend-confirmation covers a dropped confirmation email.
+                var userId = user.Id;
+                var userEmail = user.Email!;
+                var displayName = request.DisplayName;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var scope = scopeFactory.CreateScope();
+                        var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+                        var scopedDb = scope.ServiceProvider.GetRequiredService<MirageDbContext>();
+
+                        var welcomeEmailSent = await scopedEmailService.SendWelcomeEmailAsync(
+                            userEmail, displayName, CancellationToken.None);
+                        if (welcomeEmailSent)
+                        {
+                            var trackedUser = await scopedDb.Users.FindAsync([userId], CancellationToken.None);
+                            if (trackedUser is not null)
+                            {
+                                trackedUser.WelcomeEmailSentAt = DateTimeOffset.UtcNow;
+                                await scopedDb.SaveChangesAsync(CancellationToken.None);
+                            }
+                        }
+
+                        await scopedEmailService.SendEmailConfirmationAsync(
+                            userEmail, displayName, confirmUrl, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Post-registration email dispatch failed for user {UserId}", userId);
+                    }
+                });
 
                 var databaseMs = registrationStopwatch.Elapsed.TotalMilliseconds - databaseStarted;
                 ResponseTimeMiddleware.SetServerTiming(context, "password", passwordHashingMs);
