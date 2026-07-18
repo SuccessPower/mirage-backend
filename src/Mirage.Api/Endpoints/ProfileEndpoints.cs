@@ -79,7 +79,7 @@ internal static class ProfileEndpoints
 
     private static async Task<IResult> Discover(HttpContext context, MirageDbContext db,
         RelationshipIntent? intent, string? city,
-        string? denomination, int? minAge, int? maxAge, int page = 1, int pageSize = 20,
+        string? denomination, int? minAge, int? maxAge, string? search, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         if (minAge is < 18 || maxAge is > 100 || minAge > maxAge)
@@ -139,6 +139,17 @@ internal static class ProfileEndpoints
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))
             query = query.Where(x => EF.Functions.ILike(x.Denomination, $"%{denomination.Trim()}%"));
+
+        // Free-text search across the fields a member would naturally type into one box —
+        // name, city, denomination, or occupation — as a single case-insensitive contains.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            query = query.Where(x => EF.Functions.ILike(x.DisplayName, term)
+                || EF.Functions.ILike(x.City, term)
+                || EF.Functions.ILike(x.Denomination, term)
+                || (x.Occupation != null && EF.Functions.ILike(x.Occupation, term)));
+        }
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         if (minAge.HasValue)
         {

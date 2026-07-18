@@ -6,16 +6,19 @@ using Mirage.Domain.Enums;
 namespace Mirage.Api.Services;
 
 // Free-tier members can hold at most three open conversations at once; Plus and Premium are
-// unlimited. An open conversation is an Active match chat or an active couple friendship the
-// user participates in (as the befriending friend or as either partner of the couple). The
-// user's own spouse chat is exempt — otherwise a married Free user could never befriend anyone.
+// unlimited. An open conversation is an Active match chat, a chat request the user sent that is
+// still pending (it becomes Active the moment the other party approves, with no cap check on the
+// requester at that point — so the slot must be held from the request), or an active couple
+// friendship the user participates in (as the befriending friend or as either partner of the
+// couple). The user's own spouse chat is exempt — otherwise a married Free user could never
+// befriend anyone.
 internal static class ConversationLimits
 {
     public const int FreeTierLimit = 3;
 
     public const string LimitMessage =
         "You've reached the free plan's limit of 3 open conversations. " +
-        "End a conversation from your inbox or upgrade for unlimited conversations.";
+        "End a conversation from your inbox to free a slot — Premium with unlimited conversations is coming soon.";
 
     public static async Task<IResult?> CheckAsync(HttpContext context, Guid userId,
         IMirageDbContext db, CancellationToken cancellationToken)
@@ -39,7 +42,8 @@ internal static class ConversationLimits
 
         var activeMatches = await db.Matches.AsNoTracking().CountAsync(x =>
             (x.User1Id == userId || x.User2Id == userId)
-            && x.Status == MatchStatus.Active
+            && (x.Status == MatchStatus.Active
+                || (x.Status == MatchStatus.PendingRequest && x.ChatRequestedByUserId == userId))
             && !spouseIds.Contains(x.User1Id == userId ? x.User2Id : x.User1Id), cancellationToken);
 
         var activeFriendships = await db.CoupleFriendships.AsNoTracking().CountAsync(f =>
