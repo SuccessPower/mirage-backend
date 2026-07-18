@@ -23,7 +23,58 @@ internal static class ProfileEndpoints
         group.MapPut("/me/photos", UpdateMyPhotos).RequireAuthorization();
         group.MapPost("/me/complete", CompleteProfile).RequireAuthorization();
         group.MapPost("/me/church", JoinChurch).RequireAuthorization();
+        group.MapGet("/votes/mine", GetMyVotes).RequireAuthorization();
+        group.MapPost("/{userId:guid}/vote", CastVote).RequireAuthorization();
+        group.MapDelete("/{userId:guid}/vote", RemoveVote).RequireAuthorization();
         return api;
+    }
+
+    // Personal feed control, not a public score: a downvote hides the target from the voter's
+    // feed, an upvote boosts the target in the voter's ranking. Only the voter ever sees it.
+    private static async Task<IResult> CastVote(Guid userId, CastVoteRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.Value != 1 && request.Value != -1)
+            return EndpointHelpers.ValidationProblem(context, ("value", "Vote value must be 1 (up) or -1 (down)."));
+
+        var voterId = context.User.GetUserId();
+        if (voterId == userId)
+            return EndpointHelpers.ValidationProblem(context, ("userId", "You cannot vote on your own profile."));
+        if (!await db.Profiles.AsNoTracking().AnyAsync(x => x.UserId == userId, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Profile was not found.");
+
+        var vote = await db.ProfileVotes.SingleOrDefaultAsync(
+            x => x.VoterUserId == voterId && x.TargetUserId == userId, cancellationToken);
+        if (vote is null) db.ProfileVotes.Add(new ProfileVote(voterId, userId, request.Value));
+        else vote.ChangeValue(request.Value);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new { targetUserId = userId, myVote = request.Value },
+            "Vote recorded successfully.");
+    }
+
+    private static async Task<IResult> RemoveVote(Guid userId, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var voterId = context.User.GetUserId();
+        var vote = await db.ProfileVotes.SingleOrDefaultAsync(
+            x => x.VoterUserId == voterId && x.TargetUserId == userId, cancellationToken);
+        if (vote is null) return EndpointHelpers.NotFound(context, "Vote was not found.");
+
+        db.ProfileVotes.Remove(vote);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { targetUserId = userId }, "Vote removed successfully.");
+    }
+
+    private static async Task<IResult> GetMyVotes(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var voterId = context.User.GetUserId();
+        var votes = await db.ProfileVotes.AsNoTracking()
+            .Where(x => x.VoterUserId == voterId)
+            .Select(x => new { x.TargetUserId, x.Value })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, votes, "Your votes were retrieved successfully.");
     }
 
     private static async Task<IResult> Discover(HttpContext context, MirageDbContext db,
@@ -48,6 +99,10 @@ internal static class ProfileEndpoints
         query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
             && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
 
+        // Married profiles never appear in the singles feed — married members browse couples
+        // through /couples/discover instead.
+        query = query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
+
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
         string? myCountry = null;
@@ -63,6 +118,11 @@ internal static class ProfileEndpoints
             var matchedIds = db.Matches.Where(x => x.User1Id == me || x.User2Id == me)
                 .Select(x => x.User1Id == me ? x.User2Id : x.User1Id);
             query = query.Where(x => !likedIds.Contains(x.UserId) && !matchedIds.Contains(x.UserId));
+
+            // Downvotes are a personal, permanent hide for the viewer's own feed.
+            var downvotedIds = db.ProfileVotes.Where(v => v.VoterUserId == me && v.Value < 0)
+                .Select(v => v.TargetUserId);
+            query = query.Where(x => !downvotedIds.Contains(x.UserId));
 
             var mine = await db.Profiles.AsNoTracking().Where(x => x.UserId == me)
                 .Select(x => new { x.City, x.Country, x.Sex }).SingleOrDefaultAsync(cancellationToken);
@@ -93,8 +153,11 @@ internal static class ProfileEndpoints
         var recommendedIds = db.Recommendations.AsNoTracking()
             .Where(x => x.Status == RecommendationStatus.Active).Select(x => x.RecommendedUserId);
         // Nearest-first: same city, then same country, before falling back to verified/recency.
+        // Profiles the viewer upvoted are boosted to the top of their personal feed.
         var pagedProfiles = await query
-            .OrderByDescending(x => myCity != null && x.City == myCity)
+            .OrderByDescending(x => currentUserId.HasValue && db.ProfileVotes.Any(
+                v => v.VoterUserId == currentUserId.Value && v.TargetUserId == x.UserId && v.Value > 0))
+            .ThenByDescending(x => myCity != null && x.City == myCity)
             .ThenByDescending(x => myCountry != null && x.Country == myCountry)
             .ThenByDescending(x => x.IsVerified)
             .ThenByDescending(x => x.CreatedAt)

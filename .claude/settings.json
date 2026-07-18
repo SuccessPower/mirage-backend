@@ -36,7 +36,34 @@
       "WebFetch(domain:www.wearecedars.com)",
       "WebFetch(domain:harvesthousecc.org)",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/payazaafrica/mirage-backend/seed-data/nigerian-churches-seed.json'\\)\\); print\\('OK, total entries:', len\\(d\\)\\)\")",
-      "Bash(perl -0pi -e \"s/\\(occupation: 'Interior Designer',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Finance Analyst',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'HR Professional',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Creative Director',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/\" src/data/sampleProfiles.ts)"
+      "Bash(perl -0pi -e \"s/\\(occupation: 'Interior Designer',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Finance Analyst',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'HR Professional',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Creative Director',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/\" src/data/sampleProfiles.ts)",
+      "Bash(ls \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\" && echo --- && ls \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\\\\mirage-backend\")",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/pages/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/components/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/router/**)",
+      "Bash(ls \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\\\\mirage-frontend\\\\src\\\\api\" \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\\\\mirage-frontend\\\\src\\\\stores\" \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\\\\mirage-frontend\\\\src\\\\services\" \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\\\\mirage-frontend\\\\src\\\\components\\\\sections\" \"c:\\\\Users\\\\Succe\\\\OneDrive\\\\Desktop\\\\1 Vue Fundamentals\\\\mirage-frontend\\\\src\\\\components\\\\layout\")",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/api/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/components/sections/**)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet ef *)",
+      "Bash(dotnet tool *)",
+      "Bash(dotnet build *)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/types/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/stores/**)",
+      "Read(//c/Users/Succe/OneDrive/Desktop/1 Vue Fundamentals/mirage-frontend/src/components/layout/**)",
+      "Bash(npm run *)",
+      "Bash(ASPNETCORE_ENVIRONMENT=Local PORT=5089 ASPNETCORE_URLS=http://localhost:5089 timeout 75 dotnet run --project src/Mirage.Api/Mirage.Api.csproj --no-build)",
+      "Bash(ASPNETCORE_ENVIRONMENT=Local PORT=5089 ASPNETCORE_URLS=http://localhost:5089 timeout 60 dotnet run --project src/Mirage.Api/Mirage.Api.csproj --no-build)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\Succe\\OneDrive\\Desktop\\1 Vue Fundamentals\\mirage-frontend\\src\\types",
+      "c:\\Users\\Succe\\OneDrive\\Desktop\\1 Vue Fundamentals\\mirage-frontend\\src\\api",
+      "c:\\Users\\Succe\\OneDrive\\Desktop\\1 Vue Fundamentals\\mirage-frontend\\src\\stores",
+      "c:\\Users\\Succe\\OneDrive\\Desktop\\1 Vue Fundamentals\\mirage-frontend\\src\\components\\layout",
+      "c:\\Users\\Succe\\OneDrive\\Desktop\\1 Vue Fundamentals\\mirage-frontend\\src"
     ]
   }
 }

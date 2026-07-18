@@ -320,6 +320,42 @@ public sealed record CoupleResponse(
     string? OtherOrgBadgeUrl = null,
     string? OtherOrgName = null);
 
+public sealed record CouplePartnerSummary(
+    Guid UserId,
+    string DisplayName,
+    int Age,
+    string? AvatarUrl,
+    string Bio,
+    string City,
+    string Country,
+    string Denomination,
+    bool IsVerified,
+    string? OrgBadgeUrl = null,
+    string? OrgName = null);
+
+public sealed record CoupleCardResponse(
+    Guid CoupleId,
+    CouplePartnerSummary Partner1,
+    CouplePartnerSummary Partner2,
+    bool AlreadyFriends,
+    DateTimeOffset? MarriedSince);
+
+public sealed record CoupleFriendParticipant(
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    bool IsVerified);
+
+public sealed record CoupleFriendshipResponse(
+    Guid Id,
+    Guid CoupleId,
+    Guid FriendUserId,
+    CoupleFriendParticipant Friend,
+    CoupleFriendParticipant Partner1,
+    CoupleFriendParticipant Partner2,
+    CoupleFriendshipStatus Status,
+    DateTimeOffset CreatedAt);
+
 public sealed record CounsellingMessageResponse(
     Guid Id,
     Guid SessionId,

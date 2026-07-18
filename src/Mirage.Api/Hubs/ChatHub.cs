@@ -52,7 +52,65 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         foreach (var sessionId in sessionIds)
             await Groups.AddToGroupAsync(Context.ConnectionId, CounsellingGroup(sessionId));
 
+        var friendshipIds = await db.CoupleFriendships.AsNoTracking()
+            .Where(f => f.Status == CoupleFriendshipStatus.Active
+                && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
+                    && (c.User1Id == userId || c.User2Id == userId))))
+            .Select(f => f.Id)
+            .ToListAsync();
+        foreach (var friendshipId in friendshipIds)
+            await Groups.AddToGroupAsync(Context.ConnectionId, CoupleFriendGroup(friendshipId));
+
         await base.OnConnectedAsync();
+    }
+
+    // Client → Hub: join a couple-friendship group created after this connection was opened
+    // (the SPA keeps one connection across navigation, so a mid-session befriend would otherwise
+    // leave all three participants out of the group until they reload).
+    public async Task JoinCoupleFriendship(Guid friendshipId)
+    {
+        var userId = GetUserId();
+        var isParticipant = await db.CoupleFriendships.AsNoTracking().AnyAsync(f => f.Id == friendshipId
+            && f.Status == CoupleFriendshipStatus.Active
+            && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
+                && (c.User1Id == userId || c.User2Id == userId))));
+        if (!isParticipant) return;
+        await Groups.AddToGroupAsync(Context.ConnectionId, CoupleFriendGroup(friendshipId));
+    }
+
+    // Client → Hub: send a message to a couple-friendship thread (friend + both partners)
+    public async Task SendCoupleFriendMessage(Guid friendshipId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null)
+    {
+        content = (content ?? string.Empty).Trim();
+        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
+        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
+
+        var userId = GetUserId();
+        var isParticipant = await db.CoupleFriendships.AsNoTracking().AnyAsync(f => f.Id == friendshipId
+            && f.Status == CoupleFriendshipStatus.Active
+            && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
+                && (c.User1Id == userId || c.User2Id == userId))));
+        if (!isParticipant) return;
+
+        var message = new CoupleFriendMessage(friendshipId, userId, content, type, attachmentUrl);
+        db.CoupleFriendMessages.Add(message);
+        await db.SaveChangesAsync();
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
+
+        await Clients.Group(CoupleFriendGroup(friendshipId)).SendAsync("ReceiveCoupleFriendMessage", new
+        {
+            message.Id,
+            FriendshipId = friendshipId,
+            message.SenderId,
+            SenderName = senderName,
+            message.Content,
+            message.Type,
+            message.AttachmentUrl,
+            SentAt = message.CreatedAt
+        });
     }
 
     // Client → Hub: send a message to a match
@@ -256,4 +314,5 @@ public sealed class ChatHub(MirageDbContext db) : Hub
     private static string MentorGroup(Guid mentorProfileId) => $"mentorgroup:{mentorProfileId}";
     private static string MentorRequestGroup(Guid mentorRequestId) => $"mentorrequest:{mentorRequestId}";
     private static string CounsellingGroup(Guid sessionId) => $"counsellingsession:{sessionId}";
+    private static string CoupleFriendGroup(Guid friendshipId) => $"couplefriend:{friendshipId}";
 }
