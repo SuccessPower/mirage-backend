@@ -36,7 +36,8 @@
       "WebFetch(domain:www.wearecedars.com)",
       "WebFetch(domain:harvesthousecc.org)",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/payazaafrica/mirage-backend/seed-data/nigerian-churches-seed.json'\\)\\); print\\('OK, total entries:', len\\(d\\)\\)\")",
-      "Bash(perl -0pi -e \"s/\\(occupation: 'Interior Designer',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Finance Analyst',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'HR Professional',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Creative Director',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/\" src/data/sampleProfiles.ts)"
+      "Bash(perl -0pi -e \"s/\\(occupation: 'Interior Designer',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Finance Analyst',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'HR Professional',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/; s/\\(occupation: 'Creative Director',\\\\n\\)/\\\\$1    isProfileComplete: true,\\\\n/\" src/data/sampleProfiles.ts)",
+      "Bash(xargs -I{} sh -c 'echo ==={}; cat {}')"
     ]
   }
 }
