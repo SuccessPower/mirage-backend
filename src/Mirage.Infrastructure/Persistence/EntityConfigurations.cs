@@ -323,6 +323,43 @@ public sealed class CoupleConfiguration : IEntityTypeConfiguration<Couple>
     }
 }
 
+public sealed class CoupleFriendshipConfiguration : IEntityTypeConfiguration<CoupleFriendship>
+{
+    public void Configure(EntityTypeBuilder<CoupleFriendship> b)
+    {
+        b.ToTable("couple_friendships");
+        b.HasIndex(x => new { x.CoupleId, x.FriendUserId }).IsUnique();
+        b.HasIndex(x => x.FriendUserId);
+        b.HasOne<Couple>().WithMany().HasForeignKey(x => x.CoupleId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.FriendUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class CoupleFriendMessageConfiguration : IEntityTypeConfiguration<CoupleFriendMessage>
+{
+    public void Configure(EntityTypeBuilder<CoupleFriendMessage> b)
+    {
+        b.ToTable("couple_friend_messages");
+        b.HasIndex(x => x.FriendshipId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.HasOne<CoupleFriendship>().WithMany().HasForeignKey(x => x.FriendshipId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class ProfileVoteConfiguration : IEntityTypeConfiguration<ProfileVote>
+{
+    public void Configure(EntityTypeBuilder<ProfileVote> b)
+    {
+        b.ToTable("profile_votes");
+        b.HasIndex(x => new { x.VoterUserId, x.TargetUserId }).IsUnique();
+        b.HasIndex(x => x.TargetUserId);
+        b.Property(x => x.Value).HasColumnType("smallint");
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.VoterUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.TargetUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CounsellingMessageConfiguration : IEntityTypeConfiguration<CounsellingMessage>
 {
     public void Configure(EntityTypeBuilder<CounsellingMessage> b)

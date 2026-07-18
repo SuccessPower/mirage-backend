@@ -26,6 +26,8 @@ internal static class MatchingEndpoints
         group.MapPost("/matches/{id:guid}/chat-request", RequestChat);
         group.MapPost("/matches/{id:guid}/chat-request/approve", ApproveChatRequest);
 
+        group.MapGet("/conversations/slots", GetConversationSlots);
+
         // Chat — REST fallback alongside SignalR hub
         group.MapGet("/matches/{id:guid}/messages", GetMessages);
         group.MapPost("/matches/{id:guid}/messages", SendMessage);
@@ -77,6 +79,10 @@ internal static class MatchingEndpoints
         if (await db.Likes.AnyAsync(x => x.SourceUserId == sourceUserId && x.TargetUserId == request.TargetUserId,
                 cancellationToken))
             return EndpointHelpers.Conflict(context, "Like already recorded.");
+
+        // A like always opens or approves a chat request, so the free-tier conversation cap applies here.
+        var capHit = await ConversationLimits.CheckAsync(context, sourceUserId, db, cancellationToken);
+        if (capHit is not null) return capHit;
 
         db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
 
@@ -193,6 +199,24 @@ internal static class MatchingEndpoints
         }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
+    // Lets the client show an accurate "n of 3 conversations" indicator without re-deriving
+    // the counting rules (spouse exemption, couple friendships) locally.
+    private static async Task<IResult> GetConversationSlots(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var tier = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => x.SubscriptionTier)
+            .SingleOrDefaultAsync(cancellationToken);
+        var used = await ConversationLimits.CountOpenAsync(userId, db, cancellationToken);
+        int? limit = tier is SubscriptionTier.Plus or SubscriptionTier.Premium
+            ? null
+            : ConversationLimits.FreeTierLimit;
+        return ApiResults.Ok(context, new { used, limit, tier = tier.ToString() },
+            "Conversation slots retrieved successfully.");
+    }
+
     private static async Task<IResult> CloseMatch(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -234,6 +258,9 @@ internal static class MatchingEndpoints
                 "Couple chat is ready.");
         }
 
+        var capHit = await ConversationLimits.CheckAsync(context, userId, db, cancellationToken);
+        if (capHit is not null) return capHit;
+
         try
         {
             match.RequestChat(userId);
@@ -265,6 +292,10 @@ internal static class MatchingEndpoints
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+
+        // Approving is what actually opens the conversation, so the cap applies to the approver too.
+        var capHit = await ConversationLimits.CheckAsync(context, userId, db, cancellationToken);
+        if (capHit is not null) return capHit;
 
         try
         {

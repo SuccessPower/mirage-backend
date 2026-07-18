@@ -4,6 +4,7 @@ public enum RelationshipIntent { Friendship = 1, Dating = 2, Marriage = 3 }
 public enum Sex { Male = 1, Female = 2 }
 public enum RelationshipStatus { Single = 1, Divorced = 2, Widowed = 3, Separated = 4, Married = 5, Engaged = 6, InARelationship = 7 }
 public enum CoupleStatus { Pending = 1, Approved = 2, Declined = 3 }
+public enum CoupleFriendshipStatus { Active = 1, Ended = 2 }
 public enum SkinTone { Fair = 1, Light = 2, Medium = 3, Tan = 4, Brown = 5, Dark = 6 }
 public enum SubscriptionTier { Free = 1, Plus = 2, Premium = 3 }
 public enum OrganisationStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
@@ -102,5 +103,7 @@ public enum NotificationType
     GatheringInviteDeclined = 24,
     ProfileVerified = 25,
     VendorApproved = 26,
-    VendorRejected = 27
+    VendorRejected = 27,
+    CoupleFriendshipCreated = 28,
+    CoupleFriendshipEnded = 29
 }
