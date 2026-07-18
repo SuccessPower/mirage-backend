@@ -5,8 +5,11 @@ namespace Mirage.Application.Abstractions;
 public interface IEmailService
 {
     // Returns whether the send succeeded, so callers can record delivery (e.g. WelcomeEmailSentAt)
-    // and retry later on failure instead of assuming it always went out.
-    Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, CancellationToken cancellationToken = default);
+    // and retry later on failure instead of assuming it always went out. When confirmUrl is
+    // supplied, the welcome email doubles as the confirmation email — one send instead of two,
+    // so a new signup doesn't have to wait on (or receive) a second message.
+    Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, string? confirmUrl = null,
+        CancellationToken cancellationToken = default);
 
     Task SendEmailConfirmationAsync(string toEmail, string displayName, string confirmUrl,
         CancellationToken cancellationToken = default);
