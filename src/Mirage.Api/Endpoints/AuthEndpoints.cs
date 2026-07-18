@@ -540,6 +540,24 @@ internal static class AuthEndpoints
             if (!existingUser.IsActive)
                 return EndpointHelpers.Problem(context, StatusCodes.Status401Unauthorized,
                     "Authentication failed", "This account is unavailable.");
+
+            // A Google sign-in proves ownership of the address just as strongly as clicking a
+            // confirmation link, so both verification flags are healed here — this also unblocks
+            // older Google-created accounts whose profiles predate starting out verified and were
+            // stuck unable to like/match (the Like gate requires profile.IsVerified).
+            if (!existingUser.EmailConfirmed)
+            {
+                existingUser.EmailConfirmed = true;
+                await userManager.UpdateAsync(existingUser);
+            }
+            var existingProfile = await db.Profiles.SingleOrDefaultAsync(
+                x => x.UserId == existingUser.Id, cancellationToken);
+            if (existingProfile is not null && !existingProfile.IsVerified)
+            {
+                existingProfile.Verify();
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
             var existingRoles = await userManager.GetRolesAsync(existingUser);
             return ApiResults.Ok(context,
                 await IssueTokens(existingUser, existingRoles, db, tokens, configuration, cancellationToken),
@@ -578,9 +596,16 @@ internal static class AuthEndpoints
                 var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
                 var accessToken = tokens.CreateAccessToken(user, [MirageRoles.User]);
 
+                var profile = new UserProfile(user.Id, displayName, payload.Picture, GetClientIpAddress(context));
+                // Google already verified this email (EmailConfirmed starts true above), so the
+                // profile starts in the same verified state ConfirmEmail grants password signups —
+                // without this, Google users pass the email gate but are still blocked from
+                // liking/matching by the profile.IsVerified gate.
+                profile.Verify();
+
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
-                db.Profiles.Add(new UserProfile(user.Id, displayName, payload.Picture, GetClientIpAddress(context)));
+                db.Profiles.Add(profile);
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
                 await db.SaveChangesAsync(cancellationToken);
 
