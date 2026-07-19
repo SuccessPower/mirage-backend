@@ -44,6 +44,18 @@ public sealed class Match : Entity
         Touch();
     }
 
+    // A closed conversation is revived by either party liking again — this restarts the
+    // request/approve handshake instead of silently resurrecting the old thread, so the
+    // other party always gets to consent before the chat reopens.
+    public void ReopenRequest(Guid userId)
+    {
+        if (Status != MatchStatus.Closed)
+            throw new InvalidOperationException("Only a closed match can be reopened.");
+        Status = MatchStatus.PendingRequest;
+        ChatRequestedByUserId = userId;
+        Touch();
+    }
+
     public void ApproveChat(Guid userId)
     {
         if (Status != MatchStatus.PendingRequest || ChatRequestedByUserId is null)
