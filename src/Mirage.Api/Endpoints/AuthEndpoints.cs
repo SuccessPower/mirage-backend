@@ -946,6 +946,7 @@ internal static class AuthEndpoints
         else if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
             errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
+        if (request.Sex is null) errors.Add(("sex", "Select your sex."));
         if (string.IsNullOrWhiteSpace(request.ConfirmPassword))
             errors.Add(("confirmPassword", "Please confirm your password."));
         else if (request.Password != request.ConfirmPassword)

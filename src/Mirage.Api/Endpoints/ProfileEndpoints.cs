@@ -331,6 +331,7 @@ internal static class ProfileEndpoints
             errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));
+        if (request.Sex is null) errors.Add(("sex", "Select your sex."));
         if (!string.IsNullOrWhiteSpace(request.Denomination) &&
             !Enum.TryParse<ChristianDenomination>(request.Denomination, ignoreCase: true, out _))
             errors.Add(("denomination", "Select a valid denomination."));
