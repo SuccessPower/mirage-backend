@@ -122,7 +122,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
-                    request.Country, request.Denomination, request.Intent, request.Bio, request.Sex,
+                    request.Country, request.Denomination, request.Bio, request.Sex,
                     request.RelationshipStatus, request.Occupation, GetClientIpAddress(context)));
                 db.RefreshTokens.Add(refreshToken);
                 if (churchSelection.OrganisationId.HasValue)
@@ -220,8 +220,10 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context, ("email", "A valid email address is required."));
         if (string.IsNullOrWhiteSpace(request.DisplayName))
             return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
-        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Counsellors must be at least 18 years old."));
+        if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Please enter a valid date of birth."));
         if (request.YearsExperience < 0)
             return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
 
@@ -286,7 +288,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = counsellorRoleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
-                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                    request.City, request.Country, request.Denomination, request.Bio));
                 db.Counsellors.Add(new CounsellorProfile(user.Id, invite.OrganisationId,
                     request.YearsExperience, request.Specialisations, request.Languages));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
@@ -322,8 +324,10 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context, ("email", "A valid email address is required."));
         if (string.IsNullOrWhiteSpace(request.DisplayName))
             return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
-        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Counsellors must be at least 18 years old."));
+        if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Please enter a valid date of birth."));
         if (request.YearsExperience < 0)
             return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
 
@@ -371,7 +375,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = counsellorRoleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
-                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                    request.City, request.Country, request.Denomination, request.Bio));
                 db.Counsellors.Add(new CounsellorProfile(user.Id, null, request.YearsExperience,
                     request.Specialisations, request.Languages, request.VerificationDocumentUrls));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
@@ -405,8 +409,10 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context, ("email", "A valid email address is required."));
         if (string.IsNullOrWhiteSpace(request.DisplayName))
             return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
-        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Mentors must be at least 18 years old."));
+        if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Please enter a valid date of birth."));
         if (request.YearsMarried < 1)
             return EndpointHelpers.ValidationProblem(context, ("yearsMarried", "At least 1 year of marriage is required."));
         if (string.IsNullOrWhiteSpace(request.Testimony))
@@ -456,7 +462,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = mentorRoleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
-                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                    request.City, request.Country, request.Denomination, request.Bio));
                 db.Mentors.Add(new MentorProfile(user.Id, request.YearsMarried, request.Testimony,
                     request.AreasOfGuidance, request.Languages));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
@@ -935,9 +941,12 @@ internal static class AuthEndpoints
         else if (!new EmailAddressAttribute().IsValid(request.Email))
             errors.Add(("email", "A valid email address is required."));
         if (string.IsNullOrWhiteSpace(request.DisplayName)) errors.Add(("displayName", "Display name is required."));
-        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
+        else if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
+        if (request.Sex is null) errors.Add(("sex", "Select your sex."));
         if (string.IsNullOrWhiteSpace(request.ConfirmPassword))
             errors.Add(("confirmPassword", "Please confirm your password."));
         else if (request.Password != request.ConfirmPassword)

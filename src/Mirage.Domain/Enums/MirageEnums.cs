@@ -1,6 +1,7 @@
 namespace Mirage.Domain.Enums;
 
-public enum RelationshipIntent { Friendship = 1, Dating = 2, Marriage = 3 }
+// The three sections of the app; categorizes gatherings and discovery feeds, not people.
+public enum SectionCategory { Friendship = 1, Dating = 2, Marriage = 3 }
 public enum Sex { Male = 1, Female = 2 }
 public enum RelationshipStatus { Single = 1, Divorced = 2, Widowed = 3, Separated = 4, Married = 5, Engaged = 6, InARelationship = 7 }
 public enum CoupleStatus { Pending = 1, Approved = 2, Declined = 3 }

@@ -12,7 +12,6 @@ public sealed record RegisterRequest(
     string City,
     string Country,
     string Denomination,
-    RelationshipIntent Intent,
     string Bio,
     Sex? Sex = null,
     RelationshipStatus? RelationshipStatus = null,
@@ -41,7 +40,6 @@ public sealed record UpdateProfileRequest(
     string City,
     string Country,
     string Denomination,
-    RelationshipIntent Intent,
     string Bio,
     bool AnonymityEnabled,
     string[] Interests,
@@ -58,7 +56,6 @@ public sealed record CompleteProfileRequest(
     string City,
     string Country,
     string Denomination,
-    RelationshipIntent Intent,
     string Bio,
     Sex? Sex = null,
     RelationshipStatus? RelationshipStatus = null,
@@ -119,14 +116,14 @@ public sealed record CreateEventRequest(
     int? Capacity,
     Guid? BranchId);
 public sealed record CreateRecommendationRequest(Guid RecommendedUserId, Guid? OrganisationId, string? Note);
-public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type);
+public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type, SectionCategory Category = SectionCategory.Dating);
 public sealed record CreateDateRequestRequest(
     string Activity,
     DateTimeOffset StartsAt,
     DateTimeOffset EndsAt,
     string LocationArea,
     string? Note,
-    RelationshipIntent Intent = RelationshipIntent.Dating,
+    SectionCategory Category = SectionCategory.Dating,
     int Capacity = 1,
     string? ItemsToBring = null,
     string? ImageUrl = null);

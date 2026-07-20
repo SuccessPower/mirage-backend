@@ -8,7 +8,7 @@ public sealed class DateRequest : Entity
     private DateRequest() { }
 
     public DateRequest(Guid requestorUserId, string activity, DateTimeOffset startsAt, DateTimeOffset endsAt,
-        string locationArea, string? note, RelationshipIntent intent = RelationshipIntent.Dating,
+        string locationArea, string? note, SectionCategory category = SectionCategory.Dating,
         int capacity = 1, string? itemsToBring = null, string? imageUrl = null,
         bool requestorIsVerified = false, bool requestorIsRecommended = false)
     {
@@ -20,7 +20,7 @@ public sealed class DateRequest : Entity
         EndsAt = endsAt;
         LocationArea = locationArea.Trim();
         Note = note?.Trim();
-        Intent = intent;
+        Category = category;
         Capacity = capacity;
         ItemsToBring = itemsToBring?.Trim();
         ImageUrl = imageUrl?.Trim();
@@ -34,7 +34,7 @@ public sealed class DateRequest : Entity
     public DateTimeOffset EndsAt { get; private set; }
     public string LocationArea { get; private set; } = string.Empty;
     public string? Note { get; private set; }
-    public RelationshipIntent Intent { get; private set; } = RelationshipIntent.Dating;
+    public SectionCategory Category { get; private set; } = SectionCategory.Dating;
     public int Capacity { get; private set; } = 1;
     public string? ItemsToBring { get; private set; }
     public string? ImageUrl { get; private set; }

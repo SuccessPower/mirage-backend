@@ -504,7 +504,7 @@ internal static class OrganisationEndpoints
 
         if (justVerified)
             await notifications.NotifyAsync(member.UserId, NotificationType.ProfileVerified, "Your profile is verified",
-                "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests for any relationship intent.",
+                "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests.",
                 cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member approved successfully.");
@@ -529,7 +529,7 @@ internal static class OrganisationEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(member.UserId, NotificationType.ProfileVerified, "Your profile is verified",
-            "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests for any relationship intent.",
+            "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests.",
             cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { UserId = member.UserId, profile.IsVerified }, "Profile verified successfully.");

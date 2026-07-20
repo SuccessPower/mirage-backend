@@ -64,7 +64,8 @@ internal static class CommunityEndpoints
         }
 
         var result = await query
-            .OrderByDescending(x => x.CreatedAt)
+            .OrderByDescending(x => x.Members.Any(m => m.UserId == userId && m.LeftAt == null))
+            .ThenByDescending(x => x.CreatedAt)
             .Select(x => new CommunityResponse(
                 x.Id,
                 x.Name,
@@ -278,9 +279,37 @@ internal static class CommunityEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var communityExists = await db.Communities.AsNoTracking()
-            .AnyAsync(x => x.Id == id && x.Status == CommunityStatus.Active, cancellationToken);
-        if (!communityExists) return EndpointHelpers.NotFound(context, "Community was not found.");
+        var community = await db.Communities.AsNoTracking()
+            .Where(x => x.Id == id && x.Status == CommunityStatus.Active)
+            .Select(x => new { x.OrganisationId, x.Category })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (community is null) return EndpointHelpers.NotFound(context, "Community was not found.");
+
+        // Church-auto-managed communities aren't open to self-service joining the way regular
+        // communities are: General requires an approved OrganisationMember row for that same
+        // church, and Married additionally requires the joiner's own RelationshipStatus to be
+        // Married (the "click Join" path here, not the automatic add in
+        // ChurchCommunityService.JoinChurchCommunityAsync triggered by org approval/couple approval).
+        if (community.OrganisationId is Guid organisationId)
+        {
+            var isApprovedChurchMember = await db.OrganisationMembers.AsNoTracking().AnyAsync(
+                x => x.OrganisationId == organisationId && x.UserId == userId &&
+                     x.Status == OrganisationMemberStatus.Approved, cancellationToken);
+            if (!isApprovedChurchMember)
+                return EndpointHelpers.Forbidden(context,
+                    "You can only join this church's community once your membership with that church is approved.");
+
+            if (community.Category == Community.ChurchMarriedCategory)
+            {
+                var relationshipStatus = await db.Profiles.AsNoTracking()
+                    .Where(x => x.UserId == userId)
+                    .Select(x => x.RelationshipStatus)
+                    .SingleOrDefaultAsync(cancellationToken);
+                if (relationshipStatus != RelationshipStatus.Married)
+                    return EndpointHelpers.Forbidden(context,
+                        "Only married members of this church can join its married community.");
+            }
+        }
 
         var member = await db.CommunityMembers
             .SingleOrDefaultAsync(x => x.CommunityId == id && x.UserId == userId, cancellationToken);

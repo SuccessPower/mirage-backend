@@ -12,7 +12,7 @@ public sealed class UserProfileConfiguration : IEntityTypeConfiguration<UserProf
         b.ToTable("profiles");
         b.HasKey(x => x.Id);
         b.HasIndex(x => x.UserId).IsUnique();
-        b.HasIndex(x => new { x.Intent, x.City });
+        b.HasIndex(x => new { x.RelationshipStatus, x.City });
         b.Property(x => x.DisplayName).HasMaxLength(120);
         b.Property(x => x.City).HasMaxLength(100);
         b.Property(x => x.Country).HasMaxLength(100);
@@ -447,7 +447,7 @@ public sealed class DateRequestConfiguration : IEntityTypeConfiguration<DateRequ
         b.Property(x => x.Note).HasMaxLength(1000);
         b.Property(x => x.ItemsToBring).HasMaxLength(500);
         b.Property(x => x.ImageUrl).HasMaxLength(1000);
-        b.HasIndex(x => new { x.Intent, x.Status, x.StartsAt });
+        b.HasIndex(x => new { x.Category, x.Status, x.StartsAt });
         b.HasMany(x => x.Acceptances).WithOne(x => x.DateRequest).HasForeignKey(x => x.DateRequestId);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RequestorUserId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SelectedUserId).OnDelete(DeleteBehavior.Restrict);

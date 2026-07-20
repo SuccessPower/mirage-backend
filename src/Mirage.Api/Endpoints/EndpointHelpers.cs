@@ -39,6 +39,15 @@ internal static class EndpointHelpers
         return age;
     }
 
+    public static bool IsAtLeast18(DateOnly dateOfBirth) =>
+        dateOfBirth <= DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18);
+
+    public static bool IsPlausibleBirthDate(DateOnly dateOfBirth)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return dateOfBirth >= today.AddYears(-100) && dateOfBirth <= today;
+    }
+
     public static async Task<PagedResult<T>> ToPagedResultAsync<T>(
         this IQueryable<T> query, int page, int pageSize, CancellationToken cancellationToken)
     {
@@ -52,7 +61,7 @@ internal static class EndpointHelpers
     public static ProfileResponse ToResponse(this UserProfile profile, bool isRecommended, string? email = null,
         OrgBadge? badge = null) =>
         new(profile.UserId, email, profile.DisplayName, Age(profile.DateOfBirth), profile.DateOfBirth, profile.City, profile.Country,
-            profile.Denomination, profile.Intent, profile.Bio, profile.IsVerified, isRecommended,
+            profile.Denomination, profile.Bio, profile.IsVerified, isRecommended,
             profile.SubscriptionTier, profile.AnonymityEnabled, profile.Interests, profile.AvatarUrl, profile.PhotoUrls, profile.Sex, profile.RelationshipStatus,
             profile.HeightInches, profile.SkinTone, profile.PreferredLanguage, profile.Occupation, profile.CreatedAt,
             OrganisationBadgeUrl: badge?.LogoUrl, OrganisationName: badge?.OrganisationName,

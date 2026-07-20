@@ -28,7 +28,6 @@ public sealed record ProfileResponse(
     string City,
     string Country,
     string Denomination,
-    RelationshipIntent Intent,
     string Bio,
     bool IsVerified,
     bool IsRecommended,

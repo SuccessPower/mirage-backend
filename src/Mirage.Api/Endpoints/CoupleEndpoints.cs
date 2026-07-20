@@ -33,7 +33,7 @@ internal static class CoupleEndpoints
             .FirstOrDefaultAsync(cancellationToken);
 
     private static async Task<IResult> DiscoverCouples(HttpContext context, MirageDbContext db,
-        int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+        string? search = null, int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var userId = context.User.GetUserId();
         var myCoupleId = await GetMyApprovedCoupleIdAsync(userId, db, cancellationToken);
@@ -46,10 +46,25 @@ internal static class CoupleEndpoints
         var activeCompleteProfiles = db.Profiles.AsNoTracking()
             .Where(p => p.IsProfileComplete && db.Users.Any(u => u.Id == p.UserId && u.IsActive));
 
-        var pagedCouples = await db.Couples.AsNoTracking()
+        var query = db.Couples.AsNoTracking()
             .Where(c => c.Status == CoupleStatus.Approved && c.Id != myCoupleId
                 && activeCompleteProfiles.Any(p => p.UserId == c.User1Id)
-                && activeCompleteProfiles.Any(p => p.UserId == c.User2Id))
+                && activeCompleteProfiles.Any(p => p.UserId == c.User2Id));
+
+        // Same one-box search as the singles feed, but a couple matches when either
+        // partner's name, city, denomination, or occupation matches.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            query = query.Where(c => db.Profiles.Any(p =>
+                (p.UserId == c.User1Id || p.UserId == c.User2Id)
+                && (EF.Functions.ILike(p.DisplayName, term)
+                    || EF.Functions.ILike(p.City, term)
+                    || EF.Functions.ILike(p.Denomination, term)
+                    || (p.Occupation != null && EF.Functions.ILike(p.Occupation, term)))));
+        }
+
+        var pagedCouples = await query
             .OrderByDescending(c => myCity != null && db.Profiles.Any(p =>
                 (p.UserId == c.User1Id || p.UserId == c.User2Id) && p.City == myCity))
             .ThenByDescending(c => db.Profiles.Any(p =>

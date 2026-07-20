@@ -107,7 +107,7 @@ internal static class AdminEndpoints
         var roles = await userManager.GetRolesAsync(user);
         var profile = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == id)
-            .Select(x => new { x.DisplayName, x.City, x.Country, x.Denomination, x.Intent, x.IsVerified, x.SubscriptionTier })
+            .Select(x => new { x.DisplayName, x.City, x.Country, x.Denomination, x.RelationshipStatus, x.IsVerified, x.SubscriptionTier })
             .SingleOrDefaultAsync(cancellationToken);
         return ApiResults.Ok(context, new
         {
@@ -155,7 +155,7 @@ internal static class AdminEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(id, NotificationType.ProfileVerified, "Your profile is verified",
-            "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests for any relationship intent.",
+            "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests.",
             cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { UserId = id, profile.IsVerified }, "Profile verified successfully.");

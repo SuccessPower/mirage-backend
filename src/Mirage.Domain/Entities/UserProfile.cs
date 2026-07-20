@@ -8,7 +8,7 @@ public sealed class UserProfile : Entity
     private UserProfile() { }
 
     public UserProfile(Guid userId, string displayName, DateOnly dateOfBirth, string city, string country,
-        string denomination, RelationshipIntent intent, string bio, Sex? sex = null,
+        string denomination, string bio, Sex? sex = null,
         RelationshipStatus? relationshipStatus = null, string? occupation = null, string? signupIpAddress = null)
     {
         UserId = userId;
@@ -17,7 +17,6 @@ public sealed class UserProfile : Entity
         City = city.Trim();
         Country = country.Trim();
         Denomination = denomination.Trim();
-        Intent = intent;
         Bio = bio.Trim();
         Sex = sex;
         RelationshipStatus = relationshipStatus;
@@ -27,7 +26,7 @@ public sealed class UserProfile : Entity
     }
 
     // Minimal profile created from a Google sign-in — Google only ever gives us a name, email,
-    // and picture, so the required fields (DOB, city, country, denomination, intent, bio) start
+    // and picture, so the required fields (DOB, city, country, denomination, bio) start
     // blank/placeholder and IsProfileComplete stays false until CompleteProfile() runs.
     public UserProfile(Guid userId, string displayName, string? avatarUrl, string? signupIpAddress = null)
     {
@@ -37,7 +36,6 @@ public sealed class UserProfile : Entity
         City = string.Empty;
         Country = string.Empty;
         Denomination = string.Empty;
-        Intent = RelationshipIntent.Friendship;
         Bio = string.Empty;
         AvatarUrl = avatarUrl?.Trim();
         SignupIpAddress = signupIpAddress;
@@ -50,7 +48,6 @@ public sealed class UserProfile : Entity
     public string City { get; private set; } = string.Empty;
     public string Country { get; private set; } = string.Empty;
     public string Denomination { get; private set; } = string.Empty;
-    public RelationshipIntent Intent { get; private set; }
     public string Bio { get; private set; } = string.Empty;
     public bool IsVerified { get; private set; }
     public bool AnonymityEnabled { get; private set; }
@@ -68,7 +65,7 @@ public sealed class UserProfile : Entity
     public bool IsProfileComplete { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
-        RelationshipIntent intent, string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null,
+        string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null,
         Sex? sex = null, RelationshipStatus? relationshipStatus = null, int? heightInches = null,
         SkinTone? skinTone = null, string? preferredLanguage = null, string? occupation = null)
     {
@@ -76,7 +73,6 @@ public sealed class UserProfile : Entity
         City = city.Trim();
         Country = country.Trim();
         Denomination = denomination.Trim();
-        Intent = intent;
         Bio = bio.Trim();
         AnonymityEnabled = anonymityEnabled;
         Interests = interests.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -93,13 +89,12 @@ public sealed class UserProfile : Entity
     // One-time completion for a minimal Google sign-in profile — fills in the fields normal
     // registration collects up front (DOB is otherwise never settable after account creation).
     public void CompleteProfile(DateOnly dateOfBirth, string city, string country, string denomination,
-        RelationshipIntent intent, string bio, Sex? sex, RelationshipStatus? relationshipStatus, string? occupation)
+        string bio, Sex? sex, RelationshipStatus? relationshipStatus, string? occupation)
     {
         DateOfBirth = dateOfBirth;
         City = city.Trim();
         Country = country.Trim();
         Denomination = denomination.Trim();
-        Intent = intent;
         Bio = bio.Trim();
         if (sex is not null) Sex = sex;
         if (relationshipStatus is not null) RelationshipStatus = relationshipStatus;

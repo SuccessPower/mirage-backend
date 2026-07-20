@@ -78,7 +78,7 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> Discover(HttpContext context, MirageDbContext db,
-        RelationshipIntent? intent, string? city,
+        SectionCategory? section, string? city,
         string? denomination, int? minAge, int? maxAge, string? search, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
@@ -95,18 +95,11 @@ internal static class ProfileEndpoints
         // city/denomination — not fit to show in Discovery until they fill it in.
         query = query.Where(x => x.IsProfileComplete);
 
-        // Approved couples are off the market entirely, for everyone.
-        query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
-            && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
-
-        // Married profiles never appear in the singles feed — married members browse couples
-        // through /couples/discover instead.
-        query = query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
-
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
         string? myCountry = null;
         Sex? mySex = null;
+        var viewerIsMarried = false;
         if (currentUserId.HasValue)
         {
             var me = currentUserId.Value;
@@ -131,16 +124,33 @@ internal static class ProfileEndpoints
             query = query.Where(x => !downvotedIds.Contains(x.UserId));
 
             var mine = await db.Profiles.AsNoTracking().Where(x => x.UserId == me)
-                .Select(x => new { x.City, x.Country, x.Sex }).SingleOrDefaultAsync(cancellationToken);
+                .Select(x => new { x.City, x.Country, x.Sex, x.RelationshipStatus }).SingleOrDefaultAsync(cancellationToken);
             myCity = mine?.City;
             myCountry = mine?.Country;
             mySex = mine?.Sex;
+            viewerIsMarried = mine?.RelationshipStatus == RelationshipStatus.Married;
         }
-        if (intent.HasValue) query = query.Where(x => x.Intent == intent);
+
+        if (section == SectionCategory.Friendship)
+        {
+            // Friendship pairs marital peer groups: married members see other married members,
+            // everyone else (including guests) sees unmarried members.
+            query = viewerIsMarried
+                ? query.Where(x => x.RelationshipStatus == RelationshipStatus.Married)
+                : query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
+        }
+        else
+        {
+            // Married profiles never appear in romantic feeds — married members browse couples
+            // through /couples/discover instead — and approved couples are off the market.
+            query = query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
+            query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
+                && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
+        }
 
         // Dating and marriage are opposite-sex only; friendship has no gender restriction.
         // Skipped entirely if either party's sex isn't on file, rather than hiding everyone.
-        if (intent is RelationshipIntent.Dating or RelationshipIntent.Marriage && mySex.HasValue)
+        if (section is SectionCategory.Dating or SectionCategory.Marriage && mySex.HasValue)
             query = query.Where(x => x.Sex != null && x.Sex != mySex);
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))
@@ -254,7 +264,7 @@ internal static class ProfileEndpoints
             return EndpointHelpers.ValidationProblem(context, ("profile", "Display name and city are required."));
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
-        profile.Update(request.DisplayName, request.City, request.Country, request.Denomination, request.Intent,
+        profile.Update(request.DisplayName, request.City, request.Country, request.Denomination,
             request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
             request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage,
             request.Occupation);
@@ -295,7 +305,7 @@ internal static class ProfileEndpoints
         if (churchSelection.Error is not null) return churchSelection.Error;
 
         profile.CompleteProfile(request.DateOfBirth, request.City, request.Country, request.Denomination,
-            request.Intent, request.Bio, request.Sex, request.RelationshipStatus, request.Occupation);
+            request.Bio, request.Sex, request.RelationshipStatus, request.Occupation);
 
         if (churchSelection.OrganisationId.HasValue)
             db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
@@ -315,10 +325,13 @@ internal static class ProfileEndpoints
     private static (string Field, string Error)[] ValidateCompleteProfile(CompleteProfileRequest request)
     {
         var errors = new List<(string, string)>();
-        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
+        else if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));
+        if (request.Sex is null) errors.Add(("sex", "Select your sex."));
         if (!string.IsNullOrWhiteSpace(request.Denomination) &&
             !Enum.TryParse<ChristianDenomination>(request.Denomination, ignoreCase: true, out _))
             errors.Add(("denomination", "Select a valid denomination."));
