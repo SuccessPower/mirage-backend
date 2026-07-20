@@ -325,7 +325,7 @@ internal static class ProfileEndpoints
     private static (string Field, string Error)[] ValidateCompleteProfile(CompleteProfileRequest request)
     {
         var errors = new List<(string, string)>();
-        if (request.DateOfBirth > DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18))
+        if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));

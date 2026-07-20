@@ -39,6 +39,9 @@ internal static class EndpointHelpers
         return age;
     }
 
+    public static bool IsAtLeast18(DateOnly dateOfBirth) =>
+        dateOfBirth <= DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-18);
+
     public static async Task<PagedResult<T>> ToPagedResultAsync<T>(
         this IQueryable<T> query, int page, int pageSize, CancellationToken cancellationToken)
     {
