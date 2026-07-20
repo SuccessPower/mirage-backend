@@ -47,7 +47,7 @@ internal static class MatchingEndpoints
         if (emailForbidden is not null) return emailForbidden;
         var profileStatuses = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId || x.UserId == request.TargetUserId)
-            .Select(x => new { x.UserId, x.RelationshipStatus, x.IsVerified })
+            .Select(x => new { x.UserId, x.RelationshipStatus, x.IsVerified, x.Sex })
             .ToListAsync(cancellationToken);
         if (!profileStatuses.Any(x => x.UserId == request.TargetUserId))
             return EndpointHelpers.NotFound(context, "Target profile was not found.");
@@ -56,6 +56,15 @@ internal static class MatchingEndpoints
             return EndpointHelpers.NotFound(context, "Target profile was not found.");
         if (profileStatuses.SingleOrDefault(x => x.UserId == sourceUserId)?.IsVerified != true)
             return EndpointHelpers.Forbidden(context, "Verify your profile before liking or matching with other members.");
+        // Dating and marriage are opposite-sex only, mirroring the discovery feed's own filter
+        // (ProfileEndpoints.Discover) — friendship has no gender restriction.
+        if (request.Category is SectionCategory.Dating or SectionCategory.Marriage)
+        {
+            var sourceSex = profileStatuses.SingleOrDefault(x => x.UserId == sourceUserId)?.Sex;
+            var targetSex = profileStatuses.SingleOrDefault(x => x.UserId == request.TargetUserId)?.Sex;
+            if (sourceSex.HasValue && targetSex.HasValue && sourceSex == targetSex)
+                return EndpointHelpers.Forbidden(context, "Dating and marriage connections are opposite-sex only.");
+        }
         if (profileStatuses.Any(x => x.RelationshipStatus == RelationshipStatus.Married))
         {
             Match? coupleMatch;

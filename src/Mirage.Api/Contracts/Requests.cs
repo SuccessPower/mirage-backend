@@ -116,7 +116,7 @@ public sealed record CreateEventRequest(
     int? Capacity,
     Guid? BranchId);
 public sealed record CreateRecommendationRequest(Guid RecommendedUserId, Guid? OrganisationId, string? Note);
-public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type);
+public sealed record LikeProfileRequest(Guid TargetUserId, LikeType Type, SectionCategory Category = SectionCategory.Dating);
 public sealed record CreateDateRequestRequest(
     string Activity,
     DateTimeOffset StartsAt,
