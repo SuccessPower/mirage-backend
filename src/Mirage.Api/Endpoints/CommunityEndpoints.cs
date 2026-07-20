@@ -29,6 +29,7 @@ internal static class CommunityEndpoints
         communities.MapPost("/{id:guid}/invites", InviteMember);
         communities.MapGet("/{id:guid}/posts", ListPosts);
         communities.MapPost("/{id:guid}/posts", CreatePost);
+        communities.MapDelete("/posts/{postId:guid}", DeletePost);
         communities.MapPost("/posts/{postId:guid}/likes", LikePost);
         communities.MapDelete("/posts/{postId:guid}/likes", UnlikePost);
         communities.MapPost("/posts/{postId:guid}/votes", CastPostVote);
@@ -463,6 +464,19 @@ internal static class CommunityEndpoints
             post.CreatedAt, authorBadge?.LogoUrl, authorBadge?.OrganisationName);
         return ApiResults.Created(context, $"/api/v1/communities/{id}/posts/{post.Id}", response,
             "Community post created successfully.");
+    }
+
+    private static async Task<IResult> DeletePost(Guid postId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var post = await db.CommunityPosts.SingleOrDefaultAsync(x => x.Id == postId, cancellationToken);
+        if (post is null) return EndpointHelpers.NotFound(context, "Community post was not found.");
+        if (post.AuthorUserId != userId) return EndpointHelpers.Forbidden(context);
+
+        db.CommunityPosts.Remove(post);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { postId }, "Community post deleted successfully.");
     }
 
     private static async Task<IResult> LikePost(Guid postId, HttpContext context, IMirageDbContext db,
