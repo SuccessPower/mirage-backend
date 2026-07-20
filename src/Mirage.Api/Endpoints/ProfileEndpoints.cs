@@ -327,6 +327,8 @@ internal static class ProfileEndpoints
         var errors = new List<(string, string)>();
         if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
+        else if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));
         if (!string.IsNullOrWhiteSpace(request.Denomination) &&

@@ -222,6 +222,8 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
         if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Counsellors must be at least 18 years old."));
+        if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Please enter a valid date of birth."));
         if (request.YearsExperience < 0)
             return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
 
@@ -324,6 +326,8 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
         if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Counsellors must be at least 18 years old."));
+        if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Please enter a valid date of birth."));
         if (request.YearsExperience < 0)
             return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
 
@@ -407,6 +411,8 @@ internal static class AuthEndpoints
             return EndpointHelpers.ValidationProblem(context, ("displayName", "Display name is required."));
         if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Mentors must be at least 18 years old."));
+        if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            return EndpointHelpers.ValidationProblem(context, ("dateOfBirth", "Please enter a valid date of birth."));
         if (request.YearsMarried < 1)
             return EndpointHelpers.ValidationProblem(context, ("yearsMarried", "At least 1 year of marriage is required."));
         if (string.IsNullOrWhiteSpace(request.Testimony))
@@ -937,6 +943,8 @@ internal static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.DisplayName)) errors.Add(("displayName", "Display name is required."));
         if (!EndpointHelpers.IsAtLeast18(request.DateOfBirth))
             errors.Add(("dateOfBirth", "Users must be at least 18 years old."));
+        else if (!EndpointHelpers.IsPlausibleBirthDate(request.DateOfBirth))
+            errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.ConfirmPassword))
             errors.Add(("confirmPassword", "Please confirm your password."));
