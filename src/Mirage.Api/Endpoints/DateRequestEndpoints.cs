@@ -30,7 +30,7 @@ internal static class DateRequestEndpoints
     }
 
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db,
-        UserManager<ApplicationUser> userManager, string? location, RelationshipIntent? intent,
+        UserManager<ApplicationUser> userManager, string? location, SectionCategory? category,
         int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
     {
         var userId = context.User.GetUserId();
@@ -38,8 +38,8 @@ internal static class DateRequestEndpoints
             && userManager.Users.Any(u => u.Id == x.RequestorUserId && u.IsActive));
         if (!string.IsNullOrWhiteSpace(location))
             query = query.Where(x => EF.Functions.ILike(x.LocationArea, $"%{location.Trim()}%"));
-        if (intent.HasValue)
-            query = query.Where(x => x.Intent == intent.Value);
+        if (category.HasValue)
+            query = query.Where(x => x.Category == category.Value);
         var result = query.OrderBy(x => x.StartsAt)
             .Select(x => new
             {
@@ -51,7 +51,7 @@ internal static class DateRequestEndpoints
                 x.LocationArea,
                 x.Note,
                 x.ImageUrl,
-                x.Intent,
+                x.Category,
                 x.Capacity,
                 x.ItemsToBring,
                 x.Status,
@@ -82,16 +82,16 @@ internal static class DateRequestEndpoints
         var isRecommended = await db.Recommendations.AnyAsync(x => x.RecommendedUserId == userId &&
             x.Status == RecommendationStatus.Active, cancellationToken);
         var eligible = profile?.IsVerified == true || isRecommended;
-        if (request.Intent != RelationshipIntent.Friendship && !eligible)
+        if (request.Category != SectionCategory.Friendship && !eligible)
             return EndpointHelpers.Forbidden(context, "Only verified or recommended users can post date requests.");
-        if (request.Intent == RelationshipIntent.Dating && profile?.RelationshipStatus == RelationshipStatus.Married)
+        if (request.Category == SectionCategory.Dating && profile?.RelationshipStatus == RelationshipStatus.Married)
             return EndpointHelpers.Forbidden(context, "Married users can view and share dating profiles, but cannot create dating requests.");
         if (request.StartsAt <= DateTimeOffset.UtcNow || request.EndsAt <= request.StartsAt)
             return EndpointHelpers.ValidationProblem(context, ("schedule", "Provide a valid future time window."));
         if (request.Capacity < 1)
             return EndpointHelpers.ValidationProblem(context, ("capacity", "Capacity must be at least 1."));
         var entity = new DateRequest(userId, request.Activity, request.StartsAt, request.EndsAt,
-            request.LocationArea, request.Note, request.Intent, request.Capacity, request.ItemsToBring,
+            request.LocationArea, request.Note, request.Category, request.Capacity, request.ItemsToBring,
             request.ImageUrl, profile?.IsVerified == true, isRecommended);
         db.DateRequests.Add(entity);
         await db.SaveChangesAsync(cancellationToken);
@@ -117,7 +117,7 @@ internal static class DateRequestEndpoints
                 x.LocationArea,
                 x.Note,
                 x.ImageUrl,
-                x.Intent,
+                x.Category,
                 x.Capacity,
                 x.ItemsToBring,
                 x.Status,
@@ -148,7 +148,7 @@ internal static class DateRequestEndpoints
                 x.EndsAt,
                 x.LocationArea,
                 x.Note,
-                x.Intent,
+                x.Category,
                 x.Capacity,
                 x.ItemsToBring,
                 x.Status,
@@ -186,7 +186,7 @@ internal static class DateRequestEndpoints
                         profile.City,
                         profile.Denomination,
                         profile.IsVerified,
-                        profile.Intent
+                        profile.RelationshipStatus
                     }
                 })
             .OrderByDescending(x => x.CreatedAt)
@@ -205,7 +205,7 @@ internal static class DateRequestEndpoints
         if (request is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
         if (request.RequestorUserId == userId || request.Status != DateRequestStatus.Open)
             return EndpointHelpers.Conflict(context, "The date request cannot be accepted.");
-        if (request.Intent == RelationshipIntent.Dating &&
+        if (request.Category == SectionCategory.Dating &&
             await db.Profiles.AnyAsync(x => x.UserId == userId && x.RelationshipStatus == RelationshipStatus.Married,
                 cancellationToken))
             return EndpointHelpers.Forbidden(context, "Married users can view and share dating profiles, but cannot accept dating requests.");

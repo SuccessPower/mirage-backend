@@ -122,7 +122,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
-                    request.Country, request.Denomination, request.Intent, request.Bio, request.Sex,
+                    request.Country, request.Denomination, request.Bio, request.Sex,
                     request.RelationshipStatus, request.Occupation, GetClientIpAddress(context)));
                 db.RefreshTokens.Add(refreshToken);
                 if (churchSelection.OrganisationId.HasValue)
@@ -286,7 +286,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = counsellorRoleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
-                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                    request.City, request.Country, request.Denomination, request.Bio));
                 db.Counsellors.Add(new CounsellorProfile(user.Id, invite.OrganisationId,
                     request.YearsExperience, request.Specialisations, request.Languages));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
@@ -371,7 +371,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = counsellorRoleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
-                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                    request.City, request.Country, request.Denomination, request.Bio));
                 db.Counsellors.Add(new CounsellorProfile(user.Id, null, request.YearsExperience,
                     request.Specialisations, request.Languages, request.VerificationDocumentUrls));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
@@ -456,7 +456,7 @@ internal static class AuthEndpoints
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = mentorRoleId });
                 db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth,
-                    request.City, request.Country, request.Denomination, RelationshipIntent.Marriage, request.Bio));
+                    request.City, request.Country, request.Denomination, request.Bio));
                 db.Mentors.Add(new MentorProfile(user.Id, request.YearsMarried, request.Testimony,
                     request.AreasOfGuidance, request.Languages));
                 db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));

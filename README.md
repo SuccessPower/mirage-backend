@@ -31,7 +31,7 @@ matching, messaging, counselling, notifications, and billing when scale or team 
 Additional account and workflow APIs include:
 
 - Logout, logout-all, password change, and account session history.
-- Profile lookup by user ID and discovery filters for age, city, denomination, and intent.
+- Profile lookup by user ID and discovery filters for age, city, denomination, and section.
 - Recommendation history and revocation.
 - Match details and match closure.
 - Personal date-request history, request details, acceptance listings, withdrawal, and cancellation.

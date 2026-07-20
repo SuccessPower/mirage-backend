@@ -121,7 +121,7 @@ builder.Services.AddSignalR(options =>
     options.MaximumReceiveMessageSize = 8 * 1024; // 8 KB cap per message
 })
     // Match the REST API's enum serialization (string names) so hub payloads like
-    // Message.Type / DateRequest.Intent are consistent across both transports.
+    // Message.Type / DateRequest.Category are consistent across both transports.
     .AddJsonProtocol(options =>
         options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: true)));
 

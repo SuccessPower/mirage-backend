@@ -168,7 +168,7 @@ public sealed class DomainInvariantTests
         var third = Guid.NewGuid();
         var request = new DateRequest(Guid.NewGuid(), "Picnic", DateTimeOffset.UtcNow.AddDays(1),
             DateTimeOffset.UtcNow.AddDays(1).AddHours(2), "Lagos", null,
-            RelationshipIntent.Friendship, capacity: 2, itemsToBring: "Drinks");
+            SectionCategory.Friendship, capacity: 2, itemsToBring: "Drinks");
         request.Acceptances.Add(new DateRequestAcceptance(request.Id, first));
         request.Acceptances.Add(new DateRequestAcceptance(request.Id, second));
         request.Acceptances.Add(new DateRequestAcceptance(request.Id, third));

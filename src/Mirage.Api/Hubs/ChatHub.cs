@@ -78,6 +78,20 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         await Groups.AddToGroupAsync(Context.ConnectionId, CoupleFriendGroup(friendshipId));
     }
 
+    // Client → Hub: join a match group that became Active after this connection was opened
+    // (e.g. a chat request approved mid-session — OnConnectedAsync only joined the groups
+    // that were already Active, so without this neither party receives realtime messages
+    // until they reload).
+    public async Task JoinMatch(Guid matchId)
+    {
+        var userId = GetUserId();
+        var isParticipant = await db.Matches.AsNoTracking().AnyAsync(x => x.Id == matchId
+            && (x.User1Id == userId || x.User2Id == userId)
+            && x.Status == MatchStatus.Active);
+        if (!isParticipant) return;
+        await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(matchId));
+    }
+
     // Client → Hub: send a message to a couple-friendship thread (friend + both partners)
     public async Task SendCoupleFriendMessage(Guid friendshipId, string content, MessageType type = MessageType.Text,
         string? attachmentUrl = null)
