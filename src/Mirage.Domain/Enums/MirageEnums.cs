@@ -106,5 +106,6 @@ public enum NotificationType
     VendorApproved = 26,
     VendorRejected = 27,
     CoupleFriendshipCreated = 28,
-    CoupleFriendshipEnded = 29
+    CoupleFriendshipEnded = 29,
+    DateOfBirthInvalid = 30
 }

@@ -29,7 +29,8 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         NotificationType.ChatRequestApproved,
         NotificationType.ProfileVerified,
         NotificationType.VendorApproved,
-        NotificationType.VendorRejected
+        NotificationType.VendorRejected,
+        NotificationType.DateOfBirthInvalid
     ];
 
     public async Task NotifyAsync(Guid userId, NotificationType type, string title, string body,

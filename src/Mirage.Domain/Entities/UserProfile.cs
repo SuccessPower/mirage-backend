@@ -63,6 +63,7 @@ public sealed class UserProfile : Entity
     public string? Occupation { get; private set; }
     public string? SignupIpAddress { get; private set; }
     public bool IsProfileComplete { get; private set; }
+    public DateTimeOffset? DobFlaggedAt { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
         string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null,
@@ -115,6 +116,11 @@ public sealed class UserProfile : Entity
     }
 
     public void Verify() { IsVerified = true; Touch(); }
+
+    // Stamped once by DobValidationBackfillService so a flagged (pre-existing, invalid) DOB is
+    // only ever notified about once — DateOfBirth itself is untouched, the user fixes it via the
+    // normal profile-edit flow.
+    public void MarkDobFlagged() { DobFlaggedAt = DateTimeOffset.UtcNow; Touch(); }
 
     public void MarkMarried() { RelationshipStatus = Mirage.Domain.Enums.RelationshipStatus.Married; Touch(); }
 

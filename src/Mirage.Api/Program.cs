@@ -101,6 +101,8 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<JitsiService>();
 builder.Services.AddScoped<WelcomeEmailBackfillService>();
 builder.Services.AddHostedService<WelcomeEmailBackfillWorker>();
+builder.Services.AddScoped<DobValidationBackfillService>();
+builder.Services.AddHostedService<DobValidationBackfillWorker>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
 builder.Services.AddHttpClient<IEmailService, MailjetSmtpEmailService>();
