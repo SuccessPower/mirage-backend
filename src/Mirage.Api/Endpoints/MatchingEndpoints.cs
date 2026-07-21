@@ -86,7 +86,12 @@ internal static class MatchingEndpoints
                     new { isMatch = true, matchId = coupleMatch.Id, status = coupleMatch.Status.ToString() },
                     "Couple chat is ready.");
 
-            return EndpointHelpers.Forbidden(context, "Married users can view and share profiles, but cannot engage in matching.");
+            // Married members can still become friends with each other through the Friendship
+            // marital peer group — falls through to the normal match flow below, just under the
+            // married-friendship conversation cap instead of the regular one.
+            var bothMarried = profileStatuses.All(x => x.RelationshipStatus == RelationshipStatus.Married);
+            if (request.Category != SectionCategory.Friendship || !bothMarried)
+                return EndpointHelpers.Forbidden(context, "Married users can view and share profiles, but cannot engage in matching.");
         }
         var user1Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? sourceUserId : request.TargetUserId;
         var user2Id = sourceUserId.CompareTo(request.TargetUserId) < 0 ? request.TargetUserId : sourceUserId;
@@ -104,7 +109,7 @@ internal static class MatchingEndpoints
             return EndpointHelpers.Conflict(context, "Like already recorded.");
 
         // A like always opens or approves a chat request, so the free-tier conversation cap applies here.
-        var capHit = await ConversationLimits.CheckAsync(context, sourceUserId, db, cancellationToken);
+        var capHit = await ConversationLimits.CheckAsync(context, sourceUserId, request.TargetUserId, db, cancellationToken);
         if (capHit is not null) return capHit;
 
         if (!alreadyLiked) db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
@@ -243,7 +248,9 @@ internal static class MatchingEndpoints
             .Where(x => x.UserId == userId)
             .Select(x => x.SubscriptionTier)
             .SingleOrDefaultAsync(cancellationToken);
-        var used = await ConversationLimits.CountOpenAsync(userId, db, cancellationToken);
+        // Married-friendship conversations draw from their own separate pool (see ConversationLimits)
+        // and aren't reflected in this regular-pool indicator.
+        var (used, _) = await ConversationLimits.CountOpenAsync(userId, db, cancellationToken);
         int? limit = tier is SubscriptionTier.Plus or SubscriptionTier.Premium
             ? null
             : ConversationLimits.FreeTierLimit;
@@ -295,7 +302,7 @@ internal static class MatchingEndpoints
                 "Couple chat is ready.");
         }
 
-        var capHit = await ConversationLimits.CheckAsync(context, userId, db, cancellationToken);
+        var capHit = await ConversationLimits.CheckAsync(context, userId, otherUserId, db, cancellationToken);
         if (capHit is not null) return capHit;
 
         try
@@ -334,7 +341,8 @@ internal static class MatchingEndpoints
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
 
         // Approving is what actually opens the conversation, so the cap applies to the approver too.
-        var capHit = await ConversationLimits.CheckAsync(context, userId, db, cancellationToken);
+        var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        var capHit = await ConversationLimits.CheckAsync(context, userId, otherUserId, db, cancellationToken);
         if (capHit is not null) return capHit;
 
         try
