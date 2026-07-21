@@ -97,6 +97,9 @@ internal static class DateRequestEndpoints
             request.LocationArea, request.Note, request.Category, request.Capacity, request.ItemsToBring,
             request.ImageUrl, profile?.IsVerified == true, isRecommended);
         db.DateRequests.Add(entity);
+        // No specific target yet — it's a broadcast request — so actor and target are the same user.
+        await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.DateRequestCreated,
+            userId, userId, entity.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Created(context, $"/api/v1/date-requests/{entity.Id}", entity,
             "Date request created successfully.");
@@ -219,6 +222,8 @@ internal static class DateRequestEndpoints
                 cancellationToken))
             return EndpointHelpers.Conflict(context, "Date request already accepted.");
         db.DateRequestAcceptances.Add(new DateRequestAcceptance(id, userId));
+        await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.DateRequestAccepted,
+            userId, request.RequestorUserId, request.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         var acceptorName = await db.Profiles.AsNoTracking()

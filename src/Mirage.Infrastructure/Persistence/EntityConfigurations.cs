@@ -647,3 +647,15 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
+
+public sealed class AnalyticsEventConfiguration : IEntityTypeConfiguration<AnalyticsEvent>
+{
+    public void Configure(EntityTypeBuilder<AnalyticsEvent> b)
+    {
+        b.ToTable("analytics_events");
+        b.HasIndex(x => new { x.EventType, x.CreatedAt });
+        b.HasIndex(x => new { x.ActorSex, x.TargetSex });
+        // No FK to AspNetUsers by design — this admin analytics log must survive
+        // independently of user deletion/anonymization.
+    }
+}
