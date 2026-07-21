@@ -1,0 +1,13 @@
+<Project>
+  <!--
+    OpenCvSharp4's bundled analyzer targets a Roslyn version newer than the
+    dotnet/sdk:8.0 compiler used in CI/Render builds (CS9057). Strip it from
+    every project's analyzer list rather than relying on PackageReference
+    ExcludeAssets, which does not suppress convention-based package analyzers.
+  -->
+  <Target Name="RemoveOpenCvSharpAnalyzer" BeforeTargets="CoreCompile">
+    <ItemGroup>
+      <Analyzer Remove="@(Analyzer)" Condition="'%(Filename)' == 'OpenCvSharp.Analyzers'" />
+    </ItemGroup>
+  </Target>
+</Project>
