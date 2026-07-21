@@ -31,6 +31,19 @@ internal static class EndpointHelpers
         return user?.EmailConfirmed == true ? null : Forbidden(context, detail);
     }
 
+    // Same shape as RequireEmailConfirmedAsync, gating on a profile photo instead. AvatarUrl can
+    // only ever be set to a URL that already passed face-detection (ProfileEndpoints.UpdateMine),
+    // so this alone is enough to guarantee everyone a user interacts with — or sees in Discovery —
+    // has a real human face on file.
+    public static async Task<IResult?> RequirePhotoAsync(HttpContext context, Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken,
+        string detail = "Add a profile photo of your face before interacting with other members.")
+    {
+        var hasPhoto = await db.Profiles.AsNoTracking()
+            .AnyAsync(x => x.UserId == userId && x.AvatarUrl != null && x.AvatarUrl != "", cancellationToken);
+        return hasPhoto ? null : Forbidden(context, detail);
+    }
+
     public static int Age(DateOnly birthDate)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);

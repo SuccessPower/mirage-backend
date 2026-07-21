@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
 COPY Mirage.sln ./
@@ -15,11 +15,14 @@ RUN dotnet publish src/Mirage.Api/Mirage.Api.csproj \
     --output /app/publish \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS runtime
+# Debian-based (not alpine): OpenCvSharp's Linux native runtime is built against glibc and
+# does not load under musl, so face detection (Mirage.Infrastructure/Vision) requires this base.
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
-RUN apk add --no-cache icu-libs \
-    && addgroup -S mirage \
-    && adduser -S mirage -G mirage
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r mirage && useradd -r -g mirage mirage
 COPY --from=build --chown=mirage:mirage /app/publish .
 
 USER mirage

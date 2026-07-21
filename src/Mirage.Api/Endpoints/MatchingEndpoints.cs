@@ -45,6 +45,9 @@ internal static class MatchingEndpoints
         var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, sourceUserId, userManager,
             "Confirm your email address before liking or matching with other members.");
         if (emailForbidden is not null) return emailForbidden;
+        var photoForbidden = await EndpointHelpers.RequirePhotoAsync(context, sourceUserId, db, cancellationToken,
+            "Add a profile photo of your face before liking or matching with other members.");
+        if (photoForbidden is not null) return photoForbidden;
         var profileStatuses = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId || x.UserId == request.TargetUserId)
             .Select(x => new { x.UserId, x.RelationshipStatus, x.IsVerified, x.Sex })
@@ -271,6 +274,9 @@ internal static class MatchingEndpoints
         var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
             "Confirm your email address before requesting to chat with other members.");
         if (emailForbidden is not null) return emailForbidden;
+        var photoForbidden = await EndpointHelpers.RequirePhotoAsync(context, userId, db, cancellationToken,
+            "Add a profile photo of your face before requesting to chat with other members.");
+        if (photoForbidden is not null) return photoForbidden;
         if (!await IsProfileVerifiedAsync(userId, db, cancellationToken))
             return EndpointHelpers.Forbidden(context, "Verify your profile before requesting to chat with other members.");
         var match = await db.Matches.SingleOrDefaultAsync(
@@ -318,6 +324,9 @@ internal static class MatchingEndpoints
         var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
             "Confirm your email address before approving chat requests.");
         if (emailForbidden is not null) return emailForbidden;
+        var photoForbidden = await EndpointHelpers.RequirePhotoAsync(context, userId, db, cancellationToken,
+            "Add a profile photo of your face before approving chat requests.");
+        if (photoForbidden is not null) return photoForbidden;
         if (!await IsProfileVerifiedAsync(userId, db, cancellationToken))
             return EndpointHelpers.Forbidden(context, "Verify your profile before approving chat requests.");
         var match = await db.Matches.SingleOrDefaultAsync(
