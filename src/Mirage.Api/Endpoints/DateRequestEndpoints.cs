@@ -75,6 +75,9 @@ internal static class DateRequestEndpoints
         var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
             "Confirm your email address before posting date requests.");
         if (emailForbidden is not null) return emailForbidden;
+        var photoForbidden = await EndpointHelpers.RequirePhotoAsync(context, userId, db, cancellationToken,
+            "Add a profile photo of your face before posting date requests.");
+        if (photoForbidden is not null) return photoForbidden;
         var profile = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId)
             .Select(x => new { x.IsVerified, x.RelationshipStatus })
@@ -201,6 +204,9 @@ internal static class DateRequestEndpoints
         var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
             "Confirm your email address before accepting date requests.");
         if (emailForbidden is not null) return emailForbidden;
+        var photoForbidden = await EndpointHelpers.RequirePhotoAsync(context, userId, db, cancellationToken,
+            "Add a profile photo of your face before accepting date requests.");
+        if (photoForbidden is not null) return photoForbidden;
         var request = await db.DateRequests.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (request is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
         if (request.RequestorUserId == userId || request.Status != DateRequestStatus.Open)

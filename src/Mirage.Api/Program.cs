@@ -19,6 +19,7 @@ using Mirage.Application.Abstractions;
 using Mirage.Infrastructure;
 using Mirage.Infrastructure.Email;
 using Mirage.Infrastructure.Persistence;
+using Mirage.Infrastructure.Vision;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
@@ -106,6 +107,8 @@ builder.Services.AddHostedService<DobValidationBackfillWorker>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
 builder.Services.AddHttpClient<IEmailService, MailjetSmtpEmailService>();
+builder.Services.AddSingleton<IFaceDetectionService, YuNetFaceDetectionService>();
+builder.Services.AddHttpClient<ProfileImageValidationService>();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()

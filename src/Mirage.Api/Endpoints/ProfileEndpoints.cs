@@ -95,6 +95,10 @@ internal static class ProfileEndpoints
         // city/denomination — not fit to show in Discovery until they fill it in.
         query = query.Where(x => x.IsProfileComplete);
 
+        // AvatarUrl can only ever be set to a URL that already passed face-detection
+        // (UpdateMine), so this alone keeps caricatures/blank photos out of Discovery.
+        query = query.Where(x => x.AvatarUrl != null && x.AvatarUrl != "");
+
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
         string? myCountry = null;
@@ -258,12 +262,22 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> UpdateMine(UpdateProfileRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, ProfileImageValidationService imageValidation, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.City))
             return EndpointHelpers.ValidationProblem(context, ("profile", "Display name and city are required."));
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+
+        // Only re-check when the avatar is actually changing — an unrelated profile edit
+        // shouldn't re-validate a photo that already passed the check.
+        if (!string.IsNullOrWhiteSpace(request.AvatarUrl) && request.AvatarUrl != profile.AvatarUrl
+            && !await imageValidation.IsValidHumanPhotoAsync(request.AvatarUrl, cancellationToken))
+        {
+            return EndpointHelpers.ValidationProblem(context,
+                ("avatarUrl", "We couldn't detect a real, human face in this photo. Please upload a clear photo of your face."));
+        }
+
         profile.Update(request.DisplayName, request.City, request.Country, request.Denomination,
             request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
             request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage,
@@ -273,10 +287,19 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> UpdateMyPhotos(SetProfilePhotosRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, ProfileImageValidationService imageValidation, CancellationToken cancellationToken)
     {
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+
+        var newUrls = request.PhotoUrls.Except(profile.PhotoUrls).ToArray();
+        foreach (var url in newUrls)
+        {
+            if (!await imageValidation.IsValidHumanPhotoAsync(url, cancellationToken))
+                return EndpointHelpers.ValidationProblem(context,
+                    ("photoUrls", "One of your photos doesn't show a real, human face. Please upload clear photos of yourself."));
+        }
+
         try { profile.SetPhotos(request.PhotoUrls); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         await db.SaveChangesAsync(cancellationToken);
