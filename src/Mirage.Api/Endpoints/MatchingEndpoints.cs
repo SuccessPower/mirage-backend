@@ -112,7 +112,12 @@ internal static class MatchingEndpoints
         var capHit = await ConversationLimits.CheckAsync(context, sourceUserId, request.TargetUserId, db, cancellationToken);
         if (capHit is not null) return capHit;
 
-        if (!alreadyLiked) db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
+        if (!alreadyLiked)
+        {
+            db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
+            await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ProfileLiked,
+                sourceUserId, request.TargetUserId, null, cancellationToken);
+        }
 
         var sourceName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == sourceUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
@@ -125,6 +130,8 @@ internal static class MatchingEndpoints
             match = new Match(sourceUserId, request.TargetUserId);
             db.Matches.Add(match);
             match.RequestChat(sourceUserId);
+            await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ChatRequested,
+                sourceUserId, request.TargetUserId, match.Id, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
                 "New chat request", $"{sourceName} liked your profile and wants to start chatting.",
@@ -135,6 +142,8 @@ internal static class MatchingEndpoints
             // A previously-ended conversation restarts as a fresh chat request the other
             // party must approve again.
             match.ReopenRequest(sourceUserId);
+            await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ChatRequested,
+                sourceUserId, request.TargetUserId, match.Id, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
                 "New chat request", $"{sourceName} wants to reconnect and start chatting again.",
@@ -147,6 +156,8 @@ internal static class MatchingEndpoints
             var requesterId = match.ChatRequestedByUserId!.Value;
             match.ApproveChat(sourceUserId);
             justMatched = true;
+            await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ChatApproved,
+                sourceUserId, requesterId, match.Id, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(requesterId, NotificationType.ChatRequestApproved,
                 "It's a match!", $"{sourceName} liked you back — you can start chatting now.",
@@ -268,6 +279,9 @@ internal static class MatchingEndpoints
         if (match.Status is MatchStatus.Closed or MatchStatus.Blocked)
             return EndpointHelpers.Conflict(context, "Match is already closed.");
         match.Close();
+        var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ConversationClosed,
+            userId, otherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { match.Id, match.Status }, "Match closed successfully.");
     }
@@ -313,6 +327,8 @@ internal static class MatchingEndpoints
         {
             return EndpointHelpers.Conflict(context, ex.Message);
         }
+        await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ChatRequested,
+            userId, otherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         var requesterName = await db.Profiles.AsNoTracking()
@@ -353,6 +369,8 @@ internal static class MatchingEndpoints
         {
             return EndpointHelpers.Conflict(context, ex.Message);
         }
+        await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ChatApproved,
+            userId, match.ChatRequestedByUserId!.Value, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         var approverName = await db.Profiles.AsNoTracking()
@@ -409,6 +427,9 @@ internal static class MatchingEndpoints
         if (match.Status == MatchStatus.Blocked)
             return EndpointHelpers.Conflict(context, "Match is already blocked.");
         match.Block();
+        var blockedOtherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ConversationBlocked,
+            userId, blockedOtherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { match.Id, match.Status }, "Match blocked successfully.");
     }

@@ -414,3 +414,24 @@ public sealed record MatchResponse(
     DateTimeOffset? LastActivityAt,
     string? OtherOrgBadgeUrl = null,
     string? OtherOrgName = null);
+
+// "Mixed" collapses Male-Female and Female-Male since actor/target order carries no meaning
+// for a gender-pair breakdown; "Unknown" covers events where either party's Sex was unset.
+public sealed record AdminAnalyticsGenderBucket(string GenderPair, int Count);
+
+public sealed record AdminAnalyticsEventSummary(
+    AnalyticsEventType EventType,
+    int Total,
+    IReadOnlyList<AdminAnalyticsGenderBucket> ByGenderPair);
+
+public sealed record AdminAnalyticsSummaryResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    IReadOnlyList<AdminAnalyticsEventSummary> Events);
+
+public sealed record AdminAnalyticsTimeseriesPoint(DateOnly BucketStart, int Count);
+
+public sealed record AdminAnalyticsTimeseriesResponse(
+    AnalyticsEventType EventType,
+    string Bucket,
+    IReadOnlyList<AdminAnalyticsTimeseriesPoint> Points);
