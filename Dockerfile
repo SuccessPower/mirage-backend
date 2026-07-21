@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY Mirage.sln ./
+COPY Mirage.sln Directory.Build.props ./
 COPY src/Mirage.Domain/Mirage.Domain.csproj src/Mirage.Domain/
 COPY src/Mirage.Application/Mirage.Application.csproj src/Mirage.Application/
 COPY src/Mirage.Infrastructure/Mirage.Infrastructure.csproj src/Mirage.Infrastructure/
