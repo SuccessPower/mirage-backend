@@ -59,7 +59,6 @@ internal static class AdminEndpoints
         // of their single org in OrganisationEndpoints).
         admin.MapGet("/organisations", ListOrganisations);
         admin.MapPost("/organisations/seed-churches", SeedChurches);
-        admin.MapPost("/organisations/sync-churches", SyncChurches);
 
         // Content reports can also be submitted by any authenticated user
         var reports = api.MapGroup("/reports").WithTags("Reports").RequireAuthorization();
@@ -578,10 +577,25 @@ internal static class AdminEndpoints
         return ApiResults.Ok(context, response, "Churches retrieved successfully.");
     }
 
-    // One-off bootstrap: loads the curated starter directory (SeedData/nigerian-churches.json)
-    // and creates any church not already present by name, pre-approved and owned by whichever
-    // PlatformAdmin runs this — real church admins are added as OrganisationManagers afterwards
-    // via the existing invite flow, since ownership can't be transferred once set.
+    // Churches curated out of the starter directory as no longer fitting the platform's
+    // denomination lineup. Kept as a fixed list (rather than "anything missing from the JSON")
+    // so re-seeding never touches an independently-created org that just isn't in the seed file.
+    private static readonly string[] RetiredChurchNames =
+    [
+        "Celestial Church of Christ",
+        "Cherubim and Seraphim Movement Church",
+        "Brotherhood of the Cross and Star",
+        "The Synagogue, Church of All Nations (SCOAN)"
+    ];
+
+    // Loads the curated starter directory (SeedData/nigerian-churches.json) and reconciles the
+    // database against it in one pass: creates any church not already present by name
+    // (pre-approved, owned by whichever PlatformAdmin runs this — real church admins are added
+    // afterwards via the existing invite flow, since ownership can't be transferred once set),
+    // corrects the denomination on existing rows whose JSON value has since changed, and retires
+    // (suspends, not deletes — an Organisation may already have branches/members/events attached
+    // with no cascade-delete path) any existing church dropped from the curated list. Safe to
+    // re-run any time the JSON changes: insert/update/retire are all matched by exact name.
     private static async Task<IResult> SeedChurches(HttpContext context, MirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -595,16 +609,24 @@ internal static class AdminEndpoints
         var entries = JsonSerializer.Deserialize<List<ChurchSeedEntry>>(json,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
 
-        var existingNames = new HashSet<string>(
-            await db.Organisations.AsNoTracking().Select(x => x.Name).ToListAsync(cancellationToken),
-            StringComparer.OrdinalIgnoreCase);
+        var existingOrgs = await db.Organisations.ToListAsync(cancellationToken);
+        var existingByName = new Dictionary<string, Organisation>(
+            existingOrgs.ToDictionary(x => x.Name, x => x), StringComparer.OrdinalIgnoreCase);
 
-        int created = 0, skipped = 0, branchesCreated = 0;
+        int created = 0, skipped = 0, branchesCreated = 0, denominationsUpdated = 0;
         foreach (var entry in entries)
         {
-            if (string.IsNullOrWhiteSpace(entry.Name) || existingNames.Contains(entry.Name))
+            if (string.IsNullOrWhiteSpace(entry.Name)) continue;
+
+            if (existingByName.TryGetValue(entry.Name, out var existing))
             {
                 skipped++;
+                if (!string.IsNullOrWhiteSpace(entry.Denomination) &&
+                    !string.Equals(existing.Denomination, entry.Denomination, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing.UpdateDenomination(entry.Denomination);
+                    denominationsUpdated++;
+                }
                 continue;
             }
 
@@ -622,75 +644,25 @@ internal static class AdminEndpoints
                 branchesCreated++;
             }
 
-            existingNames.Add(entry.Name);
+            existingByName.Add(entry.Name, organisation);
             created++;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { Created = created, Skipped = skipped, BranchesCreated = branchesCreated },
-            $"Seeded {created} church(es) with {branchesCreated} branch(es), skipped {skipped} already present.");
-    }
-
-    // Churches curated out of the starter directory as no longer fitting the platform's
-    // denomination lineup. Kept as a fixed list (rather than "anything missing from the JSON")
-    // so SyncChurches never touches an independently-created org that just isn't in the seed file.
-    private static readonly string[] RetiredChurchNames =
-    [
-        "Celestial Church of Christ",
-        "Cherubim and Seraphim Movement Church",
-        "Brotherhood of the Cross and Star",
-        "The Synagogue, Church of All Nations (SCOAN)"
-    ];
-
-    // Follow-up to SeedChurches: seeding is insert-only matched by name, so editing
-    // SeedData/nigerian-churches.json alone never touches rows already created in the database.
-    // This brings existing rows in line with the curated JSON (denomination corrections) and
-    // retires churches dropped from the curated list — suspending rather than deleting, since an
-    // Organisation may already have branches/members/events attached with no cascade-delete path.
-    private static async Task<IResult> SyncChurches(HttpContext context, MirageDbContext db,
-        CancellationToken cancellationToken)
-    {
-        var path = Path.Combine(AppContext.BaseDirectory, "SeedData", "nigerian-churches.json");
-        if (!File.Exists(path))
-            return EndpointHelpers.Problem(context, StatusCodes.Status500InternalServerError,
-                "Seed data missing", "The church seed data file was not found on this deployment.");
-
-        var json = await File.ReadAllTextAsync(path, cancellationToken);
-        var entries = JsonSerializer.Deserialize<List<ChurchSeedEntry>>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-        var denominationByName = entries
-            .Where(x => !string.IsNullOrWhiteSpace(x.Name) && !string.IsNullOrWhiteSpace(x.Denomination))
-            .ToDictionary(x => x.Name, x => x.Denomination!, StringComparer.OrdinalIgnoreCase);
-        var namesToSync = denominationByName.Keys.ToList();
-
-        var organisations = await db.Organisations
-            .Where(x => namesToSync.Contains(x.Name) || RetiredChurchNames.Contains(x.Name))
-            .ToListAsync(cancellationToken);
-
-        int denominationsUpdated = 0, retired = 0;
-        foreach (var org in organisations)
+        var retired = 0;
+        foreach (var org in existingOrgs)
         {
-            if (RetiredChurchNames.Contains(org.Name, StringComparer.OrdinalIgnoreCase))
+            if (RetiredChurchNames.Contains(org.Name, StringComparer.OrdinalIgnoreCase) &&
+                org.Status != OrganisationStatus.Suspended)
             {
-                if (org.Status != OrganisationStatus.Suspended)
-                {
-                    org.Suspend();
-                    retired++;
-                }
-                continue;
-            }
-
-            if (denominationByName.TryGetValue(org.Name, out var denomination) &&
-                !string.Equals(org.Denomination, denomination, StringComparison.OrdinalIgnoreCase))
-            {
-                org.UpdateDenomination(denomination);
-                denominationsUpdated++;
+                org.Suspend();
+                retired++;
             }
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { DenominationsUpdated = denominationsUpdated, Retired = retired },
-            $"Synced churches: updated {denominationsUpdated} denomination(s), retired {retired} church(es).");
+        return ApiResults.Ok(context,
+            new { Created = created, Skipped = skipped, BranchesCreated = branchesCreated, DenominationsUpdated = denominationsUpdated, Retired = retired },
+            $"Seeded {created} church(es) with {branchesCreated} branch(es); updated {denominationsUpdated} denomination(s); retired {retired}; skipped {skipped} already present.");
     }
 
     private sealed record ChurchSeedEntry(

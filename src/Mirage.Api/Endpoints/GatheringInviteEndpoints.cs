@@ -145,7 +145,7 @@ internal static class GatheringInviteEndpoints
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
         await notifications.NotifyAsync(invite.InviterUserId, NotificationType.GatheringInviteAccepted,
             "Invite accepted", $"{accepterName ?? "Someone"} accepted your invite.", invite.Id, "GatheringInvite",
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { invite.Id, invite.Kind, invite.TargetId }, "Invite accepted successfully.");
     }
@@ -164,7 +164,8 @@ internal static class GatheringInviteEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(invite.InviterUserId, NotificationType.GatheringInviteDeclined,
-            "Invite declined", "Your gathering invite was declined.", invite.Id, "GatheringInvite", cancellationToken);
+            "Invite declined", "Your gathering invite was declined.", invite.Id, "GatheringInvite",
+            cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { invite.Id }, "Invite declined successfully.");
     }

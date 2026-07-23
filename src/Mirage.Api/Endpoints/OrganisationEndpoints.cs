@@ -860,7 +860,7 @@ internal static class OrganisationEndpoints
 
     private static async Task<IResult> InviteManager(Guid id, InviteManagerRequest request, HttpContext context,
         IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
-        CancellationToken cancellationToken)
+        IConfiguration configuration, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.EmailOrUsername))
             return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "Email or username is required."));
@@ -898,10 +898,11 @@ internal static class OrganisationEndpoints
 
         var inviterName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
         await notifications.NotifyAsync(invitee.Id, NotificationType.GatheringInviteReceived,
             "Organisation manager invite",
             $"{inviterName ?? "Someone"} invited you to help manage {org.Name}.",
-            invite.Id, "GatheringInvite", cancellationToken);
+            invite.Id, "GatheringInvite", cancellationToken, $"{appUrl}/inbox", "Review invite");
 
         return ApiResults.Created(context, $"/api/v1/invites/{invite.Id}", new { invite.Id }, "Invite sent successfully.");
     }
