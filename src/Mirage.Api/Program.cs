@@ -371,6 +371,7 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => fa
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapGatheringShareEndpoints();
 app.MapMirageEndpoints();
 if (swaggerEnabled)
 {

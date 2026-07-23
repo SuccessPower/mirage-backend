@@ -86,7 +86,8 @@ public enum ChristianDenomination
     Apostolic = 14,
     Quaker = 15,
     Anabaptist = 16,
-    Other = 17
+    Other = 17,
+    Contemporary = 18
 }
 
 public enum NotificationType
