@@ -231,10 +231,10 @@ internal static class DateRequestEndpoints
     {
         var comments = await db.DateRequestComments.AsNoTracking()
             .Where(x => x.DateRequestId == id && !x.IsDeleted)
+            .OrderBy(x => x.CreatedAt)
             .Join(db.Profiles.AsNoTracking(), comment => comment.AuthorUserId, profile => profile.UserId,
                 (comment, profile) => new DateRequestCommentResponse(comment.Id, comment.DateRequestId,
                     comment.AuthorUserId, profile.DisplayName, profile.AvatarUrl, comment.Body, comment.CreatedAt))
-            .OrderBy(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, comments, "Comments retrieved successfully.");
     }
