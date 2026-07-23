@@ -47,7 +47,10 @@ internal static class GatheringShareEndpoints
             ? share.Note
             : $"Join this gathering in {share.LocationArea} on Mirage.";
         var imageUrl = string.IsNullOrWhiteSpace(share.ImageUrl) ? FallbackImageUrl : share.ImageUrl;
-        var redirectUrl = $"{SiteUrl}/calendar/{id}";
+        // Same URL as the page itself — the SPA route (GatheringDetailPage.vue) lives at
+        // /gatherings/{id} too, and only bot traffic ever reaches this endpoint (see vercel.json's
+        // user-agent-gated rewrite), so real browsers should never actually hit this redirect.
+        var redirectUrl = pageUrl;
 
         return Results.Content(RenderHtml(title, description, imageUrl, pageUrl, redirectUrl), "text/html");
     }

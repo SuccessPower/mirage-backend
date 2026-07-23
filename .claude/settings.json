@@ -49,7 +49,9 @@
       "Bash(npm run *)",
       "Bash(xargs -I{} dirname {})",
       "Bash(npm -v)",
-      "Bash(python3 -c \"import json; json.load\\(open\\('/Users/payazaafrica/mirage-frontend/vercel.json'\\)\\); print\\('OK'\\)\")"
+      "Bash(python3 -c \"import json; json.load\\(open\\('/Users/payazaafrica/mirage-frontend/vercel.json'\\)\\); print\\('OK'\\)\")",
+      "Bash(python3 -c \"import json; json.load\\(open\\('/Users/payazaafrica/mirage-frontend/vercel.json'\\)\\); print\\('valid JSON'\\)\")",
+      "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/payazaafrica/mirage-frontend/vercel.json'\\)\\); print\\(json.dumps\\(d, indent=2\\)\\)\")"
     ],
     "additionalDirectories": [
       "/Users/payazaafrica/mirage-backend/src/*"
