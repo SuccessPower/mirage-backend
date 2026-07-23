@@ -38,9 +38,11 @@ public sealed class DomainInvariantTests
     [Fact]
     public void Match_can_be_closed()
     {
-        var match = new Match(Guid.NewGuid(), Guid.NewGuid());
-        match.Close();
+        var closerId = Guid.NewGuid();
+        var match = new Match(closerId, Guid.NewGuid());
+        match.Close(closerId);
         Assert.Equal(MatchStatus.Closed, match.Status);
+        Assert.Equal(closerId, match.ClosedByUserId);
         Assert.NotNull(match.LastActivityAt);
     }
 

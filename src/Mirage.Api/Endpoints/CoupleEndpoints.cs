@@ -114,9 +114,6 @@ internal static class CoupleEndpoints
         if (couple.Id == myCoupleId || couple.User1Id == userId || couple.User2Id == userId)
             return EndpointHelpers.ValidationProblem(context, ("id", "You cannot befriend your own couple."));
 
-        var capHit = await ConversationLimits.CheckAsync(context, userId, db, cancellationToken);
-        if (capHit is not null) return capHit;
-
         var friendship = await db.CoupleFriendships.SingleOrDefaultAsync(
             f => f.CoupleId == id && f.FriendUserId == userId, cancellationToken);
         if (friendship is null)

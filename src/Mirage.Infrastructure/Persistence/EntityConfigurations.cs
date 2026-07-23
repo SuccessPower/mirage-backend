@@ -433,6 +433,7 @@ public sealed class MatchConfiguration : IEntityTypeConfiguration<Match>
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User1Id).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User2Id).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ChatRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ClosedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
