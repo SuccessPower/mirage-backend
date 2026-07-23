@@ -310,6 +310,18 @@ public sealed record CalendarItemResponse(
     string? Location,
     Guid? RouteId = null);
 
+// Deliberately minimal — served without auth to link-preview crawlers (WhatsApp, etc.),
+// so it must never carry anything beyond what's already public on a shared gathering link.
+public sealed record DateRequestShareResponse(
+    Guid Id,
+    string Activity,
+    string? Note,
+    string? ImageUrl,
+    string LocationArea,
+    DateTimeOffset StartsAt,
+    SectionCategory Category,
+    string HostDisplayName);
+
 public sealed record DateRequestCommentResponse(
     Guid Id,
     Guid DateRequestId,

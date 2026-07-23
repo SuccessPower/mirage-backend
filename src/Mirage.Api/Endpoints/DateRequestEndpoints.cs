@@ -18,6 +18,7 @@ internal static class DateRequestEndpoints
         group.MapGet("/", List);
         group.MapGet("/mine", ListMine);
         group.MapGet("/{id:guid}", GetById);
+        group.MapGet("/{id:guid}/share", GetShareInfo).AllowAnonymous();
         group.MapGet("/{id:guid}/acceptances", GetAcceptances);
         group.MapGet("/{id:guid}/comments", ListComments);
         group.MapPost("/{id:guid}/comments", CreateComment);
@@ -173,6 +174,23 @@ internal static class DateRequestEndpoints
         return request is null
             ? EndpointHelpers.NotFound(context, "Date request was not found.")
             : ApiResults.Ok(context, request, "Date request retrieved successfully.");
+    }
+
+    // Unauthenticated by design — this is what link-preview crawlers (WhatsApp, etc.) hit when
+    // someone shares a gathering link, so it must stay limited to already-public share content.
+    private static async Task<IResult> GetShareInfo(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var share = await db.DateRequests.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Join(db.Profiles.AsNoTracking(), request => request.RequestorUserId, profile => profile.UserId,
+                (request, profile) => new DateRequestShareResponse(
+                    request.Id, request.Activity, request.Note, request.ImageUrl, request.LocationArea,
+                    request.StartsAt, request.Category, profile.DisplayName))
+            .SingleOrDefaultAsync(cancellationToken);
+        return share is null
+            ? EndpointHelpers.NotFound(context, "Date request was not found.")
+            : ApiResults.Ok(context, share, "Date request share info retrieved successfully.");
     }
 
     private static async Task<IResult> GetAcceptances(Guid id, HttpContext context, IMirageDbContext db,
