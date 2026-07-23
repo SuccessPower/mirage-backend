@@ -104,6 +104,7 @@ public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl =
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);
 public sealed record InviteToGatheringRequest(string EmailOrUsername);
+public sealed record CreateDateRequestCommentRequest(string Body);
 public sealed record UpdateCommunityPostCommentRequest(string Body);
 
 public sealed record CreateEventRequest(

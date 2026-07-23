@@ -102,3 +102,21 @@ public sealed class DateRequestAcceptance : Entity
         Touch();
     }
 }
+
+// A flat comment on a gathering — no threading/likes/votes/edit, deliberately kept lighter
+// than CommunityPostComment since a gathering's discussion is short-lived and small-scale.
+public sealed class DateRequestComment : Entity
+{
+    private DateRequestComment() { }
+    public DateRequestComment(Guid dateRequestId, Guid authorUserId, string body)
+    {
+        DateRequestId = dateRequestId;
+        AuthorUserId = authorUserId;
+        Body = body.Trim();
+    }
+    public Guid DateRequestId { get; private set; }
+    public Guid AuthorUserId { get; private set; }
+    public string Body { get; private set; } = string.Empty;
+    public bool IsDeleted { get; private set; }
+    public void SoftDelete() { Body = string.Empty; IsDeleted = true; Touch(); }
+}

@@ -19,6 +19,9 @@ internal static class DateRequestEndpoints
         group.MapGet("/mine", ListMine);
         group.MapGet("/{id:guid}", GetById);
         group.MapGet("/{id:guid}/acceptances", GetAcceptances);
+        group.MapGet("/{id:guid}/comments", ListComments);
+        group.MapPost("/{id:guid}/comments", CreateComment);
+        group.MapDelete("/{id:guid}/comments/{commentId:guid}", DeleteComment);
         group.MapPost("/", Create);
         group.MapPost("/{id:guid}/accept", Accept);
         group.MapPost("/{id:guid}/invites", Invite);
@@ -151,10 +154,13 @@ internal static class DateRequestEndpoints
                 x.EndsAt,
                 x.LocationArea,
                 x.Note,
+                x.ImageUrl,
                 x.Category,
                 x.Capacity,
                 x.ItemsToBring,
                 x.Status,
+                x.RequestorIsVerified,
+                x.RequestorIsRecommended,
                 x.SelectedUserId,
                 AcceptanceCount = x.Acceptances.Count,
                 SelectedCount = x.Acceptances.Count(a => a.Status == DateAcceptanceStatus.Selected),
@@ -195,6 +201,66 @@ internal static class DateRequestEndpoints
             .OrderByDescending(x => x.CreatedAt)
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, acceptances, "Date request acceptances retrieved successfully.");
+    }
+
+    // Open read, same as GetById — a shared gathering link (or a calendar item) must be viewable
+    // by someone who has never interacted with it. Only posting/deleting a comment is restricted.
+    private static async Task<IResult> ListComments(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var comments = await db.DateRequestComments.AsNoTracking()
+            .Where(x => x.DateRequestId == id && !x.IsDeleted)
+            .Join(db.Profiles.AsNoTracking(), comment => comment.AuthorUserId, profile => profile.UserId,
+                (comment, profile) => new DateRequestCommentResponse(comment.Id, comment.DateRequestId,
+                    comment.AuthorUserId, profile.DisplayName, profile.AvatarUrl, comment.Body, comment.CreatedAt))
+            .OrderBy(x => x.CreatedAt)
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, comments, "Comments retrieved successfully.");
+    }
+
+    // Commenting is limited to the host and anyone who has responded (and not withdrawn) —
+    // the same rule AcceptedByMe already computes for the discovery feed's card state.
+    private static async Task<IResult> CreateComment(Guid id, CreateDateRequestCommentRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Body))
+            return EndpointHelpers.ValidationProblem(context, ("body", "Comment text is required."));
+
+        var userId = context.User.GetUserId();
+        var dateRequest = await db.DateRequests.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (dateRequest is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
+
+        var canComment = dateRequest.RequestorUserId == userId || await db.DateRequestAcceptances.AnyAsync(
+            x => x.DateRequestId == id && x.AcceptorUserId == userId && x.Status != DateAcceptanceStatus.Withdrawn,
+            cancellationToken);
+        if (!canComment) return EndpointHelpers.Forbidden(context);
+
+        var comment = new DateRequestComment(id, userId, request.Body);
+        db.DateRequestComments.Add(comment);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var author = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => new { x.DisplayName, x.AvatarUrl })
+            .SingleOrDefaultAsync(cancellationToken);
+        var response = new DateRequestCommentResponse(comment.Id, comment.DateRequestId, comment.AuthorUserId,
+            author?.DisplayName ?? "Member", author?.AvatarUrl, comment.Body, comment.CreatedAt);
+        return ApiResults.Created(context, $"/api/v1/date-requests/{id}/comments/{comment.Id}", response,
+            "Comment posted successfully.");
+    }
+
+    private static async Task<IResult> DeleteComment(Guid id, Guid commentId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var comment = await db.DateRequestComments.SingleOrDefaultAsync(
+            x => x.Id == commentId && x.DateRequestId == id, cancellationToken);
+        if (comment is null) return EndpointHelpers.NotFound(context, "Comment was not found.");
+        if (comment.AuthorUserId != userId) return EndpointHelpers.Forbidden(context);
+        if (comment.IsDeleted) return EndpointHelpers.Conflict(context, "This comment has already been deleted.");
+
+        comment.SoftDelete();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { comment.Id }, "Comment deleted successfully.");
     }
 
     private static async Task<IResult> Accept(Guid id, HttpContext context, IMirageDbContext db,
