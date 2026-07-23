@@ -435,7 +435,8 @@ public sealed record MatchResponse(
     DateTimeOffset MatchedAt,
     DateTimeOffset? LastActivityAt,
     string? OtherOrgBadgeUrl = null,
-    string? OtherOrgName = null);
+    string? OtherOrgName = null,
+    Guid? ClosedByUserId = null);
 
 // "Mixed" collapses Male-Female and Female-Male since actor/target order carries no meaning
 // for a gender-pair breakdown; "Unknown" covers events where either party's Sex was unset.

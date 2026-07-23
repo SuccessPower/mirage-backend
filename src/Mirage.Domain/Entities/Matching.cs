@@ -32,6 +32,7 @@ public sealed class Match : Entity
     // other approves — this is the pre-chat "request/approve or cancel" handshake.
     public MatchStatus Status { get; private set; } = MatchStatus.PendingRequest;
     public Guid? ChatRequestedByUserId { get; private set; }
+    public Guid? ClosedByUserId { get; private set; }
     public DateTimeOffset MatchedAt { get; private set; }
     public DateTimeOffset? LastActivityAt { get; private set; }
 
@@ -53,6 +54,7 @@ public sealed class Match : Entity
             throw new InvalidOperationException("Only a closed match can be reopened.");
         Status = MatchStatus.PendingRequest;
         ChatRequestedByUserId = userId;
+        ClosedByUserId = null;
         Touch();
     }
 
@@ -77,9 +79,10 @@ public sealed class Match : Entity
         Touch();
     }
 
-    public void Close()
+    public void Close(Guid closedByUserId)
     {
         Status = MatchStatus.Closed;
+        ClosedByUserId = closedByUserId;
         LastActivityAt = DateTimeOffset.UtcNow;
         Touch();
     }

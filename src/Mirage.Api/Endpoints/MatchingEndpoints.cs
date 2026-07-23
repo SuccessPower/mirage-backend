@@ -108,10 +108,6 @@ internal static class MatchingEndpoints
         if (alreadyLiked && (match is null || match.Status != MatchStatus.Closed))
             return EndpointHelpers.Conflict(context, "Like already recorded.");
 
-        // A like always opens or approves a chat request, so the free-tier conversation cap applies here.
-        var capHit = await ConversationLimits.CheckAsync(context, sourceUserId, request.TargetUserId, db, cancellationToken);
-        if (capHit is not null) return capHit;
-
         if (!alreadyLiked)
         {
             db.Likes.Add(new UserLike(sourceUserId, request.TargetUserId, request.Type));
@@ -230,10 +226,17 @@ internal static class MatchingEndpoints
             .Where(u => otherIds.Contains(u.Id) && u.IsActive)
             .Select(u => u.Id)
             .ToListAsync(cancellationToken);
+        // Married-married Friendship matches (see MatchingEndpoints.Like) legitimately pair two
+        // married non-spouses, so the married-profile guard below must not hide those from a
+        // married viewer — only from an unmarried one (who should never have such a match anyway).
+        var iAmMarried = await db.Profiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .Select(p => p.RelationshipStatus == RelationshipStatus.Married)
+            .SingleOrDefaultAsync(cancellationToken);
 
         var profiles = await db.Profiles.AsNoTracking()
             .Where(p => otherIds.Contains(p.UserId) && activeIds.Contains(p.UserId)
-                && (p.RelationshipStatus != RelationshipStatus.Married || approvedSpouseIds.Contains(p.UserId)))
+                && (p.RelationshipStatus != RelationshipStatus.Married || approvedSpouseIds.Contains(p.UserId) || iAmMarried))
             .ToDictionaryAsync(p => p.UserId, cancellationToken);
         var badges = await db.GetOrgBadgesAsync(otherIds, cancellationToken);
 
@@ -245,12 +248,12 @@ internal static class MatchingEndpoints
             var badge = badges.GetValueOrDefault(otherId);
             return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
                 profile?.IsVerified ?? false, profile?.RelationshipStatus, m.Status, m.ChatRequestedByUserId,
-                m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName);
+                m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName, m.ClosedByUserId);
         }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
-    // Lets the client show an accurate "n of 3 conversations" indicator without re-deriving
-    // the counting rules (spouse exemption, couple friendships) locally.
+    // Conversations are uncapped for every tier — limit is always null so the client's
+    // "n of N conversations" banner never renders; used is kept for informational purposes.
     private static async Task<IResult> GetConversationSlots(HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -259,18 +262,13 @@ internal static class MatchingEndpoints
             .Where(x => x.UserId == userId)
             .Select(x => x.SubscriptionTier)
             .SingleOrDefaultAsync(cancellationToken);
-        // Married-friendship conversations draw from their own separate pool (see ConversationLimits)
-        // and aren't reflected in this regular-pool indicator.
         var (used, _) = await ConversationLimits.CountOpenAsync(userId, db, cancellationToken);
-        int? limit = tier is SubscriptionTier.Plus or SubscriptionTier.Premium
-            ? null
-            : ConversationLimits.FreeTierLimit;
-        return ApiResults.Ok(context, new { used, limit, tier = tier.ToString() },
+        return ApiResults.Ok(context, new { used, limit = (int?)null, tier = tier.ToString() },
             "Conversation slots retrieved successfully.");
     }
 
     private static async Task<IResult> CloseMatch(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var match = await db.Matches.SingleOrDefaultAsync(
@@ -278,12 +276,18 @@ internal static class MatchingEndpoints
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
         if (match.Status is MatchStatus.Closed or MatchStatus.Blocked)
             return EndpointHelpers.Conflict(context, "Match is already closed.");
-        match.Close();
+        match.Close(userId);
         var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
         await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ConversationClosed,
             userId, otherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { match.Id, match.Status }, "Match closed successfully.");
+
+        var enderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        await notifications.NotifyAsync(otherUserId, NotificationType.ConversationEnded, "Conversation ended",
+            $"{enderName} ended your conversation.", match.Id, "Match", cancellationToken);
+
+        return ApiResults.Ok(context, new { match.Id, match.Status, match.ClosedByUserId }, "Match closed successfully.");
     }
 
     // Either party can send the first chat request; the other party then approves
@@ -315,9 +319,6 @@ internal static class MatchingEndpoints
             return ApiResults.Ok(context, new { match.Id, match.Status, match.ChatRequestedByUserId },
                 "Couple chat is ready.");
         }
-
-        var capHit = await ConversationLimits.CheckAsync(context, userId, otherUserId, db, cancellationToken);
-        if (capHit is not null) return capHit;
 
         try
         {
@@ -355,11 +356,6 @@ internal static class MatchingEndpoints
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
-
-        // Approving is what actually opens the conversation, so the cap applies to the approver too.
-        var otherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
-        var capHit = await ConversationLimits.CheckAsync(context, userId, otherUserId, db, cancellationToken);
-        if (capHit is not null) return capHit;
 
         try
         {
