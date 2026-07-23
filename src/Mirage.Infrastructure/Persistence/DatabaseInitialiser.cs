@@ -38,6 +38,7 @@ public static class DatabaseInitialiser
 
             await SeedRolesAsync(scope.ServiceProvider, cancellationToken);
             await SeedSuperAdminAsync(scope.ServiceProvider, configuration, cancellationToken);
+            await SyncChurchDirectoryAsync(db, logger, cancellationToken);
             logger.LogInformation("Database migration and role initialization completed.");
         }
         finally
@@ -93,6 +94,23 @@ public static class DatabaseInitialiser
             if (!await userManager.IsInRoleAsync(user, MirageRoles.PlatformAdmin))
                 await userManager.AddToRoleAsync(user, MirageRoles.PlatformAdmin);
         }
+    }
+
+    // Runs on every startup (not just when someone remembers to click the admin "seed churches"
+    // button) so denomination fixes and retired churches always take effect on deploy — this is
+    // what actually clears out churches dropped from the curated list, since a manual button is
+    // easy to forget to press. No PlatformAdmin context exists at startup, so brand-new churches
+    // from the JSON are NOT auto-created here (that still needs a human owner via the admin
+    // button) — only denomination corrections and retiring dropped churches run automatically.
+    private static async Task SyncChurchDirectoryAsync(MirageDbContext db, ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "SeedData", "nigerian-churches.json");
+        var result = await ChurchDirectorySync.SyncAsync(db, path, actorId: null, cancellationToken);
+        if (result.DenominationsUpdated > 0 || result.Retired > 0)
+            logger.LogInformation(
+                "Church directory sync: updated {DenominationsUpdated} denomination(s), retired {Retired} church(es).",
+                result.DenominationsUpdated, result.Retired);
     }
 
     private static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken)

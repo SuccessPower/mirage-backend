@@ -31,6 +31,7 @@ internal static class OrganisationEndpoints
         organisations.MapGet("/pending", ListPending).RequireAuthorization(MiragePolicy.PlatformAdmin);
         organisations.MapPatch("/{id:guid}/approve", ApproveOrg).RequireAuthorization(MiragePolicy.PlatformAdmin);
         organisations.MapPatch("/{id:guid}/reject", RejectOrg).RequireAuthorization(MiragePolicy.PlatformAdmin);
+        organisations.MapDelete("/{id:guid}", DeleteOrg).RequireAuthorization(MiragePolicy.PlatformAdmin);
 
         // ChurchAdmin: manage counsellors within their org
         organisations.MapGet("/{id:guid}/counsellors", ListCounsellors).RequireAuthorization(MiragePolicy.ChurchAdmin);
@@ -284,6 +285,31 @@ internal static class OrganisationEndpoints
             org.Id, "Organisation", cancellationToken);
 
         return ApiResults.Ok(context, new { org.Id, org.Status }, "Organisation rejected.");
+    }
+
+    // Permanent, not a status transition like Reject/Suspend — covers both seeded starter
+    // churches and ones added through normal registration. Branches, managers, members,
+    // events/tickets, communities, and counsellor invites all cascade-delete at the DB level
+    // (see EntityConfigurations.cs), so only CounsellorProfile needs an explicit guard here:
+    // its FK is Restrict, since detaching a counsellor from their org isn't this endpoint's
+    // call to make silently — the admin must reassign/remove them first.
+    private static async Task<IResult> DeleteOrg(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var org = await db.Organisations.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (org is null) return EndpointHelpers.NotFound(context, "Organisation was not found.");
+
+        var counsellorCount = await db.Counsellors.CountAsync(x => x.OrganisationId == id, cancellationToken);
+        if (counsellorCount > 0)
+            return EndpointHelpers.Conflict(context,
+                $"Cannot delete: {counsellorCount} counsellor profile(s) are still affiliated with this organisation. " +
+                "Reassign or remove them first.");
+
+        var name = org.Name;
+        db.Organisations.Remove(org);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new { Id = id }, $"{name} was permanently deleted.");
     }
 
     // --- ChurchAdmin: counsellor management ---
@@ -860,7 +886,7 @@ internal static class OrganisationEndpoints
 
     private static async Task<IResult> InviteManager(Guid id, InviteManagerRequest request, HttpContext context,
         IMirageDbContext db, UserManager<ApplicationUser> userManager, NotificationService notifications,
-        CancellationToken cancellationToken)
+        IConfiguration configuration, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.EmailOrUsername))
             return EndpointHelpers.ValidationProblem(context, ("emailOrUsername", "Email or username is required."));
@@ -898,10 +924,11 @@ internal static class OrganisationEndpoints
 
         var inviterName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
         await notifications.NotifyAsync(invitee.Id, NotificationType.GatheringInviteReceived,
             "Organisation manager invite",
             $"{inviterName ?? "Someone"} invited you to help manage {org.Name}.",
-            invite.Id, "GatheringInvite", cancellationToken);
+            invite.Id, "GatheringInvite", cancellationToken, $"{appUrl}/inbox", "Review invite");
 
         return ApiResults.Created(context, $"/api/v1/invites/{invite.Id}", new { invite.Id }, "Invite sent successfully.");
     }

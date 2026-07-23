@@ -34,7 +34,8 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
     ];
 
     public async Task NotifyAsync(Guid userId, NotificationType type, string title, string body,
-        Guid? referenceId = null, string? referenceType = null, CancellationToken cancellationToken = default)
+        Guid? referenceId = null, string? referenceType = null, CancellationToken cancellationToken = default,
+        string? actionUrl = null, string? actionLabel = null)
     {
         var notification = new Notification(userId, type, title, body, referenceId, referenceType);
         db.Notifications.Add(notification);
@@ -53,11 +54,11 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         }, cancellationToken);
 
         if (EmailableTypes.Contains(type) && email.HasNotificationTemplate(type))
-            await SendNotificationEmailAsync(userId, type, title, body, cancellationToken);
+            await SendNotificationEmailAsync(userId, type, title, body, actionUrl, actionLabel, cancellationToken);
     }
 
     private async Task SendNotificationEmailAsync(Guid userId, NotificationType type, string title, string body,
-        CancellationToken cancellationToken)
+        string? actionUrl, string? actionLabel, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByIdAsync(userId.ToString());
         if (user?.Email is null) return;
@@ -66,6 +67,6 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
 
         await email.SendNotificationEmailAsync(user.Email, displayName ?? "there", type, title, body,
-            cancellationToken: cancellationToken);
+            actionUrl, actionLabel, cancellationToken);
     }
 }
