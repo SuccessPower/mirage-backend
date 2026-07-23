@@ -294,7 +294,8 @@ internal static class DateRequestEndpoints
         var photoForbidden = await EndpointHelpers.RequirePhotoAsync(context, userId, db, cancellationToken,
             "Add a profile photo of your face before accepting date requests.");
         if (photoForbidden is not null) return photoForbidden;
-        var request = await db.DateRequests.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        var request = await db.DateRequests.Include(x => x.Acceptances)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (request is null) return EndpointHelpers.NotFound(context, "Date request was not found.");
         if (request.RequestorUserId == userId || request.Status != DateRequestStatus.Open)
             return EndpointHelpers.Conflict(context, "The date request cannot be accepted.");
@@ -302,10 +303,24 @@ internal static class DateRequestEndpoints
             await db.Profiles.AnyAsync(x => x.UserId == userId && x.RelationshipStatus == RelationshipStatus.Married,
                 cancellationToken))
             return EndpointHelpers.Forbidden(context, "Married users can view and share dating profiles, but cannot accept dating requests.");
-        if (await db.DateRequestAcceptances.AnyAsync(x => x.DateRequestId == id && x.AcceptorUserId == userId,
-                cancellationToken))
+        if (request.Acceptances.Any(x => x.AcceptorUserId == userId))
             return EndpointHelpers.Conflict(context, "Date request already accepted.");
-        db.DateRequestAcceptances.Add(new DateRequestAcceptance(id, userId));
+
+        var acceptance = new DateRequestAcceptance(id, userId);
+        request.Acceptances.Add(acceptance);
+        // Friendship gatherings are open group RSVPs — accepting fills a seat immediately, no host
+        // gatekeeping. Dating stays Pending: the host still reviews and picks a single match.
+        if (request.Category == SectionCategory.Friendship)
+        {
+            try
+            {
+                request.Select(userId);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return EndpointHelpers.Conflict(context, ex.Message);
+            }
+        }
         await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.DateRequestAccepted,
             userId, request.RequestorUserId, request.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
