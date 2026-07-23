@@ -44,7 +44,9 @@
       "Bash(xargs -I{} sh -c 'echo ==={}===; cat {}')",
       "Bash(rm -rf /Users/payazaafrica/mirage-backend/src/*/obj /Users/payazaafrica/mirage-backend/src/*/bin *)",
       "Bash(docker run *)",
-      "Bash(docker stop *)"
+      "Bash(docker stop *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
     ],
     "additionalDirectories": [
       "/Users/payazaafrica/mirage-backend/src/*"

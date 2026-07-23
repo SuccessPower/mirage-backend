@@ -34,6 +34,19 @@ public enum GatheringInviteKind { Community = 1, DateRequest = 2, OrganisationMa
 public enum GatheringInviteStatus { Pending = 1, Accepted = 2, Declined = 3 }
 public enum VendorStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
 
+// Append-only admin analytics log — never inferred from live Match/Like/DateRequest state
+// so gender-pair counts stay accurate even after a profile's gender or a match's status changes.
+public enum AnalyticsEventType
+{
+    ProfileLiked = 1,
+    ChatRequested = 2,
+    ChatApproved = 3,
+    ConversationClosed = 4,
+    ConversationBlocked = 5,
+    DateRequestCreated = 6,
+    DateRequestAccepted = 7
+}
+
 public enum VendorCategory
 {
     Photography = 1,
