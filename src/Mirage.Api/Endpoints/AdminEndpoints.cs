@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
@@ -577,25 +576,12 @@ internal static class AdminEndpoints
         return ApiResults.Ok(context, response, "Churches retrieved successfully.");
     }
 
-    // Churches curated out of the starter directory as no longer fitting the platform's
-    // denomination lineup. Kept as a fixed list (rather than "anything missing from the JSON")
-    // so re-seeding never touches an independently-created org that just isn't in the seed file.
-    private static readonly string[] RetiredChurchNames =
-    [
-        "Celestial Church of Christ",
-        "Cherubim and Seraphim Movement Church",
-        "Brotherhood of the Cross and Star",
-        "The Synagogue, Church of All Nations (SCOAN)"
-    ];
-
-    // Loads the curated starter directory (SeedData/nigerian-churches.json) and reconciles the
-    // database against it in one pass: creates any church not already present by name
-    // (pre-approved, owned by whichever PlatformAdmin runs this — real church admins are added
-    // afterwards via the existing invite flow, since ownership can't be transferred once set),
-    // corrects the denomination on existing rows whose JSON value has since changed, and retires
-    // (suspends, not deletes — an Organisation may already have branches/members/events attached
-    // with no cascade-delete path) any existing church dropped from the curated list. Safe to
-    // re-run any time the JSON changes: insert/update/retire are all matched by exact name.
+    // Reconciles the database against the curated starter directory (SeedData/nigerian-churches.json)
+    // via the shared ChurchDirectorySync — same reconciliation the automatic startup sweep runs on
+    // every deploy (DatabaseInitialiser.SyncChurchDirectoryAsync), except this one has a PlatformAdmin
+    // context and so can also create brand-new churches (owned by whoever clicks the button; real
+    // church admins are added afterwards via the existing invite flow, since ownership can't be
+    // transferred once set). Useful to re-run on demand without waiting for the next deploy.
     private static async Task<IResult> SeedChurches(HttpContext context, MirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -605,77 +591,16 @@ internal static class AdminEndpoints
             return EndpointHelpers.Problem(context, StatusCodes.Status500InternalServerError,
                 "Seed data missing", "The church seed data file was not found on this deployment.");
 
-        var json = await File.ReadAllTextAsync(path, cancellationToken);
-        var entries = JsonSerializer.Deserialize<List<ChurchSeedEntry>>(json,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-
-        var existingOrgs = await db.Organisations.ToListAsync(cancellationToken);
-        var existingByName = new Dictionary<string, Organisation>(
-            existingOrgs.ToDictionary(x => x.Name, x => x), StringComparer.OrdinalIgnoreCase);
-
-        int created = 0, skipped = 0, branchesCreated = 0, denominationsUpdated = 0;
-        foreach (var entry in entries)
-        {
-            if (string.IsNullOrWhiteSpace(entry.Name)) continue;
-
-            if (existingByName.TryGetValue(entry.Name, out var existing))
-            {
-                skipped++;
-                if (!string.IsNullOrWhiteSpace(entry.Denomination) &&
-                    !string.Equals(existing.Denomination, entry.Denomination, StringComparison.OrdinalIgnoreCase))
-                {
-                    existing.UpdateDenomination(entry.Denomination);
-                    denominationsUpdated++;
-                }
-                continue;
-            }
-
-            var registrationNumber = $"SEED-{Guid.NewGuid():N}";
-            var organisation = new Organisation(actorId, entry.Name, entry.Denomination ?? "Other",
-                entry.HeadquartersCountry ?? "Nigeria", registrationNumber, entry.LogoUrl, entry.WebsiteUrl);
-            organisation.Approve();
-            db.Organisations.Add(organisation);
-
-            foreach (var branch in entry.Branches ?? [])
-            {
-                if (string.IsNullOrWhiteSpace(branch.Name) || string.IsNullOrWhiteSpace(branch.City)) continue;
-                db.OrganisationBranches.Add(new OrganisationBranch(organisation.Id, branch.Name, branch.City,
-                    entry.HeadquartersCountry ?? "Nigeria", null));
-                branchesCreated++;
-            }
-
-            existingByName.Add(entry.Name, organisation);
-            created++;
-        }
-
-        var retired = 0;
-        foreach (var org in existingOrgs)
-        {
-            if (RetiredChurchNames.Contains(org.Name, StringComparer.OrdinalIgnoreCase) &&
-                org.Status != OrganisationStatus.Suspended)
-            {
-                org.Suspend();
-                retired++;
-            }
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
+        var result = await ChurchDirectorySync.SyncAsync(db, path, actorId, cancellationToken);
         return ApiResults.Ok(context,
-            new { Created = created, Skipped = skipped, BranchesCreated = branchesCreated, DenominationsUpdated = denominationsUpdated, Retired = retired },
-            $"Seeded {created} church(es) with {branchesCreated} branch(es); updated {denominationsUpdated} denomination(s); retired {retired}; skipped {skipped} already present.");
+            new
+            {
+                result.Created, result.Skipped, result.BranchesCreated, result.DenominationsUpdated, result.Retired
+            },
+            $"Seeded {result.Created} church(es) with {result.BranchesCreated} branch(es); " +
+            $"updated {result.DenominationsUpdated} denomination(s); retired {result.Retired}; " +
+            $"skipped {result.Skipped} already present.");
     }
-
-    private sealed record ChurchSeedEntry(
-        string Name,
-        string? Denomination,
-        string? HeadquartersCity,
-        string? HeadquartersCountry,
-        string? LeadPastor,
-        string? LogoUrl,
-        string? WebsiteUrl,
-        List<ChurchSeedBranch>? Branches);
-
-    private sealed record ChurchSeedBranch(string Name, string City);
 
     // --- Organisation admin invites ---
 
