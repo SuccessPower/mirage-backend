@@ -210,32 +210,6 @@
     ]
   },
   {
-    "name": "Celestial Church of Christ",
-    "denomination": "Other",
-    "headquartersCity": "Ketu (Imeko/Lagos)",
-    "headquartersCountry": "Nigeria",
-    "leadPastor": "His Eminence Rev. Pastor Emmanuel Mobiyina Oshoffa (Pastor and Supreme Head, Worldwide) - note: leadership contested among rival factions",
-    "logoUrl": null,
-    "websiteUrl": "https://thecccworldwide.org",
-    "branches": [
-      { "name": "Bethel Cathedral, Ketu", "city": "Lagos" },
-      { "name": "Imeko Holy City parish", "city": "Imeko, Ogun State" }
-    ]
-  },
-  {
-    "name": "Cherubim and Seraphim Movement Church",
-    "denomination": "Other",
-    "headquartersCity": "Lagos",
-    "headquartersCountry": "Nigeria",
-    "leadPastor": "unknown (fragmented into multiple independent branches/factions; a widely recognized recent Baba Aladura figure is Prophet Dr. Emmanuel Abiodun Alogbo of one C&S faction, installed 2024)",
-    "logoUrl": null,
-    "websiteUrl": null,
-    "branches": [
-      { "name": "Cherubim and Seraphim Church, Oke-Sinai", "city": "Lagos" },
-      { "name": "Cherubim and Seraphim Ayo Ni O", "city": "Lagos" }
-    ]
-  },
-  {
     "name": "Assemblies of God Nigeria",
     "denomination": "Pentecostal",
     "headquartersCity": "Lagos",
@@ -414,7 +388,7 @@
   },
   {
     "name": "HarvestHouse Christian Center",
-    "denomination": "Evangelical",
+    "denomination": "Contemporary",
     "headquartersCity": "Ibadan",
     "headquartersCountry": "Nigeria",
     "leadPastor": "Rev. Gbeminiyi (Niyi) Eboda (Senior Pastor/Founder)",
@@ -426,18 +400,6 @@
       { "name": "HarvestHouse Life Center", "city": "Old-Ife Road, Ibadan" },
       { "name": "HarvestHouse Lagos (Novus Centre)", "city": "Maryland, Lagos" },
       { "name": "HarvestHouse Abuja (Merit House)", "city": "Maitama, Abuja" },
-      { "name": "Cedars House of Grace", "city": "Lekki, Lagos" }
-    ]
-  },
-  {
-    "name": "Cedars House of Grace",
-    "denomination": "Evangelical",
-    "headquartersCity": "Lekki, Lagos",
-    "headquartersCountry": "Nigeria",
-    "leadPastor": "Rev. Gbeminiyi (Niyi) Eboda (Senior Pastor)",
-    "logoUrl": null,
-    "websiteUrl": "https://www.wearecedars.com",
-    "branches": [
       { "name": "Cedars House of Grace (Lekki campus of HarvestHouse Christian Center)", "city": "Lekki, Lagos" }
     ]
   },
@@ -504,18 +466,6 @@
     "websiteUrl": "https://foursquare.org.ng",
     "branches": [
       { "name": "Foursquare Gospel Church National Headquarters, Yaba", "city": "Lagos" }
-    ]
-  },
-  {
-    "name": "The Synagogue, Church of All Nations (SCOAN)",
-    "denomination": "Charismatic",
-    "headquartersCity": "Ikotun-Egbe, Lagos",
-    "headquartersCountry": "Nigeria",
-    "leadPastor": "Evelyn Joshua (Senior Pastor and Leader, since 2024)",
-    "logoUrl": null,
-    "websiteUrl": "https://www.scoan.org",
-    "branches": [
-      { "name": "SCOAN International Headquarters, Ikotun-Egbe", "city": "Lagos" }
     ]
   },
   {
@@ -603,18 +553,6 @@
     "branches": [
       { "name": "Grace Family International Church, Alausa", "city": "Ikeja, Lagos" },
       { "name": "Grace Family International Church (founding congregation)", "city": "Ibadan" }
-    ]
-  },
-  {
-    "name": "Brotherhood of the Cross and Star",
-    "denomination": "Other",
-    "headquartersCity": "Calabar",
-    "headquartersCountry": "Nigeria",
-    "leadPastor": "His Holiness Olumba Olumba Obu (Leader, Unified Universal Theocratic Council, since 2001)",
-    "logoUrl": null,
-    "websiteUrl": "https://www.ooobcs.org",
-    "branches": [
-      { "name": "Brotherhood of the Cross and Star World Headquarters, Ambo Street", "city": "Calabar" }
     ]
   },
   {
