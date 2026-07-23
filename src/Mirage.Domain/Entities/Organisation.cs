@@ -34,4 +34,5 @@ public sealed class Organisation : Entity
     public void Suspend() { Status = OrganisationStatus.Suspended; Touch(); }
     public void SetLogo(string? logoUrl) { LogoUrl = logoUrl?.Trim(); Touch(); }
     public void SetWebsite(string? websiteUrl) { WebsiteUrl = websiteUrl?.Trim(); Touch(); }
+    public void UpdateDenomination(string denomination) { Denomination = denomination.Trim(); Touch(); }
 }
