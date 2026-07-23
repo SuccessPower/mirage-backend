@@ -18,6 +18,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<Match> Matches => Set<Match>();
     public DbSet<DateRequest> DateRequests => Set<DateRequest>();
     public DbSet<DateRequestAcceptance> DateRequestAcceptances => Set<DateRequestAcceptance>();
+    public DbSet<DateRequestComment> DateRequestComments => Set<DateRequestComment>();
     public DbSet<CounsellingSession> CounsellingSessions => Set<CounsellingSession>();
     public DbSet<AnonymityAuditLog> AnonymityAuditLogs => Set<AnonymityAuditLog>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

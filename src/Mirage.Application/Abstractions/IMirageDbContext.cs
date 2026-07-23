@@ -13,6 +13,7 @@ public interface IMirageDbContext
     DbSet<Match> Matches { get; }
     DbSet<DateRequest> DateRequests { get; }
     DbSet<DateRequestAcceptance> DateRequestAcceptances { get; }
+    DbSet<DateRequestComment> DateRequestComments { get; }
     DbSet<CounsellingSession> CounsellingSessions { get; }
     DbSet<AnonymityAuditLog> AnonymityAuditLogs { get; }
     DbSet<RefreshToken> RefreshTokens { get; }

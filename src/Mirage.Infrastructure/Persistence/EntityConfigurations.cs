@@ -464,6 +464,18 @@ public sealed class DateRequestAcceptanceConfiguration : IEntityTypeConfiguratio
     }
 }
 
+public sealed class DateRequestCommentConfiguration : IEntityTypeConfiguration<DateRequestComment>
+{
+    public void Configure(EntityTypeBuilder<DateRequestComment> b)
+    {
+        b.ToTable("date_request_comments");
+        b.HasIndex(x => new { x.DateRequestId, x.CreatedAt });
+        b.Property(x => x.Body).HasMaxLength(1000);
+        b.HasOne<DateRequest>().WithMany().HasForeignKey(x => x.DateRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class CounsellingSessionConfiguration : IEntityTypeConfiguration<CounsellingSession>
 {
     public void Configure(EntityTypeBuilder<CounsellingSession> b)

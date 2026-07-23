@@ -307,7 +307,17 @@ public sealed record CalendarItemResponse(
     DateTimeOffset StartsAt,
     DateTimeOffset? EndsAt,
     string? Link,
-    string? Location);
+    string? Location,
+    Guid? RouteId = null);
+
+public sealed record DateRequestCommentResponse(
+    Guid Id,
+    Guid DateRequestId,
+    Guid AuthorUserId,
+    string AuthorDisplayName,
+    string? AuthorAvatarUrl,
+    string Body,
+    DateTimeOffset CreatedAt);
 
 public sealed record CoupleResponse(
     Guid Id,
