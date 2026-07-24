@@ -13,18 +13,27 @@ public sealed class ProfileImageValidationService(
     {
         try
         {
-            var bytes = await http.GetByteArrayAsync(imageUrl, cancellationToken);
+            // Phone photos are frequently stored with the pixel buffer in its raw sensor orientation
+            // plus an EXIF Orientation tag telling viewers how to rotate it. OpenCV's decoder ignores
+            // that tag, so an upright selfie can look sideways/upside-down to the detector. Cloudinary's
+            // a_auto transform bakes the EXIF rotation into the pixels before we download them.
+            var bytes = await http.GetByteArrayAsync(WithAutoRotation(imageUrl), cancellationToken);
             var result = await faceDetection.ContainsHumanFaceAsync(bytes, cancellationToken);
             if (result is FaceDetectionResult.Unavailable)
-                logger.LogError("Face detection was unavailable for {ImageUrl}; allowing the photo through unchecked.", imageUrl);
-            return result is FaceDetectionResult.Detected or FaceDetectionResult.Unavailable;
+                logger.LogError("Face detection was unavailable for {ImageUrl}; rejecting the photo.", imageUrl);
+            return result is FaceDetectionResult.Detected;
         }
         catch (Exception ex)
         {
-            // Couldn't even download the image to check it — same fail-open reasoning as above:
-            // a transient network/CDN hiccup on our side shouldn't reject the user's photo.
-            logger.LogError(ex, "Could not download {ImageUrl} for face validation; allowing the photo through unchecked.", imageUrl);
-            return true;
+            logger.LogError(ex, "Could not download {ImageUrl} for face validation; rejecting the photo.", imageUrl);
+            return false;
         }
+    }
+
+    private static string WithAutoRotation(string imageUrl)
+    {
+        const string marker = "/upload/";
+        var index = imageUrl.IndexOf(marker, StringComparison.Ordinal);
+        return index < 0 ? imageUrl : imageUrl.Insert(index + marker.Length, "a_auto/");
     }
 }

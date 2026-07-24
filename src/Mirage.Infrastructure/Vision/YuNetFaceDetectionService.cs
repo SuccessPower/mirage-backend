@@ -36,9 +36,10 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
         catch (Exception ex)
         {
             // A detector/runtime failure (e.g. the native OpenCV model failing to load) is not
-            // the same as "no face in this photo" — fail open so a broken detector doesn't block
-            // every upload, but log loudly since this should never happen in a healthy deployment.
-            _logger.LogError(ex, "Face detection service failed; allowing the photo through unchecked.");
+            // the same as "no face in this photo" — surfaced separately from NotDetected so callers
+            // can log it distinctly, though it's still treated as a rejection since this should
+            // never happen in a healthy deployment.
+            _logger.LogError(ex, "Face detection service failed.");
             return Task.FromResult(FaceDetectionResult.Unavailable);
         }
     }

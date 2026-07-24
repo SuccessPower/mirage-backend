@@ -53,7 +53,11 @@
       "Bash(python3 -c \"import json; json.load\\(open\\('/Users/payazaafrica/mirage-frontend/vercel.json'\\)\\); print\\('valid JSON'\\)\")",
       "Bash(python3 -c \"import json; d=json.load\\(open\\('/Users/payazaafrica/mirage-frontend/vercel.json'\\)\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
       "Bash(python3 -c \"import ast\")",
-      "Bash(./node_modules/.bin/vue-tsc --noEmit -p tsconfig.json)"
+      "Bash(./node_modules/.bin/vue-tsc --noEmit -p tsconfig.json)",
+      "Bash(gh pr *)",
+      "Bash(docker --version)",
+      "Bash(break)",
+      "Bash(docker image *)"
     ],
     "additionalDirectories": [
       "/Users/payazaafrica/mirage-backend/src/*"
