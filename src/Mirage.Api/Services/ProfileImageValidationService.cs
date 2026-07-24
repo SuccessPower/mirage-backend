@@ -14,12 +14,17 @@ public sealed class ProfileImageValidationService(
         try
         {
             var bytes = await http.GetByteArrayAsync(imageUrl, cancellationToken);
-            return await faceDetection.ContainsHumanFaceAsync(bytes, cancellationToken);
+            var result = await faceDetection.ContainsHumanFaceAsync(bytes, cancellationToken);
+            if (result is FaceDetectionResult.Unavailable)
+                logger.LogError("Face detection was unavailable for {ImageUrl}; allowing the photo through unchecked.", imageUrl);
+            return result is FaceDetectionResult.Detected or FaceDetectionResult.Unavailable;
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Could not download {ImageUrl} for face validation.", imageUrl);
-            return false;
+            // Couldn't even download the image to check it — same fail-open reasoning as above:
+            // a transient network/CDN hiccup on our side shouldn't reject the user's photo.
+            logger.LogError(ex, "Could not download {ImageUrl} for face validation; allowing the photo through unchecked.", imageUrl);
+            return true;
         }
     }
 }
