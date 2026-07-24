@@ -32,8 +32,11 @@ public sealed class ProfileImageValidationService(
 
     private static string WithAutoRotation(string imageUrl)
     {
+        // Phone photos can be 10-15MP+; face presence doesn't need that resolution, and decoding
+        // the full-size original as an OpenCV Mat is a large, avoidable memory spike per upload on
+        // a memory-constrained instance. c_limit caps the longest side without upscaling smaller images.
         const string marker = "/upload/";
         var index = imageUrl.IndexOf(marker, StringComparison.Ordinal);
-        return index < 0 ? imageUrl : imageUrl.Insert(index + marker.Length, "a_auto/");
+        return index < 0 ? imageUrl : imageUrl.Insert(index + marker.Length, "w_1024,h_1024,c_limit,a_auto/");
     }
 }
