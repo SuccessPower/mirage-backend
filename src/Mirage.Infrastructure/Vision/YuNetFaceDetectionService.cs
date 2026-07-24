@@ -21,22 +21,25 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
         _modelPath = Path.Combine(AppContext.BaseDirectory, "Vision", "Models", "face_detection_yunet_2023mar.onnx");
     }
 
-    public Task<bool> ContainsHumanFaceAsync(byte[] imageBytes, CancellationToken cancellationToken = default)
+    public Task<FaceDetectionResult> ContainsHumanFaceAsync(byte[] imageBytes, CancellationToken cancellationToken = default)
     {
         try
         {
             using var image = Cv2.ImDecode(imageBytes, ImreadModes.Color);
-            if (image.Empty()) return Task.FromResult(false);
+            if (image.Empty()) return Task.FromResult(FaceDetectionResult.NotDetected);
 
             using var detector = FaceDetectorYN.Create(_modelPath, string.Empty, image.Size(), ScoreThreshold);
             using var faces = new Mat();
             detector.Detect(image, faces);
-            return Task.FromResult(faces.Rows > 0);
+            return Task.FromResult(faces.Rows > 0 ? FaceDetectionResult.Detected : FaceDetectionResult.NotDetected);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Face detection failed; treating image as having no detectable face.");
-            return Task.FromResult(false);
+            // A detector/runtime failure (e.g. the native OpenCV model failing to load) is not
+            // the same as "no face in this photo" — fail open so a broken detector doesn't block
+            // every upload, but log loudly since this should never happen in a healthy deployment.
+            _logger.LogError(ex, "Face detection service failed; allowing the photo through unchecked.");
+            return Task.FromResult(FaceDetectionResult.Unavailable);
         }
     }
 }

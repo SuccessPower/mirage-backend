@@ -79,6 +79,10 @@ internal static class AdminEndpoints
         if (isActive.HasValue)
             query = query.Where(x => x.IsActive == isActive.Value);
 
+        // Profile summary fields are embedded here (rather than left for the admin UI to fetch
+        // per-row via GET /profiles/{id}) so listing N users costs one query, not N+1 — the prior
+        // per-row fetch pattern could exhaust the DB connection pool under the admin page's own
+        // concurrent Promise.all and made "profile unavailable" a frequent, misleading UI state.
         var result = query
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new
@@ -88,7 +92,20 @@ internal static class AdminEndpoints
                 x.IsActive,
                 x.EmailConfirmed,
                 x.CreatedAt,
-                DisplayName = db.Profiles.Where(p => p.UserId == x.Id).Select(p => p.DisplayName).FirstOrDefault(),
+                Profile = db.Profiles.Where(p => p.UserId == x.Id)
+                    .Select(p => new
+                    {
+                        p.DisplayName,
+                        p.AvatarUrl,
+                        p.Occupation,
+                        p.City,
+                        p.Country,
+                        p.RelationshipStatus,
+                        p.IsVerified,
+                        IsRecommended = db.Recommendations.Any(r =>
+                            r.RecommendedUserId == x.Id && r.Status == RecommendationStatus.Active)
+                    })
+                    .FirstOrDefault(),
                 Roles = db.UserRoles.Where(ur => ur.UserId == x.Id)
                     .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
                     .ToList()
