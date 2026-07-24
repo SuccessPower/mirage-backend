@@ -57,7 +57,9 @@
       "Bash(gh pr *)",
       "Bash(docker --version)",
       "Bash(break)",
-      "Bash(docker image *)"
+      "Bash(docker image *)",
+      "Bash(curl -s -o /private/tmp/claude-501/-Users-payazaafrica-mirage-backend/4c9c2e9e-7d61-4790-993d-d3e82698df58/scratchpad/face1.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Barack_Obama_Presidential_Portrait.jpg/440px-Barack_Obama_Presidential_Portrait.jpg\" -w \"%{http_code} %{size_download}\\\\n\")",
+      "Bash(docker rmi *)"
     ],
     "additionalDirectories": [
       "/Users/payazaafrica/mirage-backend/src/*"

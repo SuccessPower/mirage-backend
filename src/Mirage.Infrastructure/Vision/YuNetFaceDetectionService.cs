@@ -10,7 +10,7 @@ namespace Mirage.Infrastructure.Vision;
 // cheap (a 232KB graph), so a fresh detector is created per call rather than cached across sizes.
 public sealed class YuNetFaceDetectionService : IFaceDetectionService
 {
-    private const float ScoreThreshold = 0.7f;
+    private const float ScoreThreshold = 0.5f;
 
     private readonly string _modelPath;
     private readonly ILogger<YuNetFaceDetectionService> _logger;
