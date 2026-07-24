@@ -17,10 +17,13 @@ RUN dotnet publish src/Mirage.Api/Mirage.Api.csproj \
 
 # Debian-based (not alpine): OpenCvSharp's Linux native runtime is built against glibc and
 # does not load under musl, so face detection (Mirage.Infrastructure/Vision) requires this base.
+# The official OpenCV Linux build links against GTK3 (and its cairo/pango/harfbuzz/gdk-pixbuf/atk
+# chain) for its highgui module even though this app never opens a GUI window - without libgtk-3-0,
+# libOpenCvSharpExtern.so fails to load at all and every face-detection call throws.
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 \
+    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libsm6 libxext6 libxrender1 libgl1 libgtk-3-0 libatomic1 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -r mirage && useradd -r -g mirage mirage
 COPY --from=build --chown=mirage:mirage /app/publish .
