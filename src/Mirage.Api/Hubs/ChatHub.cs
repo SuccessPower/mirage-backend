@@ -54,8 +54,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
 
         var friendshipIds = await db.CoupleFriendships.AsNoTracking()
             .Where(f => f.Status == CoupleFriendshipStatus.Active
-                && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
-                    && (c.User1Id == userId || c.User2Id == userId))))
+                && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                    && (c.User1Id == userId || c.User2Id == userId)))
             .Select(f => f.Id)
             .ToListAsync();
         foreach (var friendshipId in friendshipIds)
@@ -72,8 +72,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         var userId = GetUserId();
         var isParticipant = await db.CoupleFriendships.AsNoTracking().AnyAsync(f => f.Id == friendshipId
             && f.Status == CoupleFriendshipStatus.Active
-            && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
-                && (c.User1Id == userId || c.User2Id == userId))));
+            && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                && (c.User1Id == userId || c.User2Id == userId)));
         if (!isParticipant) return;
         await Groups.AddToGroupAsync(Context.ConnectionId, CoupleFriendGroup(friendshipId));
     }
@@ -103,8 +103,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         var userId = GetUserId();
         var isParticipant = await db.CoupleFriendships.AsNoTracking().AnyAsync(f => f.Id == friendshipId
             && f.Status == CoupleFriendshipStatus.Active
-            && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
-                && (c.User1Id == userId || c.User2Id == userId))));
+            && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                && (c.User1Id == userId || c.User2Id == userId)));
         if (!isParticipant) return;
 
         var message = new CoupleFriendMessage(friendshipId, userId, content, type, attachmentUrl);

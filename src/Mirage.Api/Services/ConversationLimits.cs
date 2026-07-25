@@ -28,8 +28,8 @@ internal static class ConversationLimits
 
         var activeFriendships = await db.CoupleFriendships.AsNoTracking().CountAsync(f =>
             f.Status == CoupleFriendshipStatus.Active
-            && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
-                && (c.User1Id == userId || c.User2Id == userId))), cancellationToken);
+            && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                && (c.User1Id == userId || c.User2Id == userId)), cancellationToken);
 
         if (otherPartyIds.Count == 0) return (activeFriendships, 0);
 
