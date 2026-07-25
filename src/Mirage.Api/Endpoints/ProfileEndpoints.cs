@@ -143,18 +143,27 @@ internal static class ProfileEndpoints
                 ? query.Where(x => x.RelationshipStatus == RelationshipStatus.Married)
                 : query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
         }
+        else if (section == SectionCategory.Marriage)
+        {
+            // The Marriage tab is a browse-only community of already-married members — not a
+            // romantic matching feed — so both genders show up regardless of the viewer's own
+            // sex or marital status.
+            query = query.Where(x => x.RelationshipStatus == RelationshipStatus.Married);
+        }
         else
         {
-            // Married profiles never appear in romantic feeds — married members browse couples
-            // through /couples/discover instead — and approved couples are off the market.
+            // Dating and the default "All" feed never surface married profiles — married members
+            // browse couples through /couples/discover instead — and approved couples are off
+            // the market.
             query = query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
             query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
                 && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
         }
 
-        // Dating and marriage are opposite-sex only; friendship has no gender restriction.
-        // Skipped entirely if either party's sex isn't on file, rather than hiding everyone.
-        if (section is SectionCategory.Dating or SectionCategory.Marriage && mySex.HasValue)
+        // Dating and the default "All" feed are opposite-sex only; friendship and marriage have
+        // no gender restriction. Skipped entirely if either party's sex isn't on file, rather
+        // than hiding everyone.
+        if ((section is null or SectionCategory.Dating) && mySex.HasValue)
             query = query.Where(x => x.Sex != null && x.Sex != mySex);
         if (!string.IsNullOrWhiteSpace(city)) query = query.Where(x => EF.Functions.ILike(x.City, $"%{city.Trim()}%"));
         if (!string.IsNullOrWhiteSpace(denomination))
