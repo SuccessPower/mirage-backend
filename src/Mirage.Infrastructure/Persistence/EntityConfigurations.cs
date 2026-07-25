@@ -328,10 +328,10 @@ public sealed class CoupleFriendshipConfiguration : IEntityTypeConfiguration<Cou
     public void Configure(EntityTypeBuilder<CoupleFriendship> b)
     {
         b.ToTable("couple_friendships");
-        b.HasIndex(x => new { x.CoupleId, x.FriendUserId }).IsUnique();
-        b.HasIndex(x => x.FriendUserId);
-        b.HasOne<Couple>().WithMany().HasForeignKey(x => x.CoupleId).OnDelete(DeleteBehavior.Cascade);
-        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.FriendUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.Couple1Id, x.Couple2Id }).IsUnique();
+        b.HasIndex(x => x.Couple2Id);
+        b.HasOne<Couple>().WithMany().HasForeignKey(x => x.Couple1Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<Couple>().WithMany().HasForeignKey(x => x.Couple2Id).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

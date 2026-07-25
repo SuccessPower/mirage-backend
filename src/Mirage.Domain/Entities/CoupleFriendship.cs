@@ -3,22 +3,25 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Domain.Entities;
 
-// A married member's friendship with another approved couple: one shared conversation thread
-// visible to exactly three people — the friend plus both partners of the couple. Created
-// immediately on "become friends" (no approval handshake). The unique (CoupleId, FriendUserId)
-// index means re-befriending after ending reuses this row via Reactivate().
+// The friendship between two approved couples: one shared conversation thread visible to all
+// four spouses. Created immediately on "become friends" (no approval handshake). The pair is
+// stored in a normalized order (Couple1Id < Couple2Id) so it doesn't matter which couple — or
+// which spouse within a couple — initiates; either side always resolves to the same row. The
+// unique (Couple1Id, Couple2Id) index means re-befriending after ending reuses this row via
+// Reactivate().
 public sealed class CoupleFriendship : Entity
 {
     private CoupleFriendship() { }
 
-    public CoupleFriendship(Guid coupleId, Guid friendUserId)
+    public CoupleFriendship(Guid couple1Id, Guid couple2Id)
     {
-        CoupleId = coupleId;
-        FriendUserId = friendUserId;
+        if (couple1Id == couple2Id) throw new ArgumentException("A couple cannot befriend itself.");
+        Couple1Id = couple1Id.CompareTo(couple2Id) < 0 ? couple1Id : couple2Id;
+        Couple2Id = couple1Id.CompareTo(couple2Id) < 0 ? couple2Id : couple1Id;
     }
 
-    public Guid CoupleId { get; private set; }
-    public Guid FriendUserId { get; private set; }
+    public Guid Couple1Id { get; private set; }
+    public Guid Couple2Id { get; private set; }
     public CoupleFriendshipStatus Status { get; private set; } = CoupleFriendshipStatus.Active;
     public DateTimeOffset? EndedAt { get; private set; }
 

@@ -79,8 +79,9 @@ internal static class CoupleEndpoints
             .ToDictionaryAsync(p => p.UserId, cancellationToken);
         var badges = await db.GetOrgBadgesAsync(partnerIds, cancellationToken);
         var friendCoupleIds = await db.CoupleFriendships.AsNoTracking()
-            .Where(f => f.FriendUserId == userId && f.Status == CoupleFriendshipStatus.Active)
-            .Select(f => f.CoupleId)
+            .Where(f => f.Status == CoupleFriendshipStatus.Active
+                && (f.Couple1Id == myCoupleId || f.Couple2Id == myCoupleId))
+            .Select(f => f.Couple1Id == myCoupleId ? f.Couple2Id : f.Couple1Id)
             .ToListAsync(cancellationToken);
 
         CouplePartnerSummary ToSummary(Guid partnerId)
@@ -114,11 +115,13 @@ internal static class CoupleEndpoints
         if (couple.Id == myCoupleId || couple.User1Id == userId || couple.User2Id == userId)
             return EndpointHelpers.ValidationProblem(context, ("id", "You cannot befriend your own couple."));
 
+        var couple1Id = myCoupleId.Value.CompareTo(id) < 0 ? myCoupleId.Value : id;
+        var couple2Id = myCoupleId.Value.CompareTo(id) < 0 ? id : myCoupleId.Value;
         var friendship = await db.CoupleFriendships.SingleOrDefaultAsync(
-            f => f.CoupleId == id && f.FriendUserId == userId, cancellationToken);
+            f => f.Couple1Id == couple1Id && f.Couple2Id == couple2Id, cancellationToken);
         if (friendship is null)
         {
-            friendship = new CoupleFriendship(id, userId);
+            friendship = new CoupleFriendship(couple1Id, couple2Id);
             db.CoupleFriendships.Add(friendship);
         }
         else if (friendship.Status == CoupleFriendshipStatus.Active)
@@ -141,7 +144,7 @@ internal static class CoupleEndpoints
         }
 
         return ApiResults.Created(context, $"/api/v1/couple-friendships/{friendship.Id}",
-            new { friendship.Id, friendship.CoupleId, friendship.Status },
+            new { friendship.Id, FriendCoupleId = id, friendship.Status },
             "You are now friends with this couple.");
     }
 

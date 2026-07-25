@@ -369,11 +369,9 @@ public sealed record CoupleFriendParticipant(
 
 public sealed record CoupleFriendshipResponse(
     Guid Id,
-    Guid CoupleId,
-    Guid FriendUserId,
-    CoupleFriendParticipant Friend,
-    CoupleFriendParticipant Partner1,
-    CoupleFriendParticipant Partner2,
+    Guid Couple1Id,
+    Guid Couple2Id,
+    IReadOnlyList<CoupleFriendParticipant> Participants,
     CoupleFriendshipStatus Status,
     DateTimeOffset CreatedAt);
 

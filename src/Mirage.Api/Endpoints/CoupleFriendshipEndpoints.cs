@@ -10,8 +10,8 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Endpoints;
 
-// The shared conversation thread between a married member and another approved couple —
-// exactly three participants (the friend plus both partners), private to them.
+// The shared conversation thread between two approved couples — all four spouses are
+// participants, private to them.
 internal static class CoupleFriendshipEndpoints
 {
     public static RouteGroupBuilder MapCoupleFriendshipEndpoints(this RouteGroupBuilder api)
@@ -28,8 +28,8 @@ internal static class CoupleFriendshipEndpoints
         CancellationToken cancellationToken) =>
         db.CoupleFriendships.AsNoTracking().AnyAsync(f => f.Id == friendshipId
             && f.Status == CoupleFriendshipStatus.Active
-            && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
-                && (c.User1Id == userId || c.User2Id == userId))), cancellationToken);
+            && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                && (c.User1Id == userId || c.User2Id == userId)), cancellationToken);
 
     private static async Task<IResult> GetMine(HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
@@ -37,15 +37,18 @@ internal static class CoupleFriendshipEndpoints
         var userId = context.User.GetUserId();
         var friendships = await db.CoupleFriendships.AsNoTracking()
             .Where(f => f.Status == CoupleFriendshipStatus.Active
-                && (f.FriendUserId == userId || db.Couples.Any(c => c.Id == f.CoupleId
-                    && (c.User1Id == userId || c.User2Id == userId))))
-            .Join(db.Couples.AsNoTracking(), f => f.CoupleId, c => c.Id,
-                (f, c) => new { f.Id, f.CoupleId, f.FriendUserId, f.Status, f.CreatedAt, c.User1Id, c.User2Id })
-            .OrderByDescending(x => x.CreatedAt)
+                && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                    && (c.User1Id == userId || c.User2Id == userId)))
+            .OrderByDescending(f => f.CreatedAt)
             .ToListAsync(cancellationToken);
 
-        var participantIds = friendships
-            .SelectMany(x => new[] { x.FriendUserId, x.User1Id, x.User2Id })
+        var coupleIds = friendships.SelectMany(f => new[] { f.Couple1Id, f.Couple2Id }).Distinct().ToArray();
+        var couples = await db.Couples.AsNoTracking()
+            .Where(c => coupleIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, cancellationToken);
+
+        var participantIds = couples.Values
+            .SelectMany(c => new[] { c.User1Id, c.User2Id })
             .Distinct().ToArray();
         var profiles = await db.Profiles.AsNoTracking()
             .Where(p => participantIds.Contains(p.UserId))
@@ -59,14 +62,18 @@ internal static class CoupleFriendshipEndpoints
                 profile?.AvatarUrl, profile?.IsVerified ?? false);
         }
 
-        var response = friendships.Select(x => new CoupleFriendshipResponse(
-            x.Id, x.CoupleId, x.FriendUserId, ToParticipant(x.FriendUserId),
-            ToParticipant(x.User1Id), ToParticipant(x.User2Id), x.Status, x.CreatedAt)).ToList();
+        var response = friendships.Select(f =>
+        {
+            var couple1 = couples[f.Couple1Id];
+            var couple2 = couples[f.Couple2Id];
+            var participants = new[] { couple1.User1Id, couple1.User2Id, couple2.User1Id, couple2.User2Id }
+                .Select(ToParticipant).ToList();
+            return new CoupleFriendshipResponse(f.Id, f.Couple1Id, f.Couple2Id, participants, f.Status, f.CreatedAt);
+        }).ToList();
         return ApiResults.Ok(context, response, "Couple friendships retrieved successfully.");
     }
 
-    // Any of the three participants can end the friendship, closing the thread for everyone
-    // and freeing a conversation slot for all three.
+    // Any of the four participants can end the friendship, closing the thread for everyone.
     private static async Task<IResult> EndFriendship(Guid id, HttpContext context, IMirageDbContext db,
         NotificationService notifications, CancellationToken cancellationToken)
     {
@@ -74,9 +81,10 @@ internal static class CoupleFriendshipEndpoints
         var friendship = await db.CoupleFriendships.SingleOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (friendship is null) return EndpointHelpers.NotFound(context, "Couple friendship was not found.");
 
-        var couple = await db.Couples.AsNoTracking()
-            .SingleOrDefaultAsync(c => c.Id == friendship.CoupleId, cancellationToken);
-        var participantIds = new[] { friendship.FriendUserId, couple?.User1Id ?? Guid.Empty, couple?.User2Id ?? Guid.Empty };
+        var couples = await db.Couples.AsNoTracking()
+            .Where(c => c.Id == friendship.Couple1Id || c.Id == friendship.Couple2Id)
+            .ToListAsync(cancellationToken);
+        var participantIds = couples.SelectMany(c => new[] { c.User1Id, c.User2Id }).ToArray();
         if (!participantIds.Contains(userId)) return EndpointHelpers.Forbidden(context);
 
         try { friendship.End(); }
