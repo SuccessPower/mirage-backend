@@ -5,6 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Server GC reserves a heap per core and assumes generous headroom; on this app's 512MB
+         Render Starter instance that's a poor fit and contributes to OOM kills. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
     <UserSecretsId>mirage-api-local-development</UserSecretsId>
     <Authors>Mirage Contributors</Authors>
     <Copyright>Copyright © 2026 Mirage Contributors</Copyright>
