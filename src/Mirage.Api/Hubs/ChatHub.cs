@@ -110,6 +110,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         var message = new CoupleFriendMessage(friendshipId, userId, content, type, attachmentUrl);
         db.CoupleFriendMessages.Add(message);
         await db.SaveChangesAsync();
+        await db.CoupleFriendships.Where(f => f.Id == friendshipId)
+            .ExecuteUpdateAsync(s => s.SetProperty(f => f.LastActivityAt, DateTimeOffset.UtcNow));
 
         var senderName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
@@ -146,6 +148,8 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         var message = new Message(matchId, userId, content, type, attachmentUrl);
         db.Messages.Add(message);
         await db.SaveChangesAsync();
+        await db.Matches.Where(x => x.Id == matchId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastActivityAt, DateTimeOffset.UtcNow));
 
         await Clients.Group(MatchGroup(matchId)).SendAsync("ReceiveMessage", new
         {
