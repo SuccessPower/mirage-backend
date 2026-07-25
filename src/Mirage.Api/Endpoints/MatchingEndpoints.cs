@@ -489,6 +489,8 @@ internal static class MatchingEndpoints
         var message = new Message(id, userId, request.Content, request.Type, request.AttachmentUrl);
         db.Messages.Add(message);
         await db.SaveChangesAsync(cancellationToken);
+        await db.Matches.Where(x => x.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastActivityAt, DateTimeOffset.UtcNow), cancellationToken);
 
         await hub.Clients.Group($"match:{id}").SendAsync("ReceiveMessage", new
         {

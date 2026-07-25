@@ -24,6 +24,9 @@ public sealed class CoupleFriendship : Entity
     public Guid Couple2Id { get; private set; }
     public CoupleFriendshipStatus Status { get; private set; } = CoupleFriendshipStatus.Active;
     public DateTimeOffset? EndedAt { get; private set; }
+    // Bumped whenever a message is sent (via ExecuteUpdateAsync in the message endpoints/hub,
+    // not through a domain method) so the inbox can sort threads by recency.
+    public DateTimeOffset? LastActivityAt { get; private set; }
 
     public void End()
     {

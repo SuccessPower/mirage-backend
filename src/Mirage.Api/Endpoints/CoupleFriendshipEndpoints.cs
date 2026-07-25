@@ -39,7 +39,7 @@ internal static class CoupleFriendshipEndpoints
             .Where(f => f.Status == CoupleFriendshipStatus.Active
                 && db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
                     && (c.User1Id == userId || c.User2Id == userId)))
-            .OrderByDescending(f => f.CreatedAt)
+            .OrderByDescending(f => f.LastActivityAt ?? f.CreatedAt)
             .ToListAsync(cancellationToken);
 
         var coupleIds = friendships.SelectMany(f => new[] { f.Couple1Id, f.Couple2Id }).Distinct().ToArray();
@@ -68,7 +68,8 @@ internal static class CoupleFriendshipEndpoints
             var couple2 = couples[f.Couple2Id];
             var participants = new[] { couple1.User1Id, couple1.User2Id, couple2.User1Id, couple2.User2Id }
                 .Select(ToParticipant).ToList();
-            return new CoupleFriendshipResponse(f.Id, f.Couple1Id, f.Couple2Id, participants, f.Status, f.CreatedAt);
+            return new CoupleFriendshipResponse(f.Id, f.Couple1Id, f.Couple2Id, participants, f.Status, f.CreatedAt,
+                f.LastActivityAt);
         }).ToList();
         return ApiResults.Ok(context, response, "Couple friendships retrieved successfully.");
     }
@@ -157,6 +158,8 @@ internal static class CoupleFriendshipEndpoints
         var message = new CoupleFriendMessage(id, userId, request.Content, request.Type, request.AttachmentUrl);
         db.CoupleFriendMessages.Add(message);
         await db.SaveChangesAsync(cancellationToken);
+        await db.CoupleFriendships.Where(f => f.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(f => f.LastActivityAt, DateTimeOffset.UtcNow), cancellationToken);
 
         var senderName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);

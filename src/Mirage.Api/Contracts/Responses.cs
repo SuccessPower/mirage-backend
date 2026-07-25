@@ -373,7 +373,8 @@ public sealed record CoupleFriendshipResponse(
     Guid Couple2Id,
     IReadOnlyList<CoupleFriendParticipant> Participants,
     CoupleFriendshipStatus Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? LastActivityAt);
 
 public sealed record CounsellingMessageResponse(
     Guid Id,
