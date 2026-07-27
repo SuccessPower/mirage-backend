@@ -39,4 +39,7 @@ public interface IEmailService
 
     Task<bool> SendContactEmailAsync(string recipientEmail, string senderName, string senderEmail,
         string country, string reason, string message, CancellationToken cancellationToken = default);
+
+    Task<bool> SendAdminInformationRequestEmailAsync(string toEmail, string displayName, string message,
+        string profileUrl, CancellationToken cancellationToken = default);
 }

@@ -24,6 +24,7 @@ internal static class AdminEndpoints
         admin.MapPatch("/users/{id:guid}/suspend", SuspendUser);
         admin.MapPatch("/users/{id:guid}/reactivate", ReactivateUser);
         admin.MapPatch("/users/{id:guid}/verify-profile", VerifyProfile);
+        admin.MapPost("/users/{id:guid}/information-request", SendInformationRequest);
         admin.MapPost("/users/welcome-emails/backfill", BackfillWelcomeEmails);
         admin.MapPost("/users/welcome-emails/reset", ResetWelcomeEmails);
 
@@ -175,6 +176,37 @@ internal static class AdminEndpoints
             cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { UserId = id, profile.IsVerified }, "Profile verified successfully.");
+    }
+
+    private static async Task<IResult> SendInformationRequest(Guid id, SendAdminInformationRequest request,
+        HttpContext context, MirageDbContext db, IEmailService email, IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var message = request.Message?.Trim();
+        if (string.IsNullOrWhiteSpace(message) || message.Length is < 10 or > 2000)
+            return EndpointHelpers.ValidationProblem(context,
+                ("message", "Enter a request between 10 and 2,000 characters."));
+
+        var recipient = await db.Users.AsNoTracking()
+            .Where(x => x.Id == id && x.IsActive)
+            .Select(x => new
+            {
+                x.Email,
+                DisplayName = db.Profiles.Where(p => p.UserId == x.Id)
+                    .Select(p => p.DisplayName).FirstOrDefault()
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (recipient?.Email is null)
+            return EndpointHelpers.NotFound(context, "An active user with an email address was not found.");
+
+        var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
+        var sent = await email.SendAdminInformationRequestEmailAsync(recipient.Email,
+            recipient.DisplayName ?? "there", message, $"{frontendUrl}/profiles/{id}", cancellationToken);
+        if (!sent)
+            return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+                "Email not sent", "The information request could not be delivered. Please try again.");
+
+        return ApiResults.Ok(context, new { UserId = id }, "Information request sent successfully.");
     }
 
     // Runs the backlog down in batches within one request rather than one giant query — caps

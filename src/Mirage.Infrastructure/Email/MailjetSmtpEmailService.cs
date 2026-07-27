@@ -89,6 +89,11 @@ public sealed class MailjetSmtpEmailService : IEmailService
             EmailTemplates.ContactSubmission(senderName, senderEmail, country, reason, message),
             cancellationToken, senderEmail);
 
+    public Task<bool> SendAdminInformationRequestEmailAsync(string toEmail, string displayName, string message,
+        string profileUrl, CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, "Action needed: please update your Mirage profile",
+            EmailTemplates.AdminInformationRequest(displayName, message, profileUrl), cancellationToken);
+
     private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
         string? replyTo = null)
     {

@@ -150,6 +150,57 @@ public sealed class CommunityConfiguration : IEntityTypeConfiguration<Community>
     }
 }
 
+public sealed class TestimonialConfiguration : IEntityTypeConfiguration<Testimonial>
+{
+    public void Configure(EntityTypeBuilder<Testimonial> b)
+    {
+        b.ToTable("testimonials");
+        b.Property(x => x.Title).HasMaxLength(160);
+        b.Property(x => x.Body).HasMaxLength(12000);
+        b.Property(x => x.ImageUrl).HasMaxLength(1000);
+        b.Property(x => x.ImageUrl2).HasMaxLength(1000);
+        b.Property(x => x.ImageUrl3).HasMaxLength(1000);
+        b.HasIndex(x => x.CreatedAt);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.TaggedUserId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class TestimonialReadConfiguration : IEntityTypeConfiguration<TestimonialRead>
+{
+    public void Configure(EntityTypeBuilder<TestimonialRead> b)
+    {
+        b.ToTable("testimonial_reads");
+        b.HasIndex(x => new { x.TestimonialId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Testimonial).WithMany(x => x.Reads).HasForeignKey(x => x.TestimonialId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class TestimonialLikeConfiguration : IEntityTypeConfiguration<TestimonialLike>
+{
+    public void Configure(EntityTypeBuilder<TestimonialLike> b)
+    {
+        b.ToTable("testimonial_likes");
+        b.HasIndex(x => new { x.TestimonialId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Testimonial).WithMany(x => x.Likes).HasForeignKey(x => x.TestimonialId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class TestimonialCommentConfiguration : IEntityTypeConfiguration<TestimonialComment>
+{
+    public void Configure(EntityTypeBuilder<TestimonialComment> b)
+    {
+        b.ToTable("testimonial_comments");
+        b.Property(x => x.Body).HasMaxLength(2000);
+        b.HasIndex(x => new { x.TestimonialId, x.CreatedAt });
+        b.HasOne(x => x.Testimonial).WithMany(x => x.Comments).HasForeignKey(x => x.TestimonialId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.ParentComment).WithMany(x => x.Replies).HasForeignKey(x => x.ParentCommentId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class CommunityMemberConfiguration : IEntityTypeConfiguration<CommunityMember>
 {
     public void Configure(EntityTypeBuilder<CommunityMember> b)
@@ -171,6 +222,8 @@ public sealed class CommunityPostConfiguration : IEntityTypeConfiguration<Commun
         b.HasIndex(x => new { x.CommunityId, x.IsHidden });
         b.Property(x => x.Body).HasMaxLength(2000);
         b.Property(x => x.ImageUrl).HasMaxLength(1000);
+        b.Property(x => x.ImageUrl2).HasMaxLength(1000);
+        b.Property(x => x.ImageUrl3).HasMaxLength(1000);
         b.HasOne(x => x.Community).WithMany(x => x.Posts).HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
     }

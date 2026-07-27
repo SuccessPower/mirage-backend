@@ -61,6 +61,10 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<GatheringInvite> GatheringInvites => Set<GatheringInvite>();
     public DbSet<Vendor> Vendors => Set<Vendor>();
     public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
+    public DbSet<Testimonial> Testimonials => Set<Testimonial>();
+    public DbSet<TestimonialRead> TestimonialReads => Set<TestimonialRead>();
+    public DbSet<TestimonialLike> TestimonialLikes => Set<TestimonialLike>();
+    public DbSet<TestimonialComment> TestimonialComments => Set<TestimonialComment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

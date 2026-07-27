@@ -2,16 +2,12 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.RateLimiting;
 using Mirage.Api.Contracts;
 using Mirage.Application.Abstractions;
+using Mirage.Application.Contact;
 
 namespace Mirage.Api.Endpoints;
 
 internal static class ContactEndpoints
 {
-    private static readonly HashSet<string> AllowedReasons = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Account support", "Billing", "Safety concern", "Feedback", "Partnership", "Other"
-    };
-
     public static RouteGroupBuilder MapContactEndpoints(this RouteGroupBuilder api)
     {
         api.MapPost("/contact", Submit)
@@ -27,18 +23,8 @@ internal static class ContactEndpoints
         if (!string.IsNullOrWhiteSpace(request.Website))
             return ApiResults.Ok(context, new { }, "Your message has been sent.");
 
-        var errors = new List<(string Field, string Error)>();
-        if (string.IsNullOrWhiteSpace(request.FullName) || request.FullName.Trim().Length is < 2 or > 100)
-            errors.Add(("fullName", "Enter a name between 2 and 100 characters."));
-        if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Length > 254 ||
-            !new EmailAddressAttribute().IsValid(request.Email))
-            errors.Add(("email", "Enter a valid email address."));
-        if (string.IsNullOrWhiteSpace(request.Country) || request.Country.Trim().Length > 100)
-            errors.Add(("country", "Select your country."));
-        if (!AllowedReasons.Contains(request.Reason?.Trim() ?? string.Empty))
-            errors.Add(("reason", "Select a valid reason for contacting us."));
-        if (string.IsNullOrWhiteSpace(request.Message) || request.Message.Trim().Length is < 10 or > 4000)
-            errors.Add(("message", "Enter a message between 10 and 4,000 characters."));
+        var errors = ContactSubmissionValidator.Validate(
+            request.FullName, request.Email, request.Country, request.Reason, request.Message);
         if (errors.Count > 0)
             return EndpointHelpers.ValidationProblem(context, errors.ToArray());
 

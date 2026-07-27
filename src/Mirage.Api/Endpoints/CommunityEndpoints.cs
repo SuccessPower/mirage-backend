@@ -420,6 +420,8 @@ internal static class CommunityEndpoints
                     .SingleOrDefault(),
                 post.Body,
                 post.ImageUrl,
+                post.ImageUrl2,
+                post.ImageUrl3,
                 LikeCount = post.Likes.Count,
                 CommentCount = post.Comments.Count,
                 LikedByMe = post.Likes.Any(like => like.UserId == userId),
@@ -434,7 +436,8 @@ internal static class CommunityEndpoints
         var badges = await db.GetOrgBadgesAsync(paged.Items.Select(x => x.AuthorUserId), cancellationToken);
         var posts = new Mirage.Application.Common.PagedResult<CommunityPostResponse>(
             paged.Items.Select(x => new CommunityPostResponse(x.Id, x.CommunityId, x.AuthorUserId, x.AuthorName,
-                x.AuthorAvatarUrl, x.Body, x.ImageUrl, x.LikeCount, x.CommentCount, x.LikedByMe, x.CreatedAt,
+                x.AuthorAvatarUrl, x.Body, x.ImageUrl, x.ImageUrl2, x.ImageUrl3,
+                x.LikeCount, x.CommentCount, x.LikedByMe, x.CreatedAt,
                 badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl, badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName,
                 x.UpvoteCount, x.DownvoteCount, x.MyVote,
                 CommunityVoteScoring.ColorFor(x.UpvoteCount, x.DownvoteCount), x.IsHidden)).ToList(),
@@ -446,7 +449,12 @@ internal static class CommunityEndpoints
     private static async Task<IResult> CreatePost(Guid id, CreateCommunityPostRequest request,
         HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Body) && string.IsNullOrWhiteSpace(request.ImageUrl))
+        var images = request.ImageUrls?.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal).ToList() ?? [];
+        if (images.Count == 0 && !string.IsNullOrWhiteSpace(request.ImageUrl)) images.Add(request.ImageUrl.Trim());
+        if (images.Count > 3)
+            return EndpointHelpers.ValidationProblem(context, ("imageUrls", "A community post can contain at most three images."));
+        if (string.IsNullOrWhiteSpace(request.Body) && images.Count == 0)
             return EndpointHelpers.ValidationProblem(context,
                 ("post", "Post body or imageUrl is required."));
 
@@ -454,7 +462,8 @@ internal static class CommunityEndpoints
         var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
-        var post = new CommunityPost(id, userId, request.Body, request.ImageUrl);
+        var post = new CommunityPost(id, userId, request.Body, images.ElementAtOrDefault(0),
+            images.ElementAtOrDefault(1), images.ElementAtOrDefault(2));
         db.CommunityPosts.Add(post);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -465,7 +474,8 @@ internal static class CommunityEndpoints
 
         var authorBadge = await db.GetOrgBadgeAsync(userId, cancellationToken);
         var response = new CommunityPostResponse(post.Id, post.CommunityId, post.AuthorUserId,
-            author?.DisplayName ?? "Member", author?.AvatarUrl, post.Body, post.ImageUrl, 0, 0, false,
+            author?.DisplayName ?? "Member", author?.AvatarUrl, post.Body, post.ImageUrl, post.ImageUrl2,
+            post.ImageUrl3, 0, 0, false,
             post.CreatedAt, authorBadge?.LogoUrl, authorBadge?.OrganisationName);
         return ApiResults.Created(context, $"/api/v1/communities/{id}/posts/{post.Id}", response,
             "Community post created successfully.");

@@ -11,6 +11,7 @@ public static class MirageEndpointExtensions
         api.MapOrganisationEndpoints();
         api.MapEventEndpoints();
         api.MapCommunityEndpoints();
+        api.MapTestimonialEndpoints();
         api.MapMatchingEndpoints();
         api.MapDateRequestEndpoints();
         api.MapGatheringInviteEndpoints();

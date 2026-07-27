@@ -168,6 +168,28 @@ public static class EmailTemplates
             """;
     }
 
+    public static string AdminInformationRequest(string displayName, string message, string profileUrl)
+    {
+        var safeName = WebUtility.HtmlEncode(displayName);
+        var safeMessage = WebUtility.HtmlEncode(message).Replace("\r\n", "<br>").Replace("\n", "<br>");
+        return $"""
+            <!doctype html><html><body style="margin:0;background:#0f0c16;color:#f4f0ff;font-family:Arial,sans-serif">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#191525;border:1px solid #332b47;border-radius:24px">
+                  <tr><td style="padding:32px">
+                    <div style="color:#8b70ff;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">Profile information request</div>
+                    <h1 style="font-size:26px;margin:12px 0 10px">Hi {safeName}, we need a little more information</h1>
+                    <p style="color:#beb5cf;line-height:1.6">A Mirage administrator reviewed your account and left this request:</p>
+                    <div style="margin:22px 0;padding:20px;background:#120f1b;border-left:3px solid #8b70ff;border-radius:12px;color:#eee8fa;line-height:1.65">{safeMessage}</div>
+                    {TemplateEngine.PrimaryButton(profileUrl, "Complete your profile")}
+                    <p style="color:#827991;font-size:12px;margin:20px 0 0">If you believe this was sent in error, contact Mirage support through the Contact page.</p>
+                  </td></tr>
+                </table>
+              </td></tr></table>
+            </body></html>
+            """;
+    }
+
     public static string Notification(NotificationType type, string displayName, string title, string body,
         string? actionUrl, string? actionLabel)
     {

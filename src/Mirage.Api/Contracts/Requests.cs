@@ -33,6 +33,10 @@ public sealed record ContactRequest(
     string Reason,
     string Message,
     string? Website = null);
+public sealed record SendAdminInformationRequest(string Message);
+public sealed record CreateTestimonialRequest(string Title, string Body, string? ImageUrl = null,
+    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null);
+public sealed record CreateTestimonialCommentRequest(string Body, Guid? ParentCommentId = null);
 public sealed record GoogleAuthRequest(string IdToken);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
@@ -107,7 +111,7 @@ public sealed record CreateCommunityRequest(
 public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? AvatarKey);
 public sealed record UpdateCommunityMemberRoleRequest(CommunityMemberRole Role);
 public sealed record CastVoteRequest(sbyte Value);
-public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null);
+public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null, IReadOnlyList<string>? ImageUrls = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);
 public sealed record InviteToGatheringRequest(string EmailOrUsername);

@@ -56,5 +56,9 @@ public interface IMirageDbContext
     DbSet<GatheringInvite> GatheringInvites { get; }
     DbSet<Vendor> Vendors { get; }
     DbSet<AnalyticsEvent> AnalyticsEvents { get; }
+    DbSet<Testimonial> Testimonials { get; }
+    DbSet<TestimonialRead> TestimonialReads { get; }
+    DbSet<TestimonialLike> TestimonialLikes { get; }
+    DbSet<TestimonialComment> TestimonialComments { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
