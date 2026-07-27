@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260727205657_AddProfileVisits")]
+    partial class AddProfileVisits
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -953,10 +956,7 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid>("Couple1Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("Couple2Id")
+                    b.Property<Guid>("CoupleId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -965,8 +965,8 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset?>("EndedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateTimeOffset?>("LastActivityAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<Guid>("FriendUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
@@ -976,9 +976,9 @@ namespace Mirage.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Couple2Id");
+                    b.HasIndex("FriendUserId");
 
-                    b.HasIndex("Couple1Id", "Couple2Id")
+                    b.HasIndex("CoupleId", "FriendUserId")
                         .IsUnique();
 
                     b.ToTable("couple_friendships", "mirage");
@@ -2839,14 +2839,14 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                 {
                     b.HasOne("Mirage.Domain.Entities.Couple", null)
                         .WithMany()
-                        .HasForeignKey("Couple1Id")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasForeignKey("CoupleId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Mirage.Domain.Entities.Couple", null)
+                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
-                        .HasForeignKey("Couple2Id")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasForeignKey("FriendUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -138,6 +138,15 @@ internal static class OrganisationEndpoints
         var org = await db.Organisations.SingleAsync(x => x.Id == id, cancellationToken);
         org.SetLogo(request.LogoUrl);
         org.SetWebsite(request.WebsiteUrl);
+
+        // Organisation-backed church communities use the organisation identity as their own.
+        // Keeping this server-side makes every client and future logo update consistent.
+        var linkedCommunities = await db.Communities
+            .Where(x => x.OrganisationId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var community in linkedCommunities)
+            community.UpdateAvatar(org.LogoUrl, null);
+
         await db.SaveChangesAsync(cancellationToken);
 
         return ApiResults.Ok(context, new { org.Id, org.LogoUrl, org.WebsiteUrl }, "Organisation updated successfully.");

@@ -228,6 +228,7 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> GetById(Guid userId, HttpContext context, MirageDbContext db,
+        NotificationService notifications, IEmailService email, IConfiguration configuration,
         CancellationToken cancellationToken)
     {
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
@@ -238,7 +239,68 @@ internal static class ProfileEndpoints
         var recommended = await db.Recommendations.AnyAsync(
             x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
         var badge = await db.GetOrgBadgeAsync(userId, cancellationToken);
+
+        var visitorUserId = context.User.GetUserId();
+        if (visitorUserId != userId)
+            await RecordProfileVisitAsync(userId, visitorUserId, profile, account.Email, db, notifications,
+                email, configuration, cancellationToken);
+
         return ApiResults.Ok(context, profile.ToResponse(recommended, account.Email, badge), "Profile retrieved successfully.");
+    }
+
+    private static async Task RecordProfileVisitAsync(Guid profileUserId, Guid visitorUserId,
+        UserProfile visitedProfile, string? ownerEmail, MirageDbContext db, NotificationService notifications,
+        IEmailService email, IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        var visitor = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == visitorUserId)
+            .Select(x => new { x.DisplayName, x.AvatarUrl, x.Sex })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        // Profile-visit alerts are intentionally restricted to opposite-sex visits. Missing sex
+        // data is not guessed, and repeat visits update activity without producing email spam.
+        if (visitor?.Sex is null || visitedProfile.Sex is null || visitor.Sex == visitedProfile.Sex)
+            return;
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        // The reveal ordinal is a per-profile quota. A transaction-scoped advisory lock makes
+        // allocating it deterministic even when several visitors open the profile concurrently.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({profileUserId.ToString()}, 0))",
+            cancellationToken);
+
+        var existing = await db.ProfileVisits.SingleOrDefaultAsync(
+            x => x.ProfileUserId == profileUserId && x.VisitorUserId == visitorUserId, cancellationToken);
+        if (existing is not null)
+        {
+            existing.RecordReturnVisit();
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+
+        var revealOrdinal = await db.ProfileVisits.CountAsync(
+            x => x.ProfileUserId == profileUserId, cancellationToken) + 1;
+        var visit = new ProfileVisit(profileUserId, visitorUserId, revealOrdinal);
+        db.ProfileVisits.Add(visit);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        var revealIdentity = visit.IsIdentityRevealed;
+        var title = revealIdentity ? $"{visitor.DisplayName} viewed your profile" : "Someone viewed your profile";
+        var body = revealIdentity
+            ? $"{visitor.DisplayName} visited your profile. This is free visitor reveal {revealOrdinal} of 10."
+            : "Someone visited your profile. Their identity is hidden because your 10 free visitor reveals have been used.";
+
+        await notifications.NotifyAsync(profileUserId, NotificationType.ProfileVisited, title, body,
+            revealIdentity ? visitorUserId : null, revealIdentity ? "Profile" : "ProfileVisit",
+            cancellationToken, revealIdentity ? $"/profiles/{visitorUserId}" : "/", revealIdentity ? "View profile" : "Open Mirage");
+
+        if (ownerEmail is null) return;
+        var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
+        await email.SendProfileVisitEmailAsync(ownerEmail, visitedProfile.DisplayName, visitor.DisplayName,
+            visitor.AvatarUrl, revealIdentity,
+            revealIdentity ? $"{frontendUrl}/profiles/{visitorUserId}" : frontendUrl, cancellationToken);
     }
 
     private static async Task<IResult> GetMine(HttpContext context, MirageDbContext db,

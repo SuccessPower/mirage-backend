@@ -48,6 +48,7 @@ public interface IMirageDbContext
     DbSet<CoupleFriendship> CoupleFriendships { get; }
     DbSet<CoupleFriendMessage> CoupleFriendMessages { get; }
     DbSet<ProfileVote> ProfileVotes { get; }
+    DbSet<ProfileVisit> ProfileVisits { get; }
     DbSet<OrganisationAdminInvite> OrganisationAdminInvites { get; }
     DbSet<CounsellingMessage> CounsellingMessages { get; }
     DbSet<CounsellingMeeting> CounsellingMeetings { get; }

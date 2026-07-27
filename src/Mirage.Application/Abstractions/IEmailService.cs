@@ -32,4 +32,11 @@ public interface IEmailService
         string body, string? actionUrl = null, string? actionLabel = null, CancellationToken cancellationToken = default);
 
     bool HasNotificationTemplate(NotificationType type);
+
+    Task SendProfileVisitEmailAsync(string toEmail, string displayName, string visitorName,
+        string? visitorAvatarUrl, bool revealIdentity, string profileUrl,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> SendContactEmailAsync(string recipientEmail, string senderName, string senderEmail,
+        string country, string reason, string message, CancellationToken cancellationToken = default);
 }

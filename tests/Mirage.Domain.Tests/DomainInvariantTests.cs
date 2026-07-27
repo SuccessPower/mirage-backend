@@ -194,4 +194,28 @@ public sealed class DomainInvariantTests
             new DateRequest(Guid.NewGuid(), "Coffee", DateTimeOffset.UtcNow.AddDays(1),
                 DateTimeOffset.UtcNow.AddDays(1).AddHours(1), "Lagos", null, capacity: 0));
     }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(10, true)]
+    [InlineData(11, false)]
+    public void Profile_visit_reveals_only_the_first_ten_distinct_visitors(int ordinal, bool expected)
+    {
+        var visit = new ProfileVisit(Guid.NewGuid(), Guid.NewGuid(), ordinal);
+
+        Assert.Equal(expected, visit.IsIdentityRevealed);
+    }
+
+    [Fact]
+    public void Return_profile_visit_refreshes_activity_without_changing_reveal_quota()
+    {
+        var visit = new ProfileVisit(Guid.NewGuid(), Guid.NewGuid(), 7);
+        var previousVisit = visit.LastVisitedAt;
+
+        visit.RecordReturnVisit();
+
+        Assert.Equal(7, visit.RevealOrdinal);
+        Assert.True(visit.IsIdentityRevealed);
+        Assert.True(visit.LastVisitedAt >= previousVisit);
+    }
 }

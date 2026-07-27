@@ -360,6 +360,19 @@ public sealed class ProfileVoteConfiguration : IEntityTypeConfiguration<ProfileV
     }
 }
 
+public sealed class ProfileVisitConfiguration : IEntityTypeConfiguration<ProfileVisit>
+{
+    public void Configure(EntityTypeBuilder<ProfileVisit> b)
+    {
+        b.ToTable("profile_visits");
+        b.HasIndex(x => new { x.ProfileUserId, x.VisitorUserId }).IsUnique();
+        b.HasIndex(x => new { x.ProfileUserId, x.RevealOrdinal }).IsUnique();
+        b.HasIndex(x => new { x.ProfileUserId, x.LastVisitedAt });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ProfileUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.VisitorUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CounsellingMessageConfiguration : IEntityTypeConfiguration<CounsellingMessage>
 {
     public void Configure(EntityTypeBuilder<CounsellingMessage> b)
