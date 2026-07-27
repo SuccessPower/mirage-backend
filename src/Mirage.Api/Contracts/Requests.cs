@@ -26,6 +26,13 @@ public sealed record RegisterRequest(
     string? NewBranchCity = null);
 
 public sealed record LoginRequest(string Email, string Password);
+public sealed record ContactRequest(
+    string FullName,
+    string Email,
+    string Country,
+    string Reason,
+    string Message,
+    string? Website = null);
 public sealed record GoogleAuthRequest(string IdToken);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);

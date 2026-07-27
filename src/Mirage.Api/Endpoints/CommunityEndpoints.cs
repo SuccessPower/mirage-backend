@@ -72,7 +72,9 @@ internal static class CommunityEndpoints
                 x.Name,
                 x.Category,
                 x.Description,
-                x.AvatarUrl,
+                x.OrganisationId.HasValue
+                    ? db.Organisations.Where(o => o.Id == x.OrganisationId.Value).Select(o => o.LogoUrl).FirstOrDefault() ?? x.AvatarUrl
+                    : x.AvatarUrl,
                 x.AvatarKey,
                 x.CreatedByUserId,
                 x.Status,
@@ -100,7 +102,9 @@ internal static class CommunityEndpoints
                 x.Name,
                 x.Category,
                 x.Description,
-                x.AvatarUrl,
+                x.OrganisationId.HasValue
+                    ? db.Organisations.Where(o => o.Id == x.OrganisationId.Value).Select(o => o.LogoUrl).FirstOrDefault() ?? x.AvatarUrl
+                    : x.AvatarUrl,
                 x.AvatarKey,
                 x.CreatedByUserId,
                 x.Status,
