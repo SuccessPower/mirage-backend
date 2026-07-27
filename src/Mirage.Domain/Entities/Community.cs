@@ -1,4 +1,5 @@
 using Mirage.Domain.Common;
+using System.ComponentModel.DataAnnotations.Schema;
 using Mirage.Domain.Enums;
 
 namespace Mirage.Domain.Entities;
@@ -89,18 +90,25 @@ public sealed class CommunityPost : Entity
 {
     private CommunityPost() { }
 
-    public CommunityPost(Guid communityId, Guid authorUserId, string? body, string? imageUrl = null)
+    public CommunityPost(Guid communityId, Guid authorUserId, string? body, string? imageUrl = null,
+        string? imageUrl2 = null, string? imageUrl3 = null)
     {
         CommunityId = communityId;
         AuthorUserId = authorUserId;
         Body = body?.Trim() ?? string.Empty;
         ImageUrl = imageUrl?.Trim();
+        ImageUrl2 = imageUrl2?.Trim();
+        ImageUrl3 = imageUrl3?.Trim();
     }
 
     public Guid CommunityId { get; private set; }
     public Guid AuthorUserId { get; private set; }
     public string Body { get; private set; } = string.Empty;
     public string? ImageUrl { get; private set; }
+    public string? ImageUrl2 { get; private set; }
+    public string? ImageUrl3 { get; private set; }
+    [NotMapped] public IReadOnlyList<string> ImageUrls =>
+        new[] { ImageUrl, ImageUrl2, ImageUrl3 }.OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
     public bool IsHidden { get; private set; }
     public DateTimeOffset? HiddenAt { get; private set; }
     public Community Community { get; private set; } = null!;

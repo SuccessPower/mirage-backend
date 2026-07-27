@@ -218,4 +218,44 @@ public sealed class DomainInvariantTests
         Assert.True(visit.IsIdentityRevealed);
         Assert.True(visit.LastVisitedAt >= previousVisit);
     }
+
+    [Fact]
+    public void Testimonial_cannot_tag_its_author()
+    {
+        var authorId = Guid.NewGuid();
+
+        Assert.Throws<ArgumentException>(() =>
+            new Testimonial(authorId, "How grace found us", new string('a', 100), taggedUserId: authorId));
+    }
+
+    [Fact]
+    public void Testimonial_preserves_partner_tag_and_story_content()
+    {
+        var partnerId = Guid.NewGuid();
+        var story = new Testimonial(Guid.NewGuid(), "  How grace found us  ",
+            $"  {new string('a', 100)}  ", "https://images.example/story.jpg", partnerId);
+
+        Assert.Equal("How grace found us", story.Title);
+        Assert.Equal(new string('a', 100), story.Body);
+        Assert.Equal(partnerId, story.TaggedUserId);
+    }
+
+    [Fact]
+    public void Testimonial_exposes_three_images_in_thumbnail_order()
+    {
+        var story = new Testimonial(Guid.NewGuid(), "How grace found us", new string('a', 100),
+            "one.jpg", imageUrl2: "two.jpg", imageUrl3: "three.jpg");
+
+        Assert.Equal(["one.jpg", "two.jpg", "three.jpg"], story.ImageUrls);
+        Assert.Equal("one.jpg", story.ImageUrl);
+    }
+
+    [Fact]
+    public void Community_post_exposes_three_images_in_thumbnail_order()
+    {
+        var post = new CommunityPost(Guid.NewGuid(), Guid.NewGuid(), "Our community update",
+            "one.jpg", "two.jpg", "three.jpg");
+
+        Assert.Equal(["one.jpg", "two.jpg", "three.jpg"], post.ImageUrls);
+    }
 }
