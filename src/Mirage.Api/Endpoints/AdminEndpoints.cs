@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Api.Services;
@@ -14,6 +15,9 @@ namespace Mirage.Api.Endpoints;
 
 internal static class AdminEndpoints
 {
+    private static int _adminReadCacheVersion;
+    private static readonly TimeSpan AdminReadCacheDuration = TimeSpan.FromSeconds(30);
+
     public static RouteGroupBuilder MapAdminEndpoints(this RouteGroupBuilder api)
     {
         var admin = api.MapGroup("/admin").WithTags("Admin").RequireAuthorization(MiragePolicy.PlatformAdmin);
@@ -71,50 +75,57 @@ internal static class AdminEndpoints
 
     // --- User management ---
 
-    private static async Task<IResult> ListUsers(HttpContext context, MirageDbContext db,
+    private static async Task<IResult> ListUsers(HttpContext context, MirageDbContext db, IMemoryCache cache,
         string? email, bool? isActive, int page = 1, int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        var query = db.Users.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrWhiteSpace(email))
-            query = query.Where(x => EF.Functions.ILike(x.Email!, $"%{email.Trim()}%"));
-        if (isActive.HasValue)
-            query = query.Where(x => x.IsActive == isActive.Value);
+        var normalizedEmail = email?.Trim().ToLowerInvariant() ?? string.Empty;
+        var cacheKey =
+            $"admin:users:v{Volatile.Read(ref _adminReadCacheVersion)}:{normalizedEmail}:{isActive}:{page}:{pageSize}";
+        var cached = await cache.GetOrCreateAsync(cacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = AdminReadCacheDuration;
 
-        // Profile summary fields are embedded here (rather than left for the admin UI to fetch
-        // per-row via GET /profiles/{id}) so listing N users costs one query, not N+1 — the prior
-        // per-row fetch pattern could exhaust the DB connection pool under the admin page's own
-        // concurrent Promise.all and made "profile unavailable" a frequent, misleading UI state.
-        var result = query
-            .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new
-            {
-                x.Id,
-                x.Email,
-                x.IsActive,
-                x.EmailConfirmed,
-                x.CreatedAt,
-                Profile = db.Profiles.Where(p => p.UserId == x.Id)
-                    .Select(p => new
-                    {
-                        p.DisplayName,
-                        p.AvatarUrl,
-                        p.Occupation,
-                        p.City,
-                        p.Country,
-                        p.RelationshipStatus,
-                        p.IsVerified,
-                        IsRecommended = db.Recommendations.Any(r =>
-                            r.RecommendedUserId == x.Id && r.Status == RecommendationStatus.Active)
-                    })
-                    .FirstOrDefault(),
-                Roles = db.UserRoles.Where(ur => ur.UserId == x.Id)
-                    .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-                    .ToList()
-            });
-        return ApiResults.Ok(context,
-            await result.ToPagedResultAsync(page, pageSize, cancellationToken),
-            "Users retrieved successfully.");
+            var query = db.Users.AsNoTracking().AsQueryable();
+            if (!string.IsNullOrWhiteSpace(email))
+                query = query.Where(x => EF.Functions.ILike(x.Email!, $"%{email.Trim()}%"));
+            if (isActive.HasValue)
+                query = query.Where(x => x.IsActive == isActive.Value);
+
+            // Profile summary fields are embedded here (rather than left for the admin UI to fetch
+            // per-row via GET /profiles/{id}) so listing N users costs one query, not N+1 — the prior
+            // per-row fetch pattern could exhaust the DB connection pool under the admin page's own
+            // concurrent Promise.all and made "profile unavailable" a frequent, misleading UI state.
+            var result = query
+                .OrderByDescending(x => x.CreatedAt)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Email,
+                    x.IsActive,
+                    x.EmailConfirmed,
+                    x.CreatedAt,
+                    Profile = db.Profiles.Where(p => p.UserId == x.Id)
+                        .Select(p => new
+                        {
+                            p.DisplayName,
+                            p.AvatarUrl,
+                            p.Occupation,
+                            p.City,
+                            p.Country,
+                            p.RelationshipStatus,
+                            p.IsVerified,
+                            IsRecommended = db.Recommendations.Any(r =>
+                                r.RecommendedUserId == x.Id && r.Status == RecommendationStatus.Active)
+                        })
+                        .FirstOrDefault(),
+                    Roles = db.UserRoles.Where(ur => ur.UserId == x.Id)
+                        .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
+                        .ToList()
+                });
+            return await result.ToPagedResultAsync(page, pageSize, cancellationToken);
+        });
+        return ApiResults.Ok(context, cached!, "Users retrieved successfully.");
     }
 
     private static async Task<IResult> GetUser(Guid id, HttpContext context, MirageDbContext db,
@@ -149,6 +160,7 @@ internal static class AdminEndpoints
         if (!user.IsActive) return EndpointHelpers.Conflict(context, "User is already suspended.");
         user.IsActive = false;
         await userManager.UpdateAsync(user);
+        InvalidateAdminReads();
         return ApiResults.Ok(context, new { UserId = id, IsActive = false }, "User suspended successfully.");
     }
 
@@ -160,6 +172,7 @@ internal static class AdminEndpoints
         if (user.IsActive) return EndpointHelpers.Conflict(context, "User is already active.");
         user.IsActive = true;
         await userManager.UpdateAsync(user);
+        InvalidateAdminReads();
         return ApiResults.Ok(context, new { UserId = id, IsActive = true }, "User reactivated successfully.");
     }
 
@@ -171,6 +184,7 @@ internal static class AdminEndpoints
         if (profile.IsVerified) return EndpointHelpers.Conflict(context, "Profile is already verified.");
         profile.Verify();
         await db.SaveChangesAsync(cancellationToken);
+        InvalidateAdminReads();
 
         await notifications.NotifyAsync(id, NotificationType.ProfileVerified, "Your profile is verified",
             "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests.",
@@ -178,6 +192,8 @@ internal static class AdminEndpoints
 
         return ApiResults.Ok(context, new { UserId = id, profile.IsVerified }, "Profile verified successfully.");
     }
+
+    private static void InvalidateAdminReads() => Interlocked.Increment(ref _adminReadCacheVersion);
 
     private static async Task<IResult> SendInformationRequest(Guid id, SendAdminInformationRequest request,
         HttpContext context, MirageDbContext db, IEmailService email, IConfiguration configuration,
@@ -609,48 +625,55 @@ internal static class AdminEndpoints
 
     // --- Churches overview ---
 
-    private static async Task<IResult> ListOrganisations(HttpContext context, MirageDbContext db,
+    private static async Task<IResult> ListOrganisations(HttpContext context, MirageDbContext db, IMemoryCache cache,
         OrganisationStatus? status, string? query, int page = 1, int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        var orgsQuery = db.Organisations.AsNoTracking().AsQueryable();
-        if (status.HasValue) orgsQuery = orgsQuery.Where(x => x.Status == status.Value);
-        if (!string.IsNullOrWhiteSpace(query))
+        var normalizedQuery = query?.Trim().ToLowerInvariant() ?? string.Empty;
+        var cacheKey =
+            $"admin:organisations:v{Volatile.Read(ref _adminReadCacheVersion)}:{status}:{normalizedQuery}:{page}:{pageSize}";
+        var response = await cache.GetOrCreateAsync(cacheKey, async entry =>
         {
-            var value = $"%{query.Trim()}%";
-            orgsQuery = orgsQuery.Where(x => EF.Functions.ILike(x.Name, value) ||
-                                             EF.Functions.ILike(x.Denomination, value));
-        }
-
-        var paged = await orgsQuery
-            .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new
+            entry.AbsoluteExpirationRelativeToNow = AdminReadCacheDuration;
+            var orgsQuery = db.Organisations.AsNoTracking().AsQueryable();
+            if (status.HasValue) orgsQuery = orgsQuery.Where(x => x.Status == status.Value);
+            if (!string.IsNullOrWhiteSpace(query))
             {
-                x.Id,
-                x.Name,
-                x.Denomination,
-                x.Country,
-                x.LogoUrl,
-                x.WebsiteUrl,
-                x.Status,
-                x.AdminUserId,
-                x.CreatedAt,
-                AdminDisplayName = db.Profiles.Where(p => p.UserId == x.AdminUserId).Select(p => p.DisplayName).FirstOrDefault(),
-                AdminEmail = db.Users.Where(u => u.Id == x.AdminUserId).Select(u => u.Email).FirstOrDefault(),
-                ApprovedMemberCount = db.OrganisationMembers.Count(m => m.OrganisationId == x.Id && m.Status == OrganisationMemberStatus.Approved),
-                PendingMemberCount = db.OrganisationMembers.Count(m => m.OrganisationId == x.Id && m.Status == OrganisationMemberStatus.Pending),
-                BranchCount = db.OrganisationBranches.Count(b => b.OrganisationId == x.Id),
-                ManagerCount = db.OrganisationManagers.Count(m => m.OrganisationId == x.Id)
-            })
-            .ToPagedResultAsync(page, pageSize, cancellationToken);
+                var value = $"%{query.Trim()}%";
+                orgsQuery = orgsQuery.Where(x => EF.Functions.ILike(x.Name, value) ||
+                                                 EF.Functions.ILike(x.Denomination, value));
+            }
 
-        var response = new Mirage.Application.Common.PagedResult<AdminOrganisationSummaryResponse>(
-            paged.Items.Select(x => new AdminOrganisationSummaryResponse(x.Id, x.Name, x.Denomination, x.Country,
-                x.LogoUrl, x.WebsiteUrl, x.Status, x.AdminUserId, x.AdminDisplayName, x.AdminEmail, x.ApprovedMemberCount,
-                x.PendingMemberCount, x.BranchCount, x.ManagerCount + 1, x.CreatedAt)).ToList(),
-            paged.Page, paged.PageSize, paged.TotalCount);
+            var paged = await orgsQuery
+                .OrderByDescending(x => x.CreatedAt)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Name,
+                    x.Denomination,
+                    x.Country,
+                    x.LogoUrl,
+                    x.WebsiteUrl,
+                    x.Status,
+                    x.AdminUserId,
+                    x.CreatedAt,
+                    AdminDisplayName = db.Profiles.Where(p => p.UserId == x.AdminUserId).Select(p => p.DisplayName).FirstOrDefault(),
+                    AdminEmail = db.Users.Where(u => u.Id == x.AdminUserId).Select(u => u.Email).FirstOrDefault(),
+                    ApprovedMemberCount = db.OrganisationMembers.Count(m => m.OrganisationId == x.Id && m.Status == OrganisationMemberStatus.Approved),
+                    PendingMemberCount = db.OrganisationMembers.Count(m => m.OrganisationId == x.Id && m.Status == OrganisationMemberStatus.Pending),
+                    BranchCount = db.OrganisationBranches.Count(b => b.OrganisationId == x.Id),
+                    ManagerCount = db.OrganisationManagers.Count(m => m.OrganisationId == x.Id)
+                })
+                .ToPagedResultAsync(page, pageSize, cancellationToken);
 
-        return ApiResults.Ok(context, response, "Churches retrieved successfully.");
+            return new Mirage.Application.Common.PagedResult<AdminOrganisationSummaryResponse>(
+                paged.Items.Select(x => new AdminOrganisationSummaryResponse(x.Id, x.Name, x.Denomination, x.Country,
+                    x.LogoUrl, x.WebsiteUrl, x.Status, x.AdminUserId, x.AdminDisplayName, x.AdminEmail, x.ApprovedMemberCount,
+                    x.PendingMemberCount, x.BranchCount, x.ManagerCount + 1, x.CreatedAt)).ToList(),
+                paged.Page, paged.PageSize, paged.TotalCount);
+        });
+
+        return ApiResults.Ok(context, response!, "Churches retrieved successfully.");
     }
 
     private static async Task<IResult> MergeOrganisation(Guid sourceId, MergeOrganisationRequest request,
@@ -763,6 +786,7 @@ internal static class AdminEndpoints
             await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         });
+        InvalidateAdminReads();
 
         return ApiResults.Ok(context,
             new { SourceOrganisationId = sourceSnapshot.Id, TargetOrganisationId = targetSnapshot.Id },
@@ -785,6 +809,7 @@ internal static class AdminEndpoints
                 "Seed data missing", "The church seed data file was not found on this deployment.");
 
         var result = await ChurchDirectorySync.SyncAsync(db, path, actorId, cancellationToken);
+        InvalidateAdminReads();
         return ApiResults.Ok(context,
             new
             {
