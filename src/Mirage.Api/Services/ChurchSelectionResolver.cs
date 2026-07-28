@@ -3,6 +3,7 @@ using Mirage.Api.Endpoints;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Domain.Services;
 
 namespace Mirage.Api.Services;
 
@@ -21,6 +22,21 @@ internal static class ChurchSelectionResolver
     {
         if (!string.IsNullOrWhiteSpace(newOrganisationName))
         {
+            var existingOrganisations = await db.Organisations.AsNoTracking()
+                .Select(x => new { x.Id, x.Name, x.Country, x.WebsiteUrl, x.Status })
+                .ToListAsync(cancellationToken);
+            var duplicate = existingOrganisations.FirstOrDefault(x =>
+                OrganisationIdentity.IsLikelyDuplicate(newOrganisationName, country, null,
+                    x.Name, x.Country, x.WebsiteUrl));
+            if (duplicate is not null)
+            {
+                if (duplicate.Status == OrganisationStatus.Approved)
+                    return (duplicate.Id, null, null);
+
+                return (null, null, EndpointHelpers.Conflict(context,
+                    $"“{duplicate.Name}” is already listed and awaiting review."));
+            }
+
             var registrationNumber = string.IsNullOrWhiteSpace(newOrganisationRegistrationNumber)
                 ? $"PENDING-{Guid.NewGuid():N}"
                 : newOrganisationRegistrationNumber.Trim();

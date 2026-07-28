@@ -89,6 +89,7 @@ public sealed record CreateOrganisationRequest(
     string? LogoUrl = null, string? WebsiteUrl = null);
 public sealed record UpdateOrganisationDetailsRequest(string? LogoUrl, string? WebsiteUrl);
 public sealed record InviteOrganisationAdminRequest(string Email);
+public sealed record MergeOrganisationRequest(Guid TargetOrganisationId);
 public sealed record JoinOrganisationRequest(Guid? BranchId, string? Description = null);
 public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
 public sealed record CreateBranchRequest(string Name, string City, string Country, string? Address);

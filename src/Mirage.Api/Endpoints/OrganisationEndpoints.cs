@@ -7,6 +7,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Domain.Services;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 
@@ -81,6 +82,16 @@ internal static class OrganisationEndpoints
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.RegistrationNumber))
             return EndpointHelpers.ValidationProblem(context,
                 ("organisation", "Name and registration number are required."));
+
+        var existingOrganisations = await db.Organisations.AsNoTracking()
+            .Select(x => new { x.Id, x.Name, x.Country, x.WebsiteUrl })
+            .ToListAsync(cancellationToken);
+        var duplicate = existingOrganisations.FirstOrDefault(x =>
+            OrganisationIdentity.IsLikelyDuplicate(request.Name, request.Country, request.WebsiteUrl,
+                x.Name, x.Country, x.WebsiteUrl));
+        if (duplicate is not null)
+            return EndpointHelpers.Conflict(context,
+                $"“{duplicate.Name}” is already listed. Select the existing organisation instead of creating another one.");
 
         var userId = context.User.GetUserId();
         var organisation = new Organisation(userId, request.Name, request.Denomination,
