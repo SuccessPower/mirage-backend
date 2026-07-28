@@ -265,7 +265,17 @@ internal static class AdminEndpoints
             .Select(x => new
             {
                 x.Id, x.TargetType, x.TargetId, x.Reason, x.Details,
-                x.Status, x.Resolution, x.ReportedByUserId, x.CreatedAt
+                x.Status, x.Resolution, x.ReportedByUserId, x.CreatedAt,
+                TargetDisplayName = x.TargetType == ContentReportTargetType.Profile
+                    ? db.Profiles.Where(profile => profile.UserId == x.TargetId)
+                        .Select(profile => profile.DisplayName).FirstOrDefault()
+                    : null,
+                TargetAvatarUrl = x.TargetType == ContentReportTargetType.Profile
+                    ? db.Profiles.Where(profile => profile.UserId == x.TargetId)
+                        .Select(profile => profile.AvatarUrl).FirstOrDefault()
+                    : null,
+                ReporterDisplayName = db.Profiles.Where(profile => profile.UserId == x.ReportedByUserId)
+                    .Select(profile => profile.DisplayName).FirstOrDefault()
             });
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
@@ -319,9 +329,26 @@ internal static class AdminEndpoints
     // --- Submitted by any authenticated user ---
 
     private static async Task<IResult> SubmitReport(SubmitContentReportRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        MirageDbContext db, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
+        if (request.Details?.Length > 2000)
+            return EndpointHelpers.ValidationProblem(context,
+                ("details", "Report details cannot exceed 2,000 characters."));
+        if (request.Reason == ContentReportReason.Other && string.IsNullOrWhiteSpace(request.Details))
+            return EndpointHelpers.ValidationProblem(context,
+                ("details", "Please describe the concern when selecting Other."));
+        if (request.TargetType == ContentReportTargetType.Profile)
+        {
+            if (request.TargetId == userId)
+                return EndpointHelpers.ValidationProblem(context, ("targetId", "You cannot report your own profile."));
+            var targetExists = await db.Profiles.AsNoTracking().AnyAsync(
+                profile => profile.UserId == request.TargetId &&
+                           db.Users.Any(user => user.Id == profile.UserId && user.IsActive),
+                cancellationToken);
+            if (!targetExists) return EndpointHelpers.NotFound(context, "The reported profile was not found.");
+        }
+
         if (await db.ContentReports.AnyAsync(
                 x => x.ReportedByUserId == userId && x.TargetId == request.TargetId &&
                      x.Status == ContentReportStatus.Pending, cancellationToken))

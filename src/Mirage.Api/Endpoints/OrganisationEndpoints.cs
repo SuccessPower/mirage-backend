@@ -21,6 +21,7 @@ internal static class OrganisationEndpoints
         organisations.MapGet("/", async (HttpContext context, IMirageDbContext db, CancellationToken ct) =>
             ApiResults.Ok(context,
                 await db.Organisations.AsNoTracking()
+                    .Where(x => x.Status == OrganisationStatus.Approved)
                     .OrderBy(x => x.Name).ToListAsync(ct),
                 "Organisations retrieved successfully."));
         organisations.MapPost("/", Create).RequireAuthorization();
