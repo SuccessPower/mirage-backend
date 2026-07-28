@@ -1,3 +1,8 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mirage.Application.Contact;
 using Mirage.Infrastructure.Email;
 using Xunit;
@@ -69,5 +74,62 @@ public sealed class ContactSubmissionTests
         Assert.Contains("&lt;script&gt;", html);
         Assert.Contains("Please add identification.", html);
         Assert.Contains(profileUrl, html);
+    }
+
+    [Fact]
+    public void Shared_email_footer_does_not_use_the_os_label()
+    {
+        var html = EmailTemplates.Welcome("Ada", "https://themiragehub.com");
+
+        Assert.Contains("Relationship", html);
+        Assert.DoesNotContain("Relationship OS", html);
+    }
+
+    [Fact]
+    public async Task Email_delivery_uses_the_configured_brand_logo()
+    {
+        var handler = new CapturingHandler();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Mailjet:ApiKey"] = "test-key",
+                ["Mailjet:SecretKey"] = "test-secret",
+                ["Brand:LogoUrl"] = "https://cdn.example.com/mirage.png?version=2&theme=light"
+            })
+            .Build();
+        var service = new MailjetSmtpEmailService(
+            new HttpClient(handler), configuration, NullLogger<MailjetSmtpEmailService>.Instance);
+
+        var sent = await service.SendContactEmailAsync(
+            "support@example.com", "Ada", "ada@example.com", "Nigeria", "Feedback", "Hello");
+
+        Assert.True(sent);
+        using var payload = JsonDocument.Parse(handler.RequestBody);
+        var html = payload.RootElement
+            .GetProperty("Messages")[0]
+            .GetProperty("HTMLPart")
+            .GetString()!;
+        Assert.Contains(
+            "https://cdn.example.com/mirage.png?version=2&amp;theme=light",
+            html);
+        Assert.DoesNotContain("{{BRAND_LOGO_URL}}", html);
+    }
+
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        public string RequestBody { get; private set; } = string.Empty;
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"Messages":[{"Status":"success","To":[{"Email":"support@example.com"}]}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }
     }
 }

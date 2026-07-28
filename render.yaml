@@ -31,3 +31,5 @@ services:
         value: "true"
       - key: Google__ClientId
         value: "924927421966-qcqec2u9kpeggje18p29d08u7ohb69fd.apps.googleusercontent.com"
+      - key: Brand__LogoUrl
+        value: "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png"

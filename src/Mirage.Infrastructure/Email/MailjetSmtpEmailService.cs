@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -14,15 +15,21 @@ namespace Mirage.Infrastructure.Email;
 // secret key as SMTP credentials, just over port 443.
 public sealed class MailjetSmtpEmailService : IEmailService
 {
+    private const string DefaultBrandLogoUrl =
+        "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
     private readonly HttpClient _http;
     private readonly IConfiguration _config;
     private readonly ILogger<MailjetSmtpEmailService> _logger;
+    private readonly string _brandLogoUrl;
 
     public MailjetSmtpEmailService(HttpClient http, IConfiguration config, ILogger<MailjetSmtpEmailService> logger)
     {
         _http = http;
         _config = config;
         _logger = logger;
+        _brandLogoUrl = config["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configuredLogoUrl
+            ? configuredLogoUrl
+            : DefaultBrandLogoUrl;
 
         var apiKey = _config["Mailjet:ApiKey"];
         var secretKey = _config["Mailjet:SecretKey"];
@@ -97,6 +104,7 @@ public sealed class MailjetSmtpEmailService : IEmailService
     private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
         string? replyTo = null)
     {
+        html = ApplyBranding(html);
         var apiKey = _config["Mailjet:ApiKey"];
         var secretKey = _config["Mailjet:SecretKey"];
         if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(secretKey))
@@ -158,6 +166,32 @@ public sealed class MailjetSmtpEmailService : IEmailService
             _logger.LogError(ex, "Failed to send email via Mailjet API to {To} — subject: {Subject}", to, subject);
             return false;
         }
+    }
+
+    private string ApplyBranding(string html)
+    {
+        var safeLogoUrl = WebUtility.HtmlEncode(_brandLogoUrl);
+        if (html.Contains("{{BRAND_LOGO_URL}}", StringComparison.Ordinal))
+            return html.Replace("{{BRAND_LOGO_URL}}", safeLogoUrl, StringComparison.Ordinal);
+
+        // A few operational emails intentionally use compact standalone markup instead of the
+        // shared template layout. Inject the same brand header after <body> so those messages do
+        // not silently drift from the transactional-email identity.
+        var bodyStart = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
+        var bodyTagEnd = bodyStart < 0 ? -1 : html.IndexOf('>', bodyStart);
+        if (bodyTagEnd < 0) return html;
+
+        var header = $"""
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr><td align="center" style="padding:24px 16px 0">
+                <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                  <td><img src="{safeLogoUrl}" width="36" height="36" alt="Mirage" style="display:block;width:36px;height:36px;object-fit:contain;border:0;outline:none"/></td>
+                  <td style="padding-left:10px;font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#f4f0ff">Mirage</td>
+                </tr></table>
+              </td></tr>
+            </table>
+            """;
+        return html.Insert(bodyTagEnd + 1, header);
     }
 
     private static bool IsMessageAccepted(string responseBody, out string? error)

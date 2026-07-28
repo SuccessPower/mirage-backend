@@ -135,6 +135,7 @@ For an existing Render service, configure these under **Environment**:
 | `Jwt__SigningKey` | Random secret of at least 32 bytes |
 | `Jwt__Issuer` | `mirage-api` |
 | `Jwt__Audience` | `mirage-client` |
+| `Brand__LogoUrl` | Public HTTPS URL used for the logo in transactional emails |
 | `Jwt__AccessTokenMinutes` | `15` |
 | `Jwt__RefreshTokenDays` | `30` |
 | `Database__ApplyMigrationsOnStartup` | `true` |
