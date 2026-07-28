@@ -59,6 +59,7 @@ internal static class AdminEndpoints
         // of their single org in OrganisationEndpoints).
         admin.MapGet("/organisations", ListOrganisations);
         admin.MapPost("/organisations/seed-churches", SeedChurches);
+        admin.MapPost("/organisations/{sourceId:guid}/merge", MergeOrganisation);
 
         // Content reports can also be submitted by any authenticated user
         var reports = api.MapGroup("/reports").WithTags("Reports").RequireAuthorization();
@@ -623,6 +624,106 @@ internal static class AdminEndpoints
             paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, response, "Churches retrieved successfully.");
+    }
+
+    private static async Task<IResult> MergeOrganisation(Guid sourceId, MergeOrganisationRequest request,
+        HttpContext context, MirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (sourceId == request.TargetOrganisationId)
+            return EndpointHelpers.ValidationProblem(context,
+                ("targetOrganisationId", "Source and target organisations must be different."));
+
+        var organisations = await db.Organisations
+            .Where(x => x.Id == sourceId || x.Id == request.TargetOrganisationId)
+            .ToListAsync(cancellationToken);
+        var source = organisations.SingleOrDefault(x => x.Id == sourceId);
+        var target = organisations.SingleOrDefault(x => x.Id == request.TargetOrganisationId);
+        if (source is null || target is null)
+            return EndpointHelpers.NotFound(context, "The source or target organisation was not found.");
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        // Resolve uniqueness constraints before moving the remaining membership rows.
+        await db.OrganisationMembers
+            .Where(sourceMember => sourceMember.OrganisationId == source.Id &&
+                db.OrganisationMembers.Any(targetMember =>
+                    targetMember.OrganisationId == target.Id &&
+                    targetMember.UserId == sourceMember.UserId))
+            .ExecuteDeleteAsync(cancellationToken);
+        await db.OrganisationManagers
+            .Where(sourceManager => sourceManager.OrganisationId == source.Id &&
+                db.OrganisationManagers.Any(targetManager =>
+                    targetManager.OrganisationId == target.Id &&
+                    targetManager.UserId == sourceManager.UserId))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        await db.OrganisationBranches.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+        await db.OrganisationMembers.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+        await db.OrganisationManagers.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+
+        // Preserve the source owner as an administrator of the canonical organisation after
+        // manager rows have moved, avoiding a duplicate (OrganisationId, UserId) key.
+        var sourceOwnerAlreadyManagesTarget = source.AdminUserId == target.AdminUserId ||
+            await db.OrganisationManagers.AnyAsync(
+                x => x.OrganisationId == target.Id && x.UserId == source.AdminUserId,
+                cancellationToken);
+        if (!sourceOwnerAlreadyManagesTarget)
+            db.OrganisationManagers.Add(new OrganisationManager(target.Id, source.AdminUserId, null));
+
+        await db.OrgEvents.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+        await db.Counsellors.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+        await db.Recommendations.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+        await db.CounsellorInvites.Where(x => x.OrganisationId == source.Id)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id), cancellationToken);
+
+        // Organisation-backed communities carry user-generated posts. When both organisations
+        // have the same category, combine their memberships and posts before removing the shell.
+        var sourceCommunities = await db.Communities
+            .Where(x => x.OrganisationId == source.Id)
+            .ToListAsync(cancellationToken);
+        var targetCommunities = await db.Communities
+            .Where(x => x.OrganisationId == target.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var sourceCommunity in sourceCommunities)
+        {
+            var targetCommunity = targetCommunities.FirstOrDefault(x =>
+                x.Category.Equals(sourceCommunity.Category, StringComparison.OrdinalIgnoreCase));
+            if (targetCommunity is null)
+            {
+                await db.Communities.Where(x => x.Id == sourceCommunity.Id)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.OrganisationId, target.Id),
+                        cancellationToken);
+                continue;
+            }
+
+            await db.CommunityMembers
+                .Where(sourceMember => sourceMember.CommunityId == sourceCommunity.Id &&
+                    db.CommunityMembers.Any(targetMember =>
+                        targetMember.CommunityId == targetCommunity.Id &&
+                        targetMember.UserId == sourceMember.UserId))
+                .ExecuteDeleteAsync(cancellationToken);
+            await db.CommunityMembers.Where(x => x.CommunityId == sourceCommunity.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.CommunityId, targetCommunity.Id),
+                    cancellationToken);
+            await db.CommunityPosts.Where(x => x.CommunityId == sourceCommunity.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.CommunityId, targetCommunity.Id),
+                    cancellationToken);
+            db.Communities.Remove(sourceCommunity);
+        }
+
+        db.Organisations.Remove(source);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return ApiResults.Ok(context,
+            new { SourceOrganisationId = source.Id, TargetOrganisationId = target.Id },
+            $"“{source.Name}” was merged into “{target.Name}”. Members, administrators, branches, events, counsellors, and community content were preserved.");
     }
 
     // Reconciles the database against the curated starter directory (SeedData/nigerian-churches.json)

@@ -1,11 +1,44 @@
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Domain.Services;
 using Xunit;
 
 namespace Mirage.Domain.Tests;
 
 public sealed class DomainInvariantTests
 {
+    [Theory]
+    [InlineData("Daystar", "Daystar Christian Centre")]
+    [InlineData("DAYSTAR!", "Daystar Christian Center")]
+    [InlineData("The Elevation", "The Elevation Church International")]
+    public void Organisation_identity_matches_brand_name_variants(string candidate, string existing)
+    {
+        Assert.True(OrganisationIdentity.IsLikelyDuplicate(
+            candidate, "Nigeria", null, existing, "Nigeria", null));
+    }
+
+    [Fact]
+    public void Organisation_identity_does_not_merge_same_name_across_countries()
+    {
+        Assert.False(OrganisationIdentity.IsLikelyDuplicate(
+            "Daystar", "Ghana", null, "Daystar Christian Centre", "Nigeria", null));
+    }
+
+    [Fact]
+    public void Organisation_identity_uses_canonical_website_host()
+    {
+        Assert.True(OrganisationIdentity.IsLikelyDuplicate(
+            "Unrelated display name", "Ghana", "https://www.daystarng.org/about",
+            "Daystar Christian Centre", "Nigeria", "daystarng.org"));
+    }
+
+    [Fact]
+    public void Organisation_identity_avoids_ambiguous_single_word_names()
+    {
+        Assert.False(OrganisationIdentity.IsLikelyDuplicate(
+            "Grace", "Nigeria", null, "Grace Church International", "Nigeria", null));
+    }
+
     [Fact]
     public void Date_request_rejects_invalid_time_window()
     {
