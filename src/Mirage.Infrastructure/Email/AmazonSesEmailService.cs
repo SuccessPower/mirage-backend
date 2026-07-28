@@ -1,7 +1,7 @@
-using System.Net.Http.Headers;
 using System.Net;
-using System.Text;
-using System.Text.Json;
+using Amazon.Runtime;
+using Amazon.SimpleEmailV2;
+using Amazon.SimpleEmailV2.Model;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Mirage.Application.Abstractions;
@@ -9,36 +9,29 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Infrastructure.Email;
 
-// Uses Mailjet's HTTPS Send API rather than raw SMTP — most PaaS hosts (Render included)
-// block outbound SMTP ports (25/465/587) for anti-abuse reasons, which makes a real
-// SmtpClient connection hang or fail silently. The HTTPS API uses the same API key /
-// secret key as SMTP credentials, just over port 443.
-public sealed class MailjetSmtpEmailService : IEmailService
+// Uses the SES v2 HTTPS API rather than SMTP because many PaaS hosts block outbound
+// SMTP ports. Authentication is supplied by the standard AWS credential provider chain.
+public sealed class AmazonSesEmailService : IEmailService
 {
     private const string DefaultBrandLogoUrl =
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
-    private readonly HttpClient _http;
+    private readonly IAmazonSimpleEmailServiceV2 _ses;
     private readonly IConfiguration _config;
-    private readonly ILogger<MailjetSmtpEmailService> _logger;
+    private readonly ILogger<AmazonSesEmailService> _logger;
     private readonly string _brandLogoUrl;
 
-    public MailjetSmtpEmailService(HttpClient http, IConfiguration config, ILogger<MailjetSmtpEmailService> logger)
+    public AmazonSesEmailService(
+        IAmazonSimpleEmailServiceV2 ses,
+        IConfiguration config,
+        ILogger<AmazonSesEmailService> logger)
     {
-        _http = http;
+        _ses = ses;
         _config = config;
         _logger = logger;
         _brandLogoUrl = config["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configuredLogoUrl
             ? configuredLogoUrl
             : DefaultBrandLogoUrl;
 
-        var apiKey = _config["Mailjet:ApiKey"];
-        var secretKey = _config["Mailjet:SecretKey"];
-        _http.BaseAddress = new Uri("https://api.mailjet.com/v3.1/");
-        if (!string.IsNullOrWhiteSpace(apiKey) && !string.IsNullOrWhiteSpace(secretKey))
-        {
-            var creds = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{apiKey}:{secretKey}"));
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", creds);
-        }
     }
 
     public Task<bool> SendWelcomeEmailAsync(string toEmail, string displayName, string? confirmUrl = null,
@@ -105,65 +98,50 @@ public sealed class MailjetSmtpEmailService : IEmailService
         string? replyTo = null)
     {
         html = ApplyBranding(html);
-        var apiKey = _config["Mailjet:ApiKey"];
-        var secretKey = _config["Mailjet:SecretKey"];
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(secretKey))
+        var from = _config["AmazonSes:From"] ?? "Mirage <hello@themiragehub.com>";
+        var request = new SendEmailRequest
         {
-            _logger.LogWarning("Mailjet:ApiKey/Mailjet:SecretKey not configured — skipping email to {To} ({Subject})", to, subject);
-            return false;
-        }
-
-        var from = _config["Mailjet:From"] ?? "Mirage <onboarding@mirageapp.dev>";
-        var fromEmail = ParseAddress(from);
-        var fromName = ParseName(from);
-
-        var payload = new
-        {
-            Messages = new[]
+            FromEmailAddress = from,
+            Destination = new Destination
             {
-                new
-                {
-                    From = new { Email = fromEmail, Name = fromName },
-                    To = new[] { new { Email = to } },
-                    ReplyTo = string.IsNullOrWhiteSpace(replyTo) ? null : new { Email = replyTo },
-                    Subject = subject,
-                    HTMLPart = html,
-                },
+                ToAddresses = [to]
             },
+            Content = new EmailContent
+            {
+                Simple = new Message
+                {
+                    Subject = new Content { Data = subject, Charset = "UTF-8" },
+                    Body = new Body
+                    {
+                        Html = new Content { Data = html, Charset = "UTF-8" }
+                    }
+                }
+            },
+            ReplyToAddresses = string.IsNullOrWhiteSpace(replyTo) ? [] : [replyTo]
         };
-        var body = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
         try
         {
-            var response = await _http.PostAsync("send", body, cancellationToken);
-            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogError(
-                    "Mailjet rejected email to {To} — HTTP {Status}: {Detail}. Ensure the From address/domain is verified in Mailjet.",
-                    to, (int)response.StatusCode, responseBody);
-                return false;
-            }
-
-            // Mailjet's v3.1 Send API can return HTTP 200 even when the message itself was
-            // rejected (e.g. an unverified From address/domain) — the real outcome is only in
-            // the per-message "Status" field, so the HTTP status alone can't be trusted.
-            if (!IsMessageAccepted(responseBody, out var messageError))
-            {
-                _logger.LogError(
-                    "Mailjet accepted the API call but rejected the message to {To}: {Detail}. " +
-                    "Check that the From address/domain is verified under Mailjet > Sender addresses & domains.",
-                    to, messageError ?? responseBody);
-                return false;
-            }
-
-            _logger.LogInformation("Email sent via Mailjet API to {To} — subject: {Subject}", to, subject);
+            var response = await _ses.SendEmailAsync(request, cancellationToken);
+            _logger.LogInformation(
+                "Email accepted by Amazon SES for {To} — subject: {Subject}, message ID: {MessageId}",
+                to, subject, response.MessageId);
             return true;
         }
-        catch (Exception ex)
+        catch (AmazonSimpleEmailServiceV2Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email via Mailjet API to {To} — subject: {Subject}", to, subject);
+            _logger.LogError(ex,
+                "Amazon SES rejected email to {To} — subject: {Subject}, AWS error: {ErrorCode}. " +
+                "Verify the identity, region, credentials, IAM permissions, and SES production access.",
+                to, subject, ex.ErrorCode);
+            return false;
+        }
+        catch (AmazonClientException ex)
+        {
+            _logger.LogError(ex,
+                "Amazon SES client failed before sending email to {To} — subject: {Subject}. " +
+                "Check the AWS credential chain and network connectivity.",
+                to, subject);
             return false;
         }
     }
@@ -194,42 +172,4 @@ public sealed class MailjetSmtpEmailService : IEmailService
         return html.Insert(bodyTagEnd + 1, header);
     }
 
-    private static bool IsMessageAccepted(string responseBody, out string? error)
-    {
-        error = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(responseBody);
-            if (!doc.RootElement.TryGetProperty("Messages", out var messages) ||
-                messages.ValueKind != JsonValueKind.Array || messages.GetArrayLength() == 0)
-            {
-                error = "Unexpected response shape from Mailjet.";
-                return false;
-            }
-
-            var message = messages[0];
-            var status = message.TryGetProperty("Status", out var statusProp) ? statusProp.GetString() : null;
-            if (string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)) return true;
-
-            error = message.TryGetProperty("Errors", out var errors) ? errors.ToString() : responseBody;
-            return false;
-        }
-        catch (JsonException)
-        {
-            error = "Could not parse Mailjet response body.";
-            return false;
-        }
-    }
-
-    private static string ParseAddress(string from)
-    {
-        var start = from.IndexOf('<');
-        return start >= 0 ? from[(start + 1)..from.IndexOf('>')] : from;
-    }
-
-    private static string ParseName(string from)
-    {
-        var start = from.IndexOf('<');
-        return start >= 0 ? from[..start].Trim() : string.Empty;
-    }
 }

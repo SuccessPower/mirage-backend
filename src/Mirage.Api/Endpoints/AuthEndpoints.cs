@@ -145,7 +145,7 @@ internal static class AuthEndpoints
 
                 // The welcome email doubles as the confirmation email (one send, not two) and is
                 // dispatched off the request path so the client gets its response immediately — the
-                // outbound Mailjet call otherwise adds seconds of latency here. WelcomeEmailBackfillWorker
+                // outbound provider call otherwise adds seconds of latency here. WelcomeEmailBackfillWorker
                 // sweeps for missed WelcomeEmailSentAt as a safety net, and /auth/resend-confirmation
                 // covers a dropped confirmation link.
                 var userId = user.Id;

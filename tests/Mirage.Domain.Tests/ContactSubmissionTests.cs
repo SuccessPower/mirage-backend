@@ -1,6 +1,7 @@
-using System.Net;
-using System.Text;
-using System.Text.Json;
+using Amazon;
+using Amazon.Runtime;
+using Amazon.SimpleEmailV2;
+using Amazon.SimpleEmailV2.Model;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mirage.Application.Contact;
@@ -92,44 +93,40 @@ public sealed class ContactSubmissionTests
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Mailjet:ApiKey"] = "test-key",
-                ["Mailjet:SecretKey"] = "test-secret",
                 ["Brand:LogoUrl"] = "https://cdn.example.com/mirage.png?version=2&theme=light"
             })
             .Build();
-        var service = new MailjetSmtpEmailService(
-            new HttpClient(handler), configuration, NullLogger<MailjetSmtpEmailService>.Instance);
+        var service = new AmazonSesEmailService(
+            handler, configuration, NullLogger<AmazonSesEmailService>.Instance);
 
         var sent = await service.SendContactEmailAsync(
             "support@example.com", "Ada", "ada@example.com", "Nigeria", "Feedback", "Hello");
 
         Assert.True(sent);
-        using var payload = JsonDocument.Parse(handler.RequestBody);
-        var html = payload.RootElement
-            .GetProperty("Messages")[0]
-            .GetProperty("HTMLPart")
-            .GetString()!;
+        var html = handler.Request!.Content.Simple.Body.Html.Data;
         Assert.Contains(
             "https://cdn.example.com/mirage.png?version=2&amp;theme=light",
             html);
         Assert.DoesNotContain("{{BRAND_LOGO_URL}}", html);
     }
 
-    private sealed class CapturingHandler : HttpMessageHandler
+    private sealed class CapturingHandler : AmazonSimpleEmailServiceV2Client
     {
-        public string RequestBody { get; private set; } = string.Empty;
-
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            RequestBody = await request.Content!.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK)
+        public CapturingHandler()
+            : base(new AnonymousAWSCredentials(), new AmazonSimpleEmailServiceV2Config
             {
-                Content = new StringContent(
-                    """{"Messages":[{"Status":"success","To":[{"Email":"support@example.com"}]}]}""",
-                    Encoding.UTF8,
-                    "application/json")
-            };
+                RegionEndpoint = RegionEndpoint.EUWest1
+            })
+        {
+        }
+
+        public SendEmailRequest? Request { get; private set; }
+
+        public override Task<SendEmailResponse> SendEmailAsync(
+            SendEmailRequest request, CancellationToken cancellationToken = default)
+        {
+            Request = request;
+            return Task.FromResult(new SendEmailResponse { MessageId = "ses-message-id" });
         }
     }
 }
