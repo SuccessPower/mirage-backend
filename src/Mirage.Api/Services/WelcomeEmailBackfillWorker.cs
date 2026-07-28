@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Mirage.Api.Services;
 
 // Periodically sweeps for users with no WelcomeEmailSentAt and sends the backlog in small
-// batches — small batches keep us under Mailjet's daily/rate limits rather than trying to
+// batches — small batches keep us under the provider's rate limits rather than trying to
 // blast the whole backlog in one run.
 public sealed class WelcomeEmailBackfillWorker(IServiceScopeFactory scopeFactory,
     ILogger<WelcomeEmailBackfillWorker> logger) : BackgroundService

@@ -1,3 +1,9 @@
+using Amazon;
+using Amazon.Runtime;
+using Amazon.SimpleEmailV2;
+using Amazon.SimpleEmailV2.Model;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mirage.Application.Contact;
 using Mirage.Infrastructure.Email;
 using Xunit;
@@ -69,5 +75,58 @@ public sealed class ContactSubmissionTests
         Assert.Contains("&lt;script&gt;", html);
         Assert.Contains("Please add identification.", html);
         Assert.Contains(profileUrl, html);
+    }
+
+    [Fact]
+    public void Shared_email_footer_does_not_use_the_os_label()
+    {
+        var html = EmailTemplates.Welcome("Ada", "https://themiragehub.com");
+
+        Assert.Contains("Relationship", html);
+        Assert.DoesNotContain("Relationship OS", html);
+    }
+
+    [Fact]
+    public async Task Email_delivery_uses_the_configured_brand_logo()
+    {
+        var handler = new CapturingHandler();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Brand:LogoUrl"] = "https://cdn.example.com/mirage.png?version=2&theme=light"
+            })
+            .Build();
+        var service = new AmazonSesEmailService(
+            handler, configuration, NullLogger<AmazonSesEmailService>.Instance);
+
+        var sent = await service.SendContactEmailAsync(
+            "support@example.com", "Ada", "ada@example.com", "Nigeria", "Feedback", "Hello");
+
+        Assert.True(sent);
+        var html = handler.Request!.Content.Simple.Body.Html.Data;
+        Assert.Contains(
+            "https://cdn.example.com/mirage.png?version=2&amp;theme=light",
+            html);
+        Assert.DoesNotContain("{{BRAND_LOGO_URL}}", html);
+    }
+
+    private sealed class CapturingHandler : AmazonSimpleEmailServiceV2Client
+    {
+        public CapturingHandler()
+            : base(new AnonymousAWSCredentials(), new AmazonSimpleEmailServiceV2Config
+            {
+                RegionEndpoint = RegionEndpoint.EUWest1
+            })
+        {
+        }
+
+        public SendEmailRequest? Request { get; private set; }
+
+        public override Task<SendEmailResponse> SendEmailAsync(
+            SendEmailRequest request, CancellationToken cancellationToken = default)
+        {
+            Request = request;
+            return Task.FromResult(new SendEmailResponse { MessageId = "ses-message-id" });
+        }
     }
 }

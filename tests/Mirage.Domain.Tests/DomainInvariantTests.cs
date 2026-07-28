@@ -7,6 +7,19 @@ namespace Mirage.Domain.Tests;
 
 public sealed class DomainInvariantTests
 {
+    [Fact]
+    public void Google_profile_completion_sets_the_validated_avatar()
+    {
+        var profile = new UserProfile(Guid.NewGuid(), "Google User", avatarUrl: null);
+
+        profile.CompleteProfile(new DateOnly(1995, 5, 20), "Lagos", "Nigeria", "Christian",
+            "A complete profile", "https://res.cloudinary.com/mirage/face.jpg",
+            Sex.Female, RelationshipStatus.Single, "Engineer");
+
+        Assert.True(profile.IsProfileComplete);
+        Assert.Equal("https://res.cloudinary.com/mirage/face.jpg", profile.AvatarUrl);
+    }
+
     [Theory]
     [InlineData("Daystar", "Daystar Christian Centre")]
     [InlineData("DAYSTAR!", "Daystar Christian Center")]
