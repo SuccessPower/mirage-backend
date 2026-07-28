@@ -252,6 +252,34 @@ public sealed class DomainInvariantTests
         Assert.True(visit.LastVisitedAt >= previousVisit);
     }
 
+    [Theory]
+    [InlineData(RelationshipStatus.Married, RelationshipStatus.Single)]
+    [InlineData(RelationshipStatus.Single, RelationshipStatus.Married)]
+    [InlineData(RelationshipStatus.Married, RelationshipStatus.Married)]
+    public void Profile_visit_notifications_are_disabled_when_either_person_is_married(
+        RelationshipStatus visitorStatus,
+        RelationshipStatus profileStatus)
+    {
+        Assert.False(ProfileVisit.ShouldNotify(
+            Sex.Male, visitorStatus, Sex.Female, profileStatus));
+    }
+
+    [Fact]
+    public void Opposite_sex_unmarried_profile_visit_can_notify()
+    {
+        Assert.True(ProfileVisit.ShouldNotify(
+            Sex.Male, RelationshipStatus.Single,
+            Sex.Female, RelationshipStatus.Single));
+    }
+
+    [Fact]
+    public void Same_sex_profile_visit_does_not_notify()
+    {
+        Assert.False(ProfileVisit.ShouldNotify(
+            Sex.Female, RelationshipStatus.Single,
+            Sex.Female, RelationshipStatus.Single));
+    }
+
     [Fact]
     public void Testimonial_cannot_tag_its_author()
     {

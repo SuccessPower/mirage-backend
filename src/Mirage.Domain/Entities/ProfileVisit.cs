@@ -1,4 +1,5 @@
 using Mirage.Domain.Common;
+using Mirage.Domain.Enums;
 
 namespace Mirage.Domain.Entities;
 
@@ -20,6 +21,17 @@ public sealed class ProfileVisit : Entity
     public DateTimeOffset LastVisitedAt { get; private set; }
 
     public bool IsIdentityRevealed => RevealOrdinal <= 10;
+
+    public static bool ShouldNotify(
+        Sex? visitorSex,
+        RelationshipStatus? visitorRelationshipStatus,
+        Sex? profileSex,
+        RelationshipStatus? profileRelationshipStatus) =>
+        visitorRelationshipStatus != RelationshipStatus.Married
+        && profileRelationshipStatus != RelationshipStatus.Married
+        && visitorSex is not null
+        && profileSex is not null
+        && visitorSex != profileSex;
 
     public void RecordReturnVisit()
     {

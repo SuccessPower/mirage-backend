@@ -271,12 +271,15 @@ internal static class ProfileEndpoints
     {
         var visitor = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == visitorUserId)
-            .Select(x => new { x.DisplayName, x.AvatarUrl, x.Sex })
+            .Select(x => new { x.DisplayName, x.AvatarUrl, x.Sex, x.RelationshipStatus })
             .SingleOrDefaultAsync(cancellationToken);
 
-        // Profile-visit alerts are intentionally restricted to opposite-sex visits. Missing sex
-        // data is not guessed, and repeat visits update activity without producing email spam.
-        if (visitor?.Sex is null || visitedProfile.Sex is null || visitor.Sex == visitedProfile.Sex)
+        // Married members are outside the romantic profile-visit alert flow. Suppress the visit
+        // completely when either participant is married so it consumes neither a reveal slot nor
+        // generates an in-app/email alert. Missing sex data is not guessed.
+        if (visitor is null || !ProfileVisit.ShouldNotify(
+                visitor.Sex, visitor.RelationshipStatus,
+                visitedProfile.Sex, visitedProfile.RelationshipStatus))
             return;
 
         ProfileVisit? visit = null;
