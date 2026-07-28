@@ -419,7 +419,7 @@ internal static class ProfileEndpoints
     // registration would normally collect up front, and optionally joins a church in the same step
     // (same self-service church search/propose flow as RegisterRequest).
     private static async Task<IResult> CompleteProfile(CompleteProfileRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, ProfileImageValidationService imageValidation, CancellationToken cancellationToken)
     {
         var errors = ValidateCompleteProfile(request);
         if (errors.Length > 0) return EndpointHelpers.ValidationProblem(context, errors);
@@ -430,6 +430,10 @@ internal static class ProfileEndpoints
         if (profile.IsProfileComplete)
             return EndpointHelpers.Conflict(context, "Your profile is already complete.");
 
+        if (!await imageValidation.IsValidHumanPhotoAsync(request.AvatarUrl, cancellationToken))
+            return EndpointHelpers.ValidationProblem(context,
+                ("avatarUrl", "We couldn't detect a real, human face in this photo. Please upload a clear photo of your face."));
+
         var churchSelection = await ChurchSelectionResolver.ResolveAsync(userId, request.Denomination, request.Country,
             request.OrganisationId, request.BranchId, request.NewOrganisationName,
             request.NewOrganisationRegistrationNumber, request.NewBranchName, request.NewBranchCity,
@@ -437,7 +441,7 @@ internal static class ProfileEndpoints
         if (churchSelection.Error is not null) return churchSelection.Error;
 
         profile.CompleteProfile(request.DateOfBirth, request.City, request.Country, request.Denomination,
-            request.Bio, request.Sex, request.RelationshipStatus, request.Occupation);
+            request.Bio, request.AvatarUrl, request.Sex, request.RelationshipStatus, request.Occupation);
 
         if (churchSelection.OrganisationId.HasValue)
             db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
@@ -463,6 +467,7 @@ internal static class ProfileEndpoints
             errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));
+        if (string.IsNullOrWhiteSpace(request.AvatarUrl)) errors.Add(("avatarUrl", "A clear profile photo is required."));
         if (request.Sex is null) errors.Add(("sex", "Select your sex."));
         if (!string.IsNullOrWhiteSpace(request.Denomination) &&
             !Enum.TryParse<ChristianDenomination>(request.Denomination, ignoreCase: true, out _))

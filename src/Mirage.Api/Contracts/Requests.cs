@@ -68,6 +68,7 @@ public sealed record CompleteProfileRequest(
     string Country,
     string Denomination,
     string Bio,
+    string AvatarUrl,
     Sex? Sex = null,
     RelationshipStatus? RelationshipStatus = null,
     string? Occupation = null,

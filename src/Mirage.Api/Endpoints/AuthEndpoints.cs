@@ -602,7 +602,11 @@ internal static class AuthEndpoints
                 var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
                 var accessToken = tokens.CreateAccessToken(user, [MirageRoles.User]);
 
-                var profile = new UserProfile(user.Id, displayName, payload.Picture, GetClientIpAddress(context));
+                // Do not trust the Google account avatar as a dating profile photo. It may be a
+                // logo, illustration, group photo, or stale image and has not passed our
+                // server-side face detector. CompleteProfile requires a fresh validated upload.
+                var profile = new UserProfile(user.Id, displayName, avatarUrl: null,
+                    signupIpAddress: GetClientIpAddress(context));
                 // Google already verified this email (EmailConfirmed starts true above), so the
                 // profile starts in the same verified state ConfirmEmail grants password signups —
                 // without this, Google users pass the email gate but are still blocked from

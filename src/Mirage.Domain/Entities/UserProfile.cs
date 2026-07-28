@@ -90,13 +90,14 @@ public sealed class UserProfile : Entity
     // One-time completion for a minimal Google sign-in profile — fills in the fields normal
     // registration collects up front (DOB is otherwise never settable after account creation).
     public void CompleteProfile(DateOnly dateOfBirth, string city, string country, string denomination,
-        string bio, Sex? sex, RelationshipStatus? relationshipStatus, string? occupation)
+        string bio, string avatarUrl, Sex? sex, RelationshipStatus? relationshipStatus, string? occupation)
     {
         DateOfBirth = dateOfBirth;
         City = city.Trim();
         Country = country.Trim();
         Denomination = denomination.Trim();
         Bio = bio.Trim();
+        AvatarUrl = avatarUrl.Trim();
         if (sex is not null) Sex = sex;
         if (relationshipStatus is not null) RelationshipStatus = relationshipStatus;
         if (occupation is not null) Occupation = occupation.Trim();
