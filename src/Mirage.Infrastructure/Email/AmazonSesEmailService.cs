@@ -98,7 +98,7 @@ public sealed class AmazonSesEmailService : IEmailService
         string? replyTo = null)
     {
         html = ApplyBranding(html);
-        var from = _config["AmazonSes:From"] ?? "Mirage <hello@themiragehub.com>";
+        var from = _config["AmazonSes:From"] ?? "Mirage <noreply@themiragehub.com>";
         var request = new SendEmailRequest
         {
             FromEmailAddress = from,
