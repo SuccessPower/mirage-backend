@@ -26,6 +26,17 @@ public sealed record RegisterRequest(
     string? NewBranchCity = null);
 
 public sealed record LoginRequest(string Email, string Password);
+public sealed record ContactRequest(
+    string FullName,
+    string Email,
+    string Country,
+    string Reason,
+    string Message,
+    string? Website = null);
+public sealed record SendAdminInformationRequest(string Message);
+public sealed record CreateTestimonialRequest(string Title, string Body, string? ImageUrl = null,
+    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null);
+public sealed record CreateTestimonialCommentRequest(string Body, Guid? ParentCommentId = null);
 public sealed record GoogleAuthRequest(string IdToken);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
@@ -78,6 +89,7 @@ public sealed record CreateOrganisationRequest(
     string? LogoUrl = null, string? WebsiteUrl = null);
 public sealed record UpdateOrganisationDetailsRequest(string? LogoUrl, string? WebsiteUrl);
 public sealed record InviteOrganisationAdminRequest(string Email);
+public sealed record MergeOrganisationRequest(Guid TargetOrganisationId);
 public sealed record JoinOrganisationRequest(Guid? BranchId, string? Description = null);
 public sealed record AssignMemberRequest(Guid? MentorUserId, Guid? CounsellorUserId);
 public sealed record CreateBranchRequest(string Name, string City, string Country, string? Address);
@@ -100,7 +112,7 @@ public sealed record CreateCommunityRequest(
 public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? AvatarKey);
 public sealed record UpdateCommunityMemberRoleRequest(CommunityMemberRole Role);
 public sealed record CastVoteRequest(sbyte Value);
-public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null);
+public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null, IReadOnlyList<string>? ImageUrls = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);
 public sealed record InviteToGatheringRequest(string EmailOrUsername);

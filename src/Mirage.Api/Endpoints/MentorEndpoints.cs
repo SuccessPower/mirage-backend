@@ -9,6 +9,7 @@ using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
+using Mirage.Infrastructure.Persistence;
 
 namespace Mirage.Api.Endpoints;
 
@@ -46,6 +47,7 @@ internal static class MentorEndpoints
         mentors.MapPost("/{id:guid}/group-messages", SendGroupMessage).RequireAuthorization();
         mentors.MapGet("/{id:guid}/meetings", ListMeetings).RequireAuthorization();
         mentors.MapPost("/{id:guid}/meetings", ScheduleMeeting).RequireAuthorization(MiragePolicy.Mentor);
+        mentors.MapGet("/{id:guid}/meetings/{meetingId:guid}/video-token", GetMeetingVideoToken).RequireAuthorization();
         return api;
     }
 
@@ -276,6 +278,27 @@ internal static class MentorEndpoints
 
         return ApiResults.Created(context, $"/api/v1/mentors/{id}/meetings/{meeting.Id}", new { meeting.Id },
             "Meeting scheduled successfully.");
+    }
+
+    private static async Task<IResult> GetMeetingVideoToken(Guid id, Guid meetingId, HttpContext context,
+        MirageDbContext db, JitsiService jitsi, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        if (!await db.MentorMeetings.AsNoTracking()
+                .AnyAsync(x => x.Id == meetingId && x.MentorProfileId == id, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Meeting was not found.");
+
+        var mentorUserId = await db.Mentors.AsNoTracking().Where(x => x.Id == id)
+            .Select(x => x.UserId).SingleAsync(cancellationToken);
+        var displayName = await db.Profiles.AsNoTracking().Where(x => x.UserId == userId)
+            .Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken) ?? "Mirage member";
+        var email = await db.Users.AsNoTracking().Where(x => x.Id == userId)
+            .Select(x => x.Email).SingleOrDefaultAsync(cancellationToken);
+        var room = $"mirage-mentor-{id:N}-{meetingId:N}";
+        var token = jitsi.CreateToken(userId, displayName, email, room, mentorUserId == userId);
+        return ApiResults.Ok(context, new { AppId = jitsi.AppId, Room = room, Token = token },
+            "Video token issued successfully.");
     }
 
     private static async Task<IResult> ListMentors(HttpContext context, IMirageDbContext db,

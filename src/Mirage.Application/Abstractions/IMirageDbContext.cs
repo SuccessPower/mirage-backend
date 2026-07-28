@@ -48,6 +48,7 @@ public interface IMirageDbContext
     DbSet<CoupleFriendship> CoupleFriendships { get; }
     DbSet<CoupleFriendMessage> CoupleFriendMessages { get; }
     DbSet<ProfileVote> ProfileVotes { get; }
+    DbSet<ProfileVisit> ProfileVisits { get; }
     DbSet<OrganisationAdminInvite> OrganisationAdminInvites { get; }
     DbSet<CounsellingMessage> CounsellingMessages { get; }
     DbSet<CounsellingMeeting> CounsellingMeetings { get; }
@@ -55,5 +56,9 @@ public interface IMirageDbContext
     DbSet<GatheringInvite> GatheringInvites { get; }
     DbSet<Vendor> Vendors { get; }
     DbSet<AnalyticsEvent> AnalyticsEvents { get; }
+    DbSet<Testimonial> Testimonials { get; }
+    DbSet<TestimonialRead> TestimonialReads { get; }
+    DbSet<TestimonialLike> TestimonialLikes { get; }
+    DbSet<TestimonialComment> TestimonialComments { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -122,5 +122,6 @@ public enum NotificationType
     CoupleFriendshipCreated = 28,
     CoupleFriendshipEnded = 29,
     DateOfBirthInvalid = 30,
-    ConversationEnded = 31
+    ConversationEnded = 31,
+    ProfileVisited = 32
 }

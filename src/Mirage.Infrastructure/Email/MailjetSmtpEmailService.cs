@@ -69,13 +69,33 @@ public sealed class MailjetSmtpEmailService : IEmailService
 
     public bool HasNotificationTemplate(NotificationType type) => EmailTemplates.HasTemplate(type);
 
+    public Task SendProfileVisitEmailAsync(string toEmail, string displayName, string visitorName,
+        string? visitorAvatarUrl, bool revealIdentity, string profileUrl,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail,
+            revealIdentity ? $"{visitorName} viewed your Mirage profile" : "Someone viewed your Mirage profile",
+            EmailTemplates.ProfileVisit(displayName, visitorName, visitorAvatarUrl, revealIdentity, profileUrl),
+            cancellationToken);
+
     public Task SendNotificationEmailAsync(string toEmail, string displayName, NotificationType type, string title,
         string body, string? actionUrl = null, string? actionLabel = null,
         CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, title,
             EmailTemplates.Notification(type, displayName, title, body, actionUrl, actionLabel), cancellationToken);
 
-    private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken)
+    public Task<bool> SendContactEmailAsync(string recipientEmail, string senderName, string senderEmail,
+        string country, string reason, string message, CancellationToken cancellationToken = default) =>
+        SendAsync(recipientEmail, $"Mirage contact: {reason}",
+            EmailTemplates.ContactSubmission(senderName, senderEmail, country, reason, message),
+            cancellationToken, senderEmail);
+
+    public Task<bool> SendAdminInformationRequestEmailAsync(string toEmail, string displayName, string message,
+        string profileUrl, CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, "Action needed: please update your Mirage profile",
+            EmailTemplates.AdminInformationRequest(displayName, message, profileUrl), cancellationToken);
+
+    private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
+        string? replyTo = null)
     {
         var apiKey = _config["Mailjet:ApiKey"];
         var secretKey = _config["Mailjet:SecretKey"];
@@ -97,6 +117,7 @@ public sealed class MailjetSmtpEmailService : IEmailService
                 {
                     From = new { Email = fromEmail, Name = fromName },
                     To = new[] { new { Email = to } },
+                    ReplyTo = string.IsNullOrWhiteSpace(replyTo) ? null : new { Email = replyTo },
                     Subject = subject,
                     HTMLPart = html,
                 },

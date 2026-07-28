@@ -5,11 +5,13 @@ public static class MirageEndpointExtensions
     public static IEndpointRouteBuilder MapMirageEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var api = endpoints.MapGroup("/api/v1");
+        api.MapContactEndpoints();
         api.MapAuthEndpoints();
         api.MapProfileEndpoints();
         api.MapOrganisationEndpoints();
         api.MapEventEndpoints();
         api.MapCommunityEndpoints();
+        api.MapTestimonialEndpoints();
         api.MapMatchingEndpoints();
         api.MapDateRequestEndpoints();
         api.MapGatheringInviteEndpoints();

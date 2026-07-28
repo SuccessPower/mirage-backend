@@ -7,6 +7,7 @@ using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Domain.Services;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 
@@ -20,6 +21,7 @@ internal static class OrganisationEndpoints
         organisations.MapGet("/", async (HttpContext context, IMirageDbContext db, CancellationToken ct) =>
             ApiResults.Ok(context,
                 await db.Organisations.AsNoTracking()
+                    .Where(x => x.Status == OrganisationStatus.Approved)
                     .OrderBy(x => x.Name).ToListAsync(ct),
                 "Organisations retrieved successfully."));
         organisations.MapPost("/", Create).RequireAuthorization();
@@ -82,6 +84,16 @@ internal static class OrganisationEndpoints
             return EndpointHelpers.ValidationProblem(context,
                 ("organisation", "Name and registration number are required."));
 
+        var existingOrganisations = await db.Organisations.AsNoTracking()
+            .Select(x => new { x.Id, x.Name, x.Country, x.WebsiteUrl })
+            .ToListAsync(cancellationToken);
+        var duplicate = existingOrganisations.FirstOrDefault(x =>
+            OrganisationIdentity.IsLikelyDuplicate(request.Name, request.Country, request.WebsiteUrl,
+                x.Name, x.Country, x.WebsiteUrl));
+        if (duplicate is not null)
+            return EndpointHelpers.Conflict(context,
+                $"“{duplicate.Name}” is already listed. Select the existing organisation instead of creating another one.");
+
         var userId = context.User.GetUserId();
         var organisation = new Organisation(userId, request.Name, request.Denomination,
             request.Country, request.RegistrationNumber, request.LogoUrl, request.WebsiteUrl);
@@ -138,6 +150,15 @@ internal static class OrganisationEndpoints
         var org = await db.Organisations.SingleAsync(x => x.Id == id, cancellationToken);
         org.SetLogo(request.LogoUrl);
         org.SetWebsite(request.WebsiteUrl);
+
+        // Organisation-backed church communities use the organisation identity as their own.
+        // Keeping this server-side makes every client and future logo update consistent.
+        var linkedCommunities = await db.Communities
+            .Where(x => x.OrganisationId == id)
+            .ToListAsync(cancellationToken);
+        foreach (var community in linkedCommunities)
+            community.UpdateAvatar(org.LogoUrl, null);
+
         await db.SaveChangesAsync(cancellationToken);
 
         return ApiResults.Ok(context, new { org.Id, org.LogoUrl, org.WebsiteUrl }, "Organisation updated successfully.");

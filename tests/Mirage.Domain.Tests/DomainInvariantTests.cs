@@ -1,11 +1,44 @@
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Domain.Services;
 using Xunit;
 
 namespace Mirage.Domain.Tests;
 
 public sealed class DomainInvariantTests
 {
+    [Theory]
+    [InlineData("Daystar", "Daystar Christian Centre")]
+    [InlineData("DAYSTAR!", "Daystar Christian Center")]
+    [InlineData("The Elevation", "The Elevation Church International")]
+    public void Organisation_identity_matches_brand_name_variants(string candidate, string existing)
+    {
+        Assert.True(OrganisationIdentity.IsLikelyDuplicate(
+            candidate, "Nigeria", null, existing, "Nigeria", null));
+    }
+
+    [Fact]
+    public void Organisation_identity_does_not_merge_same_name_across_countries()
+    {
+        Assert.False(OrganisationIdentity.IsLikelyDuplicate(
+            "Daystar", "Ghana", null, "Daystar Christian Centre", "Nigeria", null));
+    }
+
+    [Fact]
+    public void Organisation_identity_uses_canonical_website_host()
+    {
+        Assert.True(OrganisationIdentity.IsLikelyDuplicate(
+            "Unrelated display name", "Ghana", "https://www.daystarng.org/about",
+            "Daystar Christian Centre", "Nigeria", "daystarng.org"));
+    }
+
+    [Fact]
+    public void Organisation_identity_avoids_ambiguous_single_word_names()
+    {
+        Assert.False(OrganisationIdentity.IsLikelyDuplicate(
+            "Grace", "Nigeria", null, "Grace Church International", "Nigeria", null));
+    }
+
     [Fact]
     public void Date_request_rejects_invalid_time_window()
     {
@@ -193,5 +226,97 @@ public sealed class DomainInvariantTests
         Assert.Throws<ArgumentException>(() =>
             new DateRequest(Guid.NewGuid(), "Coffee", DateTimeOffset.UtcNow.AddDays(1),
                 DateTimeOffset.UtcNow.AddDays(1).AddHours(1), "Lagos", null, capacity: 0));
+    }
+
+    [Theory]
+    [InlineData(1, true)]
+    [InlineData(10, true)]
+    [InlineData(11, false)]
+    public void Profile_visit_reveals_only_the_first_ten_distinct_visitors(int ordinal, bool expected)
+    {
+        var visit = new ProfileVisit(Guid.NewGuid(), Guid.NewGuid(), ordinal);
+
+        Assert.Equal(expected, visit.IsIdentityRevealed);
+    }
+
+    [Fact]
+    public void Return_profile_visit_refreshes_activity_without_changing_reveal_quota()
+    {
+        var visit = new ProfileVisit(Guid.NewGuid(), Guid.NewGuid(), 7);
+        var previousVisit = visit.LastVisitedAt;
+
+        visit.RecordReturnVisit();
+
+        Assert.Equal(7, visit.RevealOrdinal);
+        Assert.True(visit.IsIdentityRevealed);
+        Assert.True(visit.LastVisitedAt >= previousVisit);
+    }
+
+    [Theory]
+    [InlineData(RelationshipStatus.Married, RelationshipStatus.Single)]
+    [InlineData(RelationshipStatus.Single, RelationshipStatus.Married)]
+    [InlineData(RelationshipStatus.Married, RelationshipStatus.Married)]
+    public void Profile_visit_notifications_are_disabled_when_either_person_is_married(
+        RelationshipStatus visitorStatus,
+        RelationshipStatus profileStatus)
+    {
+        Assert.False(ProfileVisit.ShouldNotify(
+            Sex.Male, visitorStatus, Sex.Female, profileStatus));
+    }
+
+    [Fact]
+    public void Opposite_sex_unmarried_profile_visit_can_notify()
+    {
+        Assert.True(ProfileVisit.ShouldNotify(
+            Sex.Male, RelationshipStatus.Single,
+            Sex.Female, RelationshipStatus.Single));
+    }
+
+    [Fact]
+    public void Same_sex_profile_visit_does_not_notify()
+    {
+        Assert.False(ProfileVisit.ShouldNotify(
+            Sex.Female, RelationshipStatus.Single,
+            Sex.Female, RelationshipStatus.Single));
+    }
+
+    [Fact]
+    public void Testimonial_cannot_tag_its_author()
+    {
+        var authorId = Guid.NewGuid();
+
+        Assert.Throws<ArgumentException>(() =>
+            new Testimonial(authorId, "How grace found us", new string('a', 100), taggedUserId: authorId));
+    }
+
+    [Fact]
+    public void Testimonial_preserves_partner_tag_and_story_content()
+    {
+        var partnerId = Guid.NewGuid();
+        var story = new Testimonial(Guid.NewGuid(), "  How grace found us  ",
+            $"  {new string('a', 100)}  ", "https://images.example/story.jpg", partnerId);
+
+        Assert.Equal("How grace found us", story.Title);
+        Assert.Equal(new string('a', 100), story.Body);
+        Assert.Equal(partnerId, story.TaggedUserId);
+    }
+
+    [Fact]
+    public void Testimonial_exposes_three_images_in_thumbnail_order()
+    {
+        var story = new Testimonial(Guid.NewGuid(), "How grace found us", new string('a', 100),
+            "one.jpg", imageUrl2: "two.jpg", imageUrl3: "three.jpg");
+
+        Assert.Equal(["one.jpg", "two.jpg", "three.jpg"], story.ImageUrls);
+        Assert.Equal("one.jpg", story.ImageUrl);
+    }
+
+    [Fact]
+    public void Community_post_exposes_three_images_in_thumbnail_order()
+    {
+        var post = new CommunityPost(Guid.NewGuid(), Guid.NewGuid(), "Our community update",
+            "one.jpg", "two.jpg", "three.jpg");
+
+        Assert.Equal(["one.jpg", "two.jpg", "three.jpg"], post.ImageUrls);
     }
 }

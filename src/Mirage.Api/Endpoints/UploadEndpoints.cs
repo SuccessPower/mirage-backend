@@ -39,6 +39,10 @@ internal static class UploadEndpoints
         {
             folder = $"mirage/community-posts/{userId}";
         }
+        else if (uploadContext == "testimonial")
+        {
+            folder = $"mirage/testimonials/{userId}";
+        }
         else if (uploadContext == "counsellor-verification")
         {
             folder = $"mirage/counsellor-verification/{userId}";
