@@ -111,7 +111,16 @@ builder.Services.AddHttpClient<FlutterwaveService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2>(
     _ => new AmazonSimpleEmailServiceV2Client(RegionEndpoint.GetBySystemName(sesRegion)));
-builder.Services.AddScoped<IEmailService, AmazonSesEmailService>();
+builder.Services.AddScoped<IEmailTransport, ZeptoMailEmailTransport>();
+builder.Services.AddScoped<IEmailTransport, AmazonSesEmailTransport>();
+builder.Services.AddHttpClient<MailjetEmailTransport>(client =>
+{
+    client.BaseAddress = new Uri("https://api.mailjet.com/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<IEmailTransport>(services =>
+    services.GetRequiredService<MailjetEmailTransport>());
+builder.Services.AddScoped<IEmailService, ResilientEmailService>();
 builder.Services.AddSingleton<IFaceDetectionService, YuNetFaceDetectionService>();
 builder.Services.AddHttpClient<ProfileImageValidationService>();
 builder.Services.AddProblemDetails();
