@@ -129,27 +129,80 @@ public sealed class ResilientEmailService : IEmailService
 
     private string ApplyBranding(string html)
     {
+        html = EnsureColorSchemeMetadata(html);
         var logoUrl = _configuration["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configured
             ? configured
             : DefaultBrandLogoUrl;
         var safeLogoUrl = WebUtility.HtmlEncode(logoUrl);
         if (html.Contains("{{BRAND_LOGO_URL}}", StringComparison.Ordinal))
-            return html.Replace("{{BRAND_LOGO_URL}}", safeLogoUrl, StringComparison.Ordinal);
+            html = html.Replace("{{BRAND_LOGO_URL}}", safeLogoUrl, StringComparison.Ordinal);
 
         var bodyStart = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
         var bodyTagEnd = bodyStart < 0 ? -1 : html.IndexOf('>', bodyStart);
-        if (bodyTagEnd < 0) return html;
+        if (bodyTagEnd >= 0 && !html.Contains("email-wordmark", StringComparison.Ordinal))
+        {
+            var header = $"""
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                  <tr><td align="center" style="padding:24px 16px 0">
+                    <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                      <td><img src="{safeLogoUrl}" width="36" height="36" alt="Mirage" style="display:block;width:36px;height:36px;object-fit:contain;border:0;outline:none"/></td>
+                      <td style="padding-left:10px;font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#f4f0ff">Mirage</td>
+                    </tr></table>
+                  </td></tr>
+                </table>
+                """;
+            html = html.Insert(bodyTagEnd + 1, header);
+        }
 
-        var header = $"""
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-              <tr><td align="center" style="padding:24px 16px 0">
+        var bodyEnd = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+        return bodyEnd < 0 ? html : html.Insert(bodyEnd, BuildSocialFooter());
+    }
+
+    private static string EnsureColorSchemeMetadata(string html)
+    {
+        if (html.Contains("name=\"color-scheme\"", StringComparison.OrdinalIgnoreCase)) return html;
+
+        var htmlTagStart = html.IndexOf("<html", StringComparison.OrdinalIgnoreCase);
+        var htmlTagEnd = htmlTagStart < 0 ? -1 : html.IndexOf('>', htmlTagStart);
+        if (htmlTagEnd < 0) return html;
+        const string head = """
+            <head>
+              <meta name="viewport" content="width=device-width,initial-scale=1"/>
+              <meta name="color-scheme" content="light dark"/>
+              <meta name="supported-color-schemes" content="light dark"/>
+              <style>:root{color-scheme:light dark;supported-color-schemes:light dark}</style>
+            </head>
+            """;
+        return html.Insert(htmlTagEnd + 1, head);
+    }
+
+    private string BuildSocialFooter()
+    {
+        var links = new[]
+        {
+            ("Instagram", _configuration["SocialMedia:Instagram"]),
+            ("Facebook", _configuration["SocialMedia:Facebook"]),
+            ("X", _configuration["SocialMedia:X"]),
+            ("LinkedIn", _configuration["SocialMedia:LinkedIn"])
+        }.Where(x => Uri.TryCreate(x.Item2, UriKind.Absolute, out var uri) &&
+                     uri.Scheme is "https" or "http")
+         .Select(x => $"""
+             <td style="padding:4px;">
+               <a href="{WebUtility.HtmlEncode(x.Item2)}" style="display:inline-block;padding:8px 12px;border:1px solid #514763;border-radius:999px;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;color:#B9A8FF;text-decoration:none;">{x.Item1}</a>
+             </td>
+             """)
+         .ToArray();
+
+        if (links.Length == 0) return string.Empty;
+        return $"""
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0F0C16;">
+              <tr><td align="center" style="padding:24px 12px 32px;">
+                <p style="margin:0 0 12px;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#AAA1BC;">Connect with Mirage</p>
                 <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                  <td><img src="{safeLogoUrl}" width="36" height="36" alt="Mirage" style="display:block;width:36px;height:36px;object-fit:contain;border:0;outline:none"/></td>
-                  <td style="padding-left:10px;font-family:Arial,sans-serif;font-size:18px;font-weight:700;color:#f4f0ff">Mirage</td>
+                  {string.Concat(links)}
                 </tr></table>
               </td></tr>
             </table>
             """;
-        return html.Insert(bodyTagEnd + 1, header);
     }
 }

@@ -5,17 +5,46 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
   <meta name="x-apple-disable-message-reformatting"/>
-  <meta name="color-scheme" content="light"/>
-  <meta name="supported-color-schemes" content="light"/>
+  <meta name="color-scheme" content="light dark"/>
+  <meta name="supported-color-schemes" content="light dark"/>
   <title>Mirage</title>
+  <style>
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    @media only screen and (max-width: 620px) {
+      .email-shell { width: 100% !important; }
+      .email-bg { padding: 24px 12px 40px !important; }
+      .email-card td[style*="padding:44px 48px"],
+      .email-card td[style*="padding:48px 48px"],
+      .email-card td[style*="padding:0 48px"] {
+        padding-left: 24px !important;
+        padding-right: 24px !important;
+      }
+      .email-card h1 { font-size: 24px !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      body, .email-bg { background-color:#0F0C16 !important; }
+      .email-wordmark { color:#F4F0FF !important; }
+      .email-card { background:#191525 !important;border-color:#332B47 !important;box-shadow:none !important; }
+      .email-card h1,
+      .email-card strong { color:#F4F0FF !important; }
+      .email-card p { color:#C8C0D8 !important; }
+      .email-card table[style*="background:#F9F8FC"],
+      .email-card table[style*="background:#F7F5FB"],
+      .email-card div[style*="background:#F9F8FC"] { background:#211B30 !important; }
+      .email-card table[style*="border-top:1px solid #EDEAF5"],
+      .email-card td[style*="background:#EDEAF5"] { border-color:#3A324C !important;background-color:#3A324C !important; }
+      .email-footer-copy { color:#AAA1BC !important; }
+      .email-footer-divider { color:#514763 !important; }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background-color:#F4F2FA;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
     {{PREHEADER}}&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;&nbsp;&#847;
   </div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4F2FA;padding:44px 0 60px;">
+  <table role="presentation" class="email-bg" width="100%" cellpadding="0" cellspacing="0" style="background-color:#F4F2FA;padding:44px 0 60px;">
     <tr><td align="center" valign="top">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+      <table role="presentation" class="email-shell" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
 
         <!-- Header: logo mark + wordmark -->
         <tr><td style="padding:0 4px 24px;" align="left">
@@ -25,14 +54,14 @@
                 <img src="{{BRAND_LOGO_URL}}" width="32" height="32" alt="Mirage" style="display:block;width:32px;height:32px;object-fit:contain;border:0;outline:none;"/>
               </td>
               <td style="padding-left:11px;vertical-align:middle;">
-                <span style="font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#1B1730;letter-spacing:-0.3px;">Mirage</span>
+                <span class="email-wordmark" style="font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:17px;font-weight:700;color:#1B1730;letter-spacing:-0.3px;">Mirage</span>
               </td>
             </tr>
           </table>
         </td></tr>
 
         <!-- Card -->
-        <tr><td style="background:#FFFFFF;border-radius:20px;border:1px solid #EAE6F5;overflow:hidden;box-shadow:0 24px 48px -16px rgba(76,54,153,0.14);">
+        <tr><td class="email-card" style="background:#FFFFFF;border-radius:20px;border:1px solid #EAE6F5;overflow:hidden;box-shadow:0 24px 48px -16px rgba(76,54,153,0.14);">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
             {{CONTENT}}
           </table>
@@ -44,12 +73,12 @@
             <tr>
               <td align="center" style="padding-bottom:14px;">
                 <a href="https://mirage-ui-iota.vercel.app" style="font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;color:#6C4EF2;text-decoration:none;">Open Mirage</a>
-                <span style="color:#D6D0E8;padding:0 10px;">&bull;</span>
+                <span class="email-footer-divider" style="color:#D6D0E8;padding:0 10px;">&bull;</span>
                 <a href="mailto:support@mirageapp.com" style="font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;color:#6C4EF2;text-decoration:none;">Help centre</a>
               </td>
             </tr>
             <tr>
-              <td align="center" style="font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#9791AC;line-height:1.7;">
+              <td class="email-footer-copy" align="center" style="font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#9791AC;line-height:1.7;">
                 &copy; {{YEAR}} Mirage &nbsp;&bull;&nbsp; Relationship
               </td>
             </tr>
