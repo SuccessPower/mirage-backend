@@ -56,6 +56,24 @@ public sealed class EmailFailoverTests
         Assert.All(transports, transport => Assert.Equal(1, transport.SendCount));
     }
 
+    [Fact]
+    public async Task Send_AddsResponsiveDarkModeMarkup_AndConfiguredSocialLinks()
+    {
+        var transport = new StubTransport("ZeptoMail", configured: true, succeeds: true);
+        var service = CreateService([
+            transport,
+            new StubTransport("AmazonSes", configured: false, succeeds: false),
+            new StubTransport("Mailjet", configured: false, succeeds: false)
+        ]);
+
+        await service.SendWelcomeEmailAsync("person@example.com", "Person");
+
+        Assert.NotNull(transport.LastMessage);
+        Assert.Contains("prefers-color-scheme: dark", transport.LastMessage.Html);
+        Assert.Contains("Connect with Mirage", transport.LastMessage.Html);
+        Assert.Contains("https://www.instagram.com/themiragehub", transport.LastMessage.Html);
+    }
+
     private static ResilientEmailService CreateService(IEnumerable<IEmailTransport> transports)
     {
         var configuration = new ConfigurationBuilder()
@@ -63,7 +81,8 @@ public sealed class EmailFailoverTests
             {
                 ["Email:ProviderOrder:0"] = "ZeptoMail",
                 ["Email:ProviderOrder:1"] = "AmazonSes",
-                ["Email:ProviderOrder:2"] = "Mailjet"
+                ["Email:ProviderOrder:2"] = "Mailjet",
+                ["SocialMedia:Instagram"] = "https://www.instagram.com/themiragehub"
             })
             .Build();
         return new ResilientEmailService(
@@ -77,10 +96,12 @@ public sealed class EmailFailoverTests
         public string Name { get; } = name;
         public bool IsConfigured { get; } = configured;
         public int SendCount { get; private set; }
+        public EmailTransportMessage? LastMessage { get; private set; }
 
         public Task<bool> SendAsync(EmailTransportMessage message, CancellationToken cancellationToken)
         {
             SendCount++;
+            LastMessage = message;
             return Task.FromResult(succeeds);
         }
     }
