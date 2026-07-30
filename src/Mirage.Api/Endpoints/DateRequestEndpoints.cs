@@ -16,6 +16,7 @@ internal static class DateRequestEndpoints
     {
         var group = api.MapGroup("/date-requests").WithTags("Date Requests").RequireAuthorization();
         group.MapGet("/", List);
+        group.MapGet("/open-count", GetOpenCount).AllowAnonymous();
         group.MapGet("/mine", ListMine);
         group.MapGet("/{id:guid}", GetById);
         group.MapGet("/{id:guid}/share", GetShareInfo).AllowAnonymous();
@@ -70,6 +71,18 @@ internal static class DateRequestEndpoints
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Date requests retrieved successfully.");
+    }
+
+    // Public metric for the landing page — a headline count only, no request details (activity,
+    // location, notes, etc.). Full records stay behind auth via List above.
+    private static async Task<IResult> GetOpenCount(HttpContext context, IMirageDbContext db,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+    {
+        var count = await db.DateRequests.AsNoTracking()
+            .Where(x => x.Status == DateRequestStatus.Open && x.EndsAt > DateTimeOffset.UtcNow
+                && userManager.Users.Any(u => u.Id == x.RequestorUserId && u.IsActive))
+            .CountAsync(cancellationToken);
+        return ApiResults.Ok(context, new { count }, "Open date request count retrieved successfully.");
     }
 
     private static async Task<IResult> Create(CreateDateRequestRequest request, HttpContext context,
