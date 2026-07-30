@@ -167,6 +167,7 @@ public sealed record CommunityResponse(
     string? AvatarKey,
     Guid CreatedByUserId,
     CommunityStatus Status,
+    bool RequireApproval,
     int MemberCount,
     int PostCount,
     bool IsMember,
@@ -190,6 +191,7 @@ public sealed record CommunityMemberResponse(
     string DisplayName,
     string? AvatarUrl,
     CommunityMemberRole Role,
+    CommunityMemberStatus Status,
     DateTimeOffset JoinedAt,
     string? OrgBadgeUrl = null,
     string? OrgName = null);

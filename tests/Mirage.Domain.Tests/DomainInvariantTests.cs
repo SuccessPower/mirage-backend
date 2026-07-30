@@ -332,4 +332,69 @@ public sealed class DomainInvariantTests
 
         Assert.Equal(["one.jpg", "two.jpg", "three.jpg"], post.ImageUrls);
     }
+
+    [Fact]
+    public void Community_member_defaults_to_approved()
+    {
+        var member = new CommunityMember(Guid.NewGuid(), Guid.NewGuid());
+        Assert.Equal(CommunityMemberStatus.Approved, member.Status);
+    }
+
+    [Fact]
+    public void Community_member_can_be_created_pending_for_approval_gated_communities()
+    {
+        var member = new CommunityMember(Guid.NewGuid(), Guid.NewGuid(), status: CommunityMemberStatus.Pending);
+        Assert.Equal(CommunityMemberStatus.Pending, member.Status);
+    }
+
+    [Fact]
+    public void Community_member_approve_and_reject_update_status()
+    {
+        var member = new CommunityMember(Guid.NewGuid(), Guid.NewGuid(), status: CommunityMemberStatus.Pending);
+
+        member.Approve();
+        Assert.Equal(CommunityMemberStatus.Approved, member.Status);
+
+        member.Reject();
+        Assert.Equal(CommunityMemberStatus.Rejected, member.Status);
+    }
+
+    [Fact]
+    public void Removing_a_community_member_marks_them_removed_and_left()
+    {
+        var member = new CommunityMember(Guid.NewGuid(), Guid.NewGuid());
+
+        member.Remove();
+
+        Assert.Equal(CommunityMemberStatus.Removed, member.Status);
+        Assert.NotNull(member.LeftAt);
+    }
+
+    [Fact]
+    public void Rejoining_a_community_resets_left_at_and_applies_the_given_status()
+    {
+        var member = new CommunityMember(Guid.NewGuid(), Guid.NewGuid());
+        member.Leave();
+
+        member.Rejoin(CommunityMemberStatus.Pending);
+
+        Assert.Null(member.LeftAt);
+        Assert.Equal(CommunityMemberStatus.Pending, member.Status);
+    }
+
+    [Fact]
+    public void Organisation_and_community_default_to_auto_join()
+    {
+        var org = new Organisation(Guid.NewGuid(), "Grace Church", "Baptist", "Nigeria", "REG-1");
+        var community = new Community(Guid.NewGuid(), "Grace Fellowship", "General", "A community");
+
+        Assert.False(org.RequireApproval);
+        Assert.False(community.RequireApproval);
+
+        org.SetRequireApproval(true);
+        community.SetRequireApproval(true);
+
+        Assert.True(org.RequireApproval);
+        Assert.True(community.RequireApproval);
+    }
 }

@@ -28,6 +28,7 @@ public sealed class Organisation : Entity
     public string? WebsiteUrl { get; private set; }
     public OrganisationStatus Status { get; private set; } = OrganisationStatus.Pending;
     public bool OffersFreeSessions { get; private set; }
+    public bool RequireApproval { get; private set; }
 
     public void Approve() { Status = OrganisationStatus.Approved; Touch(); }
     public void Reject() { Status = OrganisationStatus.Rejected; Touch(); }
@@ -35,4 +36,5 @@ public sealed class Organisation : Entity
     public void SetLogo(string? logoUrl) { LogoUrl = logoUrl?.Trim(); Touch(); }
     public void SetWebsite(string? websiteUrl) { WebsiteUrl = websiteUrl?.Trim(); Touch(); }
     public void UpdateDenomination(string denomination) { Denomination = denomination.Trim(); Touch(); }
+    public void SetRequireApproval(bool value) { RequireApproval = value; Touch(); }
 }

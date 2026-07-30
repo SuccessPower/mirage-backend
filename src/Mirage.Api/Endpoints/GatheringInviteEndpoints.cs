@@ -91,12 +91,14 @@ internal static class GatheringInviteEndpoints
                 .AnyAsync(x => x.Id == invite.TargetId && x.Status == CommunityStatus.Active, cancellationToken);
             if (!communityExists) return EndpointHelpers.NotFound(context, "Community was not found.");
 
+            // A direct invite from an existing member is itself the vetting step, so accepting one
+            // always lands Approved regardless of the community's RequireApproval setting.
             var member = await db.CommunityMembers.SingleOrDefaultAsync(
                 x => x.CommunityId == invite.TargetId && x.UserId == userId, cancellationToken);
             if (member is null)
                 db.CommunityMembers.Add(new CommunityMember(invite.TargetId, userId));
             else if (member.LeftAt is not null)
-                member.Rejoin();
+                member.Rejoin(CommunityMemberStatus.Approved);
         }
         else if (invite.Kind == GatheringInviteKind.OrganisationManager)
         {

@@ -33,6 +33,7 @@ public sealed class Community : Entity
     public string? AvatarKey { get; private set; }
     public Guid? OrganisationId { get; private set; }
     public CommunityStatus Status { get; private set; } = CommunityStatus.Active;
+    public bool RequireApproval { get; private set; }
     public List<CommunityMember> Members { get; private set; } = [];
     public List<CommunityPost> Posts { get; private set; } = [];
 
@@ -48,22 +49,31 @@ public sealed class Community : Entity
         Status = CommunityStatus.Archived;
         Touch();
     }
+
+    public void SetRequireApproval(bool value)
+    {
+        RequireApproval = value;
+        Touch();
+    }
 }
 
 public sealed class CommunityMember : Entity
 {
     private CommunityMember() { }
 
-    public CommunityMember(Guid communityId, Guid userId, CommunityMemberRole role = CommunityMemberRole.Member)
+    public CommunityMember(Guid communityId, Guid userId, CommunityMemberRole role = CommunityMemberRole.Member,
+        CommunityMemberStatus status = CommunityMemberStatus.Approved)
     {
         CommunityId = communityId;
         UserId = userId;
         Role = role;
+        Status = status;
     }
 
     public Guid CommunityId { get; private set; }
     public Guid UserId { get; private set; }
     public CommunityMemberRole Role { get; private set; } = CommunityMemberRole.Member;
+    public CommunityMemberStatus Status { get; private set; } = CommunityMemberStatus.Approved;
     public DateTimeOffset? LeftAt { get; private set; }
     public Community Community { get; private set; } = null!;
 
@@ -73,15 +83,35 @@ public sealed class CommunityMember : Entity
         Touch();
     }
 
-    public void Rejoin()
+    public void Rejoin(CommunityMemberStatus status)
     {
         LeftAt = null;
+        Status = status;
         Touch();
     }
 
     public void ChangeRole(CommunityMemberRole role)
     {
         Role = role;
+        Touch();
+    }
+
+    public void Approve()
+    {
+        Status = CommunityMemberStatus.Approved;
+        Touch();
+    }
+
+    public void Reject()
+    {
+        Status = CommunityMemberStatus.Rejected;
+        Touch();
+    }
+
+    public void Remove()
+    {
+        Status = CommunityMemberStatus.Removed;
+        LeftAt = DateTimeOffset.UtcNow;
         Touch();
     }
 }
