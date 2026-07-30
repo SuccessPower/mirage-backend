@@ -22,8 +22,12 @@ internal static class CommunityEndpoints
         communities.MapGet("/{id:guid}", GetById);
         communities.MapPost("/", Create);
         communities.MapPatch("/{id:guid}/avatar", UpdateAvatar);
+        communities.MapPatch("/{id:guid}/settings", UpdateSettings);
         communities.MapGet("/{id:guid}/members", ListMembers);
         communities.MapPatch("/{id:guid}/members/{userId:guid}/role", UpdateMemberRole);
+        communities.MapPatch("/{id:guid}/members/{userId:guid}/approve", ApproveMember);
+        communities.MapPatch("/{id:guid}/members/{userId:guid}/reject", RejectMember);
+        communities.MapDelete("/{id:guid}/members/{userId:guid}", RemoveMember);
         communities.MapPost("/{id:guid}/join", Join);
         communities.MapDelete("/{id:guid}/membership", Leave);
         communities.MapPost("/{id:guid}/invites", InviteMember);
@@ -78,11 +82,12 @@ internal static class CommunityEndpoints
                 x.AvatarKey,
                 x.CreatedByUserId,
                 x.Status,
-                x.Members.Count(m => m.LeftAt == null),
+                x.RequireApproval,
+                x.Members.Count(m => m.LeftAt == null && m.Status == CommunityMemberStatus.Approved),
                 x.Posts.Count,
-                x.Members.Any(m => m.UserId == userId && m.LeftAt == null),
+                x.Members.Any(m => m.UserId == userId && m.LeftAt == null && m.Status == CommunityMemberStatus.Approved),
                 x.Members
-                    .Where(m => m.UserId == userId && m.LeftAt == null)
+                    .Where(m => m.UserId == userId && m.LeftAt == null && m.Status == CommunityMemberStatus.Approved)
                     .Select(m => (CommunityMemberRole?)m.Role)
                     .FirstOrDefault(),
                 x.CreatedAt))
@@ -108,11 +113,12 @@ internal static class CommunityEndpoints
                 x.AvatarKey,
                 x.CreatedByUserId,
                 x.Status,
-                x.Members.Count(m => m.LeftAt == null),
+                x.RequireApproval,
+                x.Members.Count(m => m.LeftAt == null && m.Status == CommunityMemberStatus.Approved),
                 x.Posts.Count,
-                x.Members.Any(m => m.UserId == userId && m.LeftAt == null),
+                x.Members.Any(m => m.UserId == userId && m.LeftAt == null && m.Status == CommunityMemberStatus.Approved),
                 x.Members
-                    .Where(m => m.UserId == userId && m.LeftAt == null)
+                    .Where(m => m.UserId == userId && m.LeftAt == null && m.Status == CommunityMemberStatus.Approved)
                     .Select(m => (CommunityMemberRole?)m.Role)
                     .FirstOrDefault(),
                 x.CreatedAt))
@@ -150,6 +156,7 @@ internal static class CommunityEndpoints
             community.AvatarKey,
             community.CreatedByUserId,
             community.Status,
+            community.RequireApproval,
             1,
             0,
             true,
@@ -221,6 +228,27 @@ internal static class CommunityEndpoints
             "Community avatar updated successfully.");
     }
 
+    // Toggling join policy is an Owner-level decision (unlike avatar updates, which Moderators may
+    // also make) since it changes who can freely enter the community.
+    private static async Task<IResult> UpdateSettings(Guid id, UpdateCommunitySettingsRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var role = await GetActiveMemberRoleAsync(id, userId, db, cancellationToken);
+        if (role != CommunityMemberRole.Owner && !context.User.IsInRole(MirageRoles.PlatformAdmin))
+            return EndpointHelpers.Forbidden(context);
+
+        var community = await db.Communities
+            .SingleOrDefaultAsync(x => x.Id == id && x.Status == CommunityStatus.Active, cancellationToken);
+        if (community is null) return EndpointHelpers.NotFound(context, "Community was not found.");
+
+        community.SetRequireApproval(request.RequireApproval);
+        await db.SaveChangesAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new { community.Id, community.RequireApproval },
+            "Community settings updated successfully.");
+    }
+
     private static async Task<IResult> ListMembers(Guid id, HttpContext context, IMirageDbContext db,
         UserManager<ApplicationUser> userManager, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
     {
@@ -228,8 +256,13 @@ internal static class CommunityEndpoints
         var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
+        var actorRole = await GetActiveMemberRoleAsync(id, userId, db, cancellationToken);
+        var isCommunityAdmin = actorRole is CommunityMemberRole.Owner or CommunityMemberRole.Moderator ||
+            context.User.IsInRole(MirageRoles.PlatformAdmin);
+
         var paged = await db.CommunityMembers.AsNoTracking()
-            .Where(x => x.CommunityId == id && x.LeftAt == null && userManager.Users.Any(u => u.Id == x.UserId && u.IsActive))
+            .Where(x => x.CommunityId == id && x.LeftAt == null && userManager.Users.Any(u => u.Id == x.UserId && u.IsActive) &&
+                        (x.Status == CommunityMemberStatus.Approved || (isCommunityAdmin && x.Status == CommunityMemberStatus.Pending)))
             .Join(db.Profiles.AsNoTracking(), member => member.UserId, profile => profile.UserId,
                 (member, profile) => new
                 {
@@ -238,16 +271,18 @@ internal static class CommunityEndpoints
                     profile.DisplayName,
                     profile.AvatarUrl,
                     member.Role,
+                    member.Status,
                     member.CreatedAt
                 })
-            .OrderBy(x => x.Role)
+            .OrderBy(x => x.Status)
+            .ThenBy(x => x.Role)
             .ThenBy(x => x.DisplayName)
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         var badges = await db.GetOrgBadgesAsync(paged.Items.Select(x => x.UserId), cancellationToken);
         var members = new Mirage.Application.Common.PagedResult<CommunityMemberResponse>(
             paged.Items.Select(x => new CommunityMemberResponse(x.Id, x.UserId, x.DisplayName, x.AvatarUrl, x.Role,
-                x.CreatedAt, badges.GetValueOrDefault(x.UserId)?.LogoUrl, badges.GetValueOrDefault(x.UserId)?.OrganisationName)).ToList(),
+                x.Status, x.CreatedAt, badges.GetValueOrDefault(x.UserId)?.LogoUrl, badges.GetValueOrDefault(x.UserId)?.OrganisationName)).ToList(),
             paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, members, "Community members retrieved successfully.");
@@ -280,13 +315,90 @@ internal static class CommunityEndpoints
             "Community member role updated successfully.");
     }
 
+    private static async Task<IResult> ApproveMember(Guid id, Guid userId, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var actorId = context.User.GetUserId();
+        var actorRole = await GetActiveMemberRoleAsync(id, actorId, db, cancellationToken);
+        if (actorRole is not (CommunityMemberRole.Owner or CommunityMemberRole.Moderator) &&
+            !context.User.IsInRole(MirageRoles.PlatformAdmin))
+            return EndpointHelpers.Forbidden(context);
+
+        var member = await db.CommunityMembers.SingleOrDefaultAsync(
+            x => x.CommunityId == id && x.UserId == userId, cancellationToken);
+        if (member is null) return EndpointHelpers.NotFound(context, "Community member was not found.");
+        if (member.Status != CommunityMemberStatus.Pending)
+            return EndpointHelpers.Conflict(context, "Member is not awaiting approval.");
+
+        member.Approve();
+        await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(member.UserId, NotificationType.CommunityMembershipApproved,
+            "Membership approved", "Your community join request has been approved.", member.Id, "CommunityMember",
+            cancellationToken);
+
+        return ApiResults.Ok(context, new { member.Id, member.Status }, "Member approved successfully.");
+    }
+
+    private static async Task<IResult> RejectMember(Guid id, Guid userId, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var actorId = context.User.GetUserId();
+        var actorRole = await GetActiveMemberRoleAsync(id, actorId, db, cancellationToken);
+        if (actorRole is not (CommunityMemberRole.Owner or CommunityMemberRole.Moderator) &&
+            !context.User.IsInRole(MirageRoles.PlatformAdmin))
+            return EndpointHelpers.Forbidden(context);
+
+        var member = await db.CommunityMembers.SingleOrDefaultAsync(
+            x => x.CommunityId == id && x.UserId == userId, cancellationToken);
+        if (member is null) return EndpointHelpers.NotFound(context, "Community member was not found.");
+        if (member.Status != CommunityMemberStatus.Pending)
+            return EndpointHelpers.Conflict(context, "Member is not awaiting approval.");
+
+        member.Reject();
+        await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(member.UserId, NotificationType.CommunityMembershipRejected,
+            "Membership rejected", "Your community join request was not approved.", member.Id, "CommunityMember",
+            cancellationToken);
+
+        return ApiResults.Ok(context, new { member.Id, member.Status }, "Member rejected successfully.");
+    }
+
+    private static async Task<IResult> RemoveMember(Guid id, Guid userId, HttpContext context, IMirageDbContext db,
+        NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var actorId = context.User.GetUserId();
+        var actorRole = await GetActiveMemberRoleAsync(id, actorId, db, cancellationToken);
+        if (actorRole is not (CommunityMemberRole.Owner or CommunityMemberRole.Moderator) &&
+            !context.User.IsInRole(MirageRoles.PlatformAdmin))
+            return EndpointHelpers.Forbidden(context);
+
+        var member = await db.CommunityMembers.SingleOrDefaultAsync(
+            x => x.CommunityId == id && x.UserId == userId && x.LeftAt == null, cancellationToken);
+        if (member is null) return EndpointHelpers.NotFound(context, "Community member was not found.");
+        if (member.Role == CommunityMemberRole.Owner)
+            return EndpointHelpers.Conflict(context, "The community owner cannot be removed.");
+        if (actorRole == CommunityMemberRole.Moderator && member.Role == CommunityMemberRole.Moderator)
+            return EndpointHelpers.Forbidden(context);
+
+        member.Remove();
+        await db.SaveChangesAsync(cancellationToken);
+
+        await notifications.NotifyAsync(member.UserId, NotificationType.CommunityMemberRemoved,
+            "Removed from community", "You have been removed from a community.", member.Id, "CommunityMember",
+            cancellationToken);
+
+        return ApiResults.Ok(context, new { member.Id, member.Status }, "Member removed successfully.");
+    }
+
     private static async Task<IResult> Join(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var community = await db.Communities.AsNoTracking()
             .Where(x => x.Id == id && x.Status == CommunityStatus.Active)
-            .Select(x => new { x.OrganisationId, x.Category })
+            .Select(x => new { x.OrganisationId, x.Category, x.RequireApproval })
             .SingleOrDefaultAsync(cancellationToken);
         if (community is null) return EndpointHelpers.NotFound(context, "Community was not found.");
 
@@ -316,16 +428,24 @@ internal static class CommunityEndpoints
             }
         }
 
+        var initialStatus = community.RequireApproval ? CommunityMemberStatus.Pending : CommunityMemberStatus.Approved;
+
         var member = await db.CommunityMembers
             .SingleOrDefaultAsync(x => x.CommunityId == id && x.UserId == userId, cancellationToken);
 
         if (member is null)
-            db.CommunityMembers.Add(new CommunityMember(id, userId));
-        else if (member.LeftAt is not null)
-            member.Rejoin();
+            db.CommunityMembers.Add(new CommunityMember(id, userId, status: initialStatus));
+        else if (member.LeftAt is not null || member.Status is CommunityMemberStatus.Removed or CommunityMemberStatus.Rejected)
+            member.Rejoin(initialStatus);
+        else
+            initialStatus = member.Status; // already an active/pending member — report their real status
 
         await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { communityId = id }, "Community joined successfully.");
+
+        var message = initialStatus == CommunityMemberStatus.Pending
+            ? "Join request submitted. An admin will review it."
+            : "Community joined successfully.";
+        return ApiResults.Ok(context, new { communityId = id, status = initialStatus }, message);
     }
 
     private static async Task<IResult> Leave(Guid id, HttpContext context, IMirageDbContext db,
@@ -896,14 +1016,14 @@ internal static class CommunityEndpoints
         CancellationToken cancellationToken) =>
         db.CommunityMembers.AsNoTracking().AnyAsync(
             x => x.CommunityId == communityId && x.UserId == userId && x.LeftAt == null &&
-                 x.Community.Status == CommunityStatus.Active,
+                 x.Status == CommunityMemberStatus.Approved && x.Community.Status == CommunityStatus.Active,
             cancellationToken);
 
     private static Task<CommunityMemberRole?> GetActiveMemberRoleAsync(Guid communityId, Guid userId,
         IMirageDbContext db, CancellationToken cancellationToken) =>
         db.CommunityMembers.AsNoTracking()
             .Where(x => x.CommunityId == communityId && x.UserId == userId && x.LeftAt == null &&
-                        x.Community.Status == CommunityStatus.Active)
+                        x.Status == CommunityMemberStatus.Approved && x.Community.Status == CommunityStatus.Active)
             .Select(x => (CommunityMemberRole?)x.Role)
             .SingleOrDefaultAsync(cancellationToken);
 

@@ -88,7 +88,7 @@ public sealed record JoinChurchRequest(
 public sealed record CreateOrganisationRequest(
     string Name, string Denomination, string Country, string RegistrationNumber, string? InviteToken = null,
     string? LogoUrl = null, string? WebsiteUrl = null);
-public sealed record UpdateOrganisationDetailsRequest(string? LogoUrl, string? WebsiteUrl);
+public sealed record UpdateOrganisationDetailsRequest(string? LogoUrl, string? WebsiteUrl, bool RequireApproval);
 public sealed record InviteOrganisationAdminRequest(string Email);
 public sealed record MergeOrganisationRequest(Guid TargetOrganisationId);
 public sealed record JoinOrganisationRequest(Guid? BranchId, string? Description = null);
@@ -112,6 +112,7 @@ public sealed record CreateCommunityRequest(
     string? AvatarKey = null);
 public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? AvatarKey);
 public sealed record UpdateCommunityMemberRoleRequest(CommunityMemberRole Role);
+public sealed record UpdateCommunitySettingsRequest(bool RequireApproval);
 public sealed record CastVoteRequest(sbyte Value);
 public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null, IReadOnlyList<string>? ImageUrls = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,

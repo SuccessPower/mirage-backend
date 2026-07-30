@@ -150,6 +150,7 @@ internal static class OrganisationEndpoints
         var org = await db.Organisations.SingleAsync(x => x.Id == id, cancellationToken);
         org.SetLogo(request.LogoUrl);
         org.SetWebsite(request.WebsiteUrl);
+        org.SetRequireApproval(request.RequireApproval);
 
         // Organisation-backed church communities use the organisation identity as their own.
         // Keeping this server-side makes every client and future logo update consistent.
@@ -161,7 +162,8 @@ internal static class OrganisationEndpoints
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return ApiResults.Ok(context, new { org.Id, org.LogoUrl, org.WebsiteUrl }, "Organisation updated successfully.");
+        return ApiResults.Ok(context, new { org.Id, org.LogoUrl, org.WebsiteUrl, org.RequireApproval },
+            "Organisation updated successfully.");
     }
 
     // Public church typeahead for signup — only Approved organisations are searchable, with
@@ -420,7 +422,7 @@ internal static class OrganisationEndpoints
     // --- Membership ---
 
     private static async Task<IResult> JoinOrganisation(Guid id, JoinOrganisationRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var org = await db.Organisations.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -449,9 +451,28 @@ internal static class OrganisationEndpoints
 
         var member = new OrganisationMember(id, userId, request.BranchId, request.Description);
         db.OrganisationMembers.Add(member);
+
+        var justVerified = false;
+        if (!org.RequireApproval)
+            justVerified = await ApproveMembershipAsync(db, member, id, cancellationToken);
+
         await db.SaveChangesAsync(cancellationToken);
+
+        if (!org.RequireApproval)
+        {
+            await notifications.NotifyAsync(userId, NotificationType.MembershipApproved,
+                "Welcome!", $"You've joined {org.Name}.", member.Id, "OrganisationMember", cancellationToken);
+            if (justVerified)
+                await notifications.NotifyAsync(userId, NotificationType.ProfileVerified, "Your profile is verified",
+                    "your profile has been verified. Verified members get priority visibility in Discovery and can send date requests.",
+                    cancellationToken: cancellationToken);
+        }
+
+        var message = org.RequireApproval
+            ? "Membership request submitted successfully."
+            : "You've joined this organisation successfully.";
         return ApiResults.Created(context, $"/api/v1/organisations/{id}/members/{member.Id}",
-            new { member.Id, member.Status }, "Membership request submitted successfully.");
+            new { member.Id, member.Status }, message);
     }
 
     private static async Task<IResult> ListMyMemberships(HttpContext context, IMirageDbContext db,
@@ -532,17 +553,7 @@ internal static class OrganisationEndpoints
             return EndpointHelpers.Conflict(context,
                 "This member already belongs to another organisation. They must leave it before this request can be approved.");
 
-        member.Approve();
-
-        // Approval is what earns the verified tick — a member is only verified once their
-        // church confirms they attend, not from filling out their profile.
-        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == member.UserId, cancellationToken);
-        var justVerified = profile is not null && !profile.IsVerified;
-        if (justVerified) profile!.Verify();
-
-        await ChurchCommunityService.JoinChurchCommunityAsync(db, id, Community.ChurchGeneralCategory,
-            member.UserId, cancellationToken);
-
+        var justVerified = await ApproveMembershipAsync(db, member, id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(member.UserId, NotificationType.MembershipApproved,
@@ -555,6 +566,25 @@ internal static class OrganisationEndpoints
                 cancellationToken: cancellationToken);
 
         return ApiResults.Ok(context, new { member.Id, member.Status }, "Member approved successfully.");
+    }
+
+    // Shared by admin approval and org-level auto-approve (RequireApproval == false): marks the
+    // member Approved, earns the verified tick if this is their first approval anywhere, and drops
+    // them into the church's own General community. Returns whether the profile was just verified,
+    // so callers can decide whether to also send a ProfileVerified notification.
+    private static async Task<bool> ApproveMembershipAsync(IMirageDbContext db, OrganisationMember member,
+        Guid organisationId, CancellationToken cancellationToken)
+    {
+        member.Approve();
+
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == member.UserId, cancellationToken);
+        var justVerified = profile is not null && !profile.IsVerified;
+        if (justVerified) profile!.Verify();
+
+        await ChurchCommunityService.JoinChurchCommunityAsync(db, organisationId, Community.ChurchGeneralCategory,
+            member.UserId, cancellationToken);
+
+        return justVerified;
     }
 
     // ChurchAdmin verifying a profile is scoped to members of their own organisation — the
