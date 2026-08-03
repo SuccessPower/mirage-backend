@@ -121,9 +121,12 @@ internal static class AuthEndpoints
 
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });
-                db.Profiles.Add(new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
+                var newProfile = new UserProfile(user.Id, request.DisplayName, request.DateOfBirth, request.City,
                     request.Country, request.Denomination, request.Bio, request.Sex,
-                    request.RelationshipStatus, request.Occupation, GetClientIpAddress(context)));
+                    request.RelationshipStatus, request.Occupation, GetClientIpAddress(context));
+                newProfile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
+                    request.DiscoveryScope, request.PreferredCountryCodes);
+                db.Profiles.Add(newProfile);
                 db.RefreshTokens.Add(refreshToken);
                 if (churchSelection.OrganisationId.HasValue)
                     db.OrganisationMembers.Add(new OrganisationMember(
@@ -558,9 +561,24 @@ internal static class AuthEndpoints
             }
             var existingProfile = await db.Profiles.SingleOrDefaultAsync(
                 x => x.UserId == existingUser.Id, cancellationToken);
-            if (existingProfile is not null && !existingProfile.IsVerified)
+            if (existingProfile is null)
+            {
+                var displayName = string.IsNullOrWhiteSpace(payload.Name)
+                    ? payload.Email.Split('@')[0]
+                    : payload.Name;
+                existingProfile = new UserProfile(existingUser.Id, displayName, avatarUrl: null,
+                    signupIpAddress: GetClientIpAddress(context));
+                db.Profiles.Add(existingProfile);
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            else if (existingProfile.IsProfileComplete && !existingProfile.IsVerified)
             {
                 existingProfile.Verify();
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            else if (existingProfile is not null && !existingProfile.IsProfileComplete && existingProfile.IsVerified)
+            {
+                existingProfile.RevokeVerification();
                 await db.SaveChangesAsync(cancellationToken);
             }
 
@@ -607,11 +625,8 @@ internal static class AuthEndpoints
                 // server-side face detector. CompleteProfile requires a fresh validated upload.
                 var profile = new UserProfile(user.Id, displayName, avatarUrl: null,
                     signupIpAddress: GetClientIpAddress(context));
-                // Google already verified this email (EmailConfirmed starts true above), so the
-                // profile starts in the same verified state ConfirmEmail grants password signups —
-                // without this, Google users pass the email gate but are still blocked from
-                // liking/matching by the profile.IsVerified gate.
-                profile.Verify();
+                // Email ownership is verified by Google, but the Mirage profile is deliberately
+                // not verified until mandatory details and a server-validated face photo are saved.
 
                 db.Users.Add(user);
                 db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = user.Id, RoleId = roleId });

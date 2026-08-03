@@ -10,6 +10,7 @@ using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
+using PhoneNumbers;
 // ReSharper disable once RedundantUsingDirective
 
 namespace Mirage.Api.Endpoints;
@@ -206,7 +207,14 @@ internal static class CounsellingEndpoints
             query = query.Where(x => x.Specialisations.Any(value => EF.Functions.ILike(value, $"%{specialisation}%")));
         if (!string.IsNullOrWhiteSpace(language))
             query = query.Where(x => x.Languages.Any(value => EF.Functions.ILike(value, $"%{language}%")));
-        var result = query.OrderByDescending(x => x.YearsExperience).Select(x => new
+        var viewerLocation = currentUserId.HasValue
+            ? await db.Profiles.AsNoTracking().Where(x => x.UserId == currentUserId.Value)
+                .Select(x => new { x.CountryCode, x.ContinentCode }).SingleOrDefaultAsync(cancellationToken)
+            : null;
+        var result = query
+            .OrderByDescending(x => viewerLocation != null && x.UserProfile.CountryCode == viewerLocation.CountryCode)
+            .ThenByDescending(x => viewerLocation != null && x.UserProfile.ContinentCode == viewerLocation.ContinentCode)
+            .ThenByDescending(x => x.YearsExperience).Select(x => new
         {
             x.Id,
             x.UserProfile.DisplayName,
@@ -223,7 +231,9 @@ internal static class CounsellingEndpoints
             x.SupportsVoiceCalls,
             x.SupportsVideoCalls,
             x.AverageRating,
-            x.RatingCount
+            x.RatingCount,
+            x.AcceptsInternationalClients,
+            x.ServiceCountryCodes
         });
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
@@ -269,6 +279,7 @@ internal static class CounsellingEndpoints
                     ? x.Counsellor.PhoneNumber
                     : null,
                 PaymentId = x.Payment != null ? x.Payment.Id : (Guid?)null,
+                PayoutStatus = x.Payment != null ? x.Payment.PayoutStatus : (PayoutStatus?)null,
                 HasRating = db.SessionRatings.Any(r => r.SessionId == x.Id)
             })
             .ToListAsync(cancellationToken);
@@ -281,7 +292,8 @@ internal static class CounsellingEndpoints
             x.TrustUnlockStatus, x.PartnerUserId, x.PartnerAccepted, x.CreatedAt, x.UpdatedAt, x.CounsellorPhoneNumber,
             x.PaymentId, x.HasRating,
             sessionBadges.GetValueOrDefault(x.CounsellorUserId)?.LogoUrl, sessionBadges.GetValueOrDefault(x.CounsellorUserId)?.OrganisationName,
-            sessionBadges.GetValueOrDefault(x.ClientUserId)?.LogoUrl, sessionBadges.GetValueOrDefault(x.ClientUserId)?.OrganisationName)).ToList();
+            sessionBadges.GetValueOrDefault(x.ClientUserId)?.LogoUrl, sessionBadges.GetValueOrDefault(x.ClientUserId)?.OrganisationName,
+            x.PayoutStatus)).ToList();
         return ApiResults.Ok(context, sessions, "Counselling sessions retrieved successfully.");
     }
 
@@ -404,7 +416,8 @@ internal static class CounsellingEndpoints
             row.Topic, row.ClientAnonymous, row.TrustUnlockStatus, row.PartnerUserId, row.PartnerAccepted,
             row.CreatedAt, row.UpdatedAt, row.CounsellorPhoneNumber, row.PaymentId, false,
             rowBadges.GetValueOrDefault(row.CounsellorUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.CounsellorUserId)?.OrganisationName,
-            rowBadges.GetValueOrDefault(row.ClientUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.ClientUserId)?.OrganisationName);
+            rowBadges.GetValueOrDefault(row.ClientUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.ClientUserId)?.OrganisationName,
+            payment?.PayoutStatus);
 
         return ApiResults.Created(context, $"/api/v1/sessions/{session.Id}",
             new { Session = response, RequiresPayment = requiresPayment, PaymentId = payment?.Id },
@@ -417,7 +430,7 @@ internal static class CounsellingEndpoints
         IMirageDbContext db, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var session = await db.CounsellingSessions.Include(x => x.Counsellor)
+        var session = await db.CounsellingSessions.Include(x => x.Counsellor).Include(x => x.Payment)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (session is null) return EndpointHelpers.NotFound(context, "Counselling session was not found.");
         var isClient = session.ClientUserId == userId;
@@ -455,6 +468,8 @@ internal static class CounsellingEndpoints
                 x.PriceCurrency,
                 x.SupportsVoiceCalls,
                 x.SupportsVideoCalls,
+                x.AcceptsInternationalClients,
+                x.ServiceCountryCodes,
                 x.AverageRating,
                 x.RatingCount,
                 PhoneNumber = isAcceptedClient ? x.PhoneNumber : null
@@ -496,6 +511,9 @@ internal static class CounsellingEndpoints
                 x.BankName,
                 x.BankAccountNumber,
                 x.BankAccountName,
+                x.UserProfile.CountryCode,
+                x.AcceptsInternationalClients,
+                x.ServiceCountryCodes,
                 HasPayoutAccount = x.PaystackSubaccountCode != null || x.FlutterwaveSubaccountId != null
             })
             .SingleOrDefaultAsync(cancellationToken);
@@ -536,11 +554,11 @@ internal static class CounsellingEndpoints
             : ApiResults.Ok(context, resolved, "Account resolved successfully.");
     }
 
-    // Creates a payout subaccount on both providers from one bank entry, so the counsellor
-    // only has to do this once regardless of which provider a future client pays through.
-    // Best-effort: a failure on one provider doesn't block the other from succeeding.
+    // Stores the verified destination and creates the reusable Paystack transfer recipient.
+    // Collections are intentionally not split at checkout; payout happens only after service
+    // completion and platform-admin approval.
     private static async Task<IResult> SaveBankAccount(SaveBankAccountRequest request, HttpContext context,
-        IMirageDbContext db, PaystackService paystack, FlutterwaveService flutterwave,
+        IMirageDbContext db, PaystackService paystack,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.BankCode) || string.IsNullOrWhiteSpace(request.AccountNumber)
@@ -553,37 +571,23 @@ internal static class CounsellingEndpoints
 
         profile.SetBankAccount(request.BankCode, request.BankName, request.AccountNumber, request.AccountName);
 
-        var platformCommissionPercentage = Payment.PlatformCommissionRate * 100;
-        var counsellorSplitFraction = 1 - Payment.PlatformCommissionRate;
-        var errors = new List<string>();
-
         try
         {
-            var subaccountCode = await paystack.CreateSubaccountAsync(request.AccountName, request.BankCode,
-                request.AccountNumber, platformCommissionPercentage, cancellationToken);
-            profile.SetPaystackSubaccountCode(subaccountCode);
+            var recipientCode = await paystack.CreateTransferRecipientAsync(request.AccountName, request.BankCode,
+                request.AccountNumber, "NGN", cancellationToken);
+            profile.SetPaystackTransferRecipientCode(recipientCode);
         }
-        catch (Exception) { errors.Add("Paystack"); }
-
-        try
+        catch (Exception)
         {
-            var subaccountId = await flutterwave.CreateSubaccountAsync(request.AccountName, request.BankCode,
-                request.AccountNumber, counsellorSplitFraction, cancellationToken);
-            profile.SetFlutterwaveSubaccountId(subaccountId);
+            return EndpointHelpers.Problem(context, StatusCodes.Status502BadGateway,
+                "Payout setup failed", "The bank account was resolved, but the payout recipient could not be created.");
         }
-        catch (Exception) { errors.Add("Flutterwave"); }
 
         await db.SaveChangesAsync(cancellationToken);
 
-        if (errors.Count == 2)
-            return EndpointHelpers.Problem(context, StatusCodes.Status502BadGateway,
-                "Payout setup failed", "Could not set up payouts with either provider. Please try again.");
-
         return ApiResults.Ok(context,
-            new { profile.Id, profile.PaystackSubaccountCode, profile.FlutterwaveSubaccountId },
-            errors.Count == 0
-                ? "Payout account saved successfully."
-                : $"Payout account saved, but setup with {errors[0]} failed — payments through that provider won't split until this is retried.");
+            new { profile.Id, profile.PaystackTransferRecipientCode },
+            "Payout account saved successfully.");
     }
 
     private static async Task<IResult> GetMyRatings(HttpContext context, IMirageDbContext db,
@@ -664,8 +668,28 @@ internal static class CounsellingEndpoints
         try { profile.UpdateProfile(request.YearsExperience, request.Specialisations, request.Languages, request.AcceptsFreeSessions); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         profile.ToggleAnonymity(false);
-        profile.SetContactAndPricing(request.PhoneNumber, request.PriceAmount, request.PriceCurrency,
-            request.SupportsVoiceCalls, request.SupportsVideoCalls);
+        string? normalizedPhone = null;
+        if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            var countryCode = await db.Profiles.AsNoTracking().Where(x => x.UserId == userId)
+                .Select(x => x.CountryCode).SingleOrDefaultAsync(cancellationToken);
+            try
+            {
+                var phoneUtil = PhoneNumberUtil.GetInstance();
+                var parsed = phoneUtil.Parse(request.PhoneNumber, countryCode);
+                if (!phoneUtil.IsValidNumber(parsed))
+                    return EndpointHelpers.ValidationProblem(context, ("phoneNumber", "Enter a valid phone number."));
+                normalizedPhone = phoneUtil.Format(parsed, PhoneNumberFormat.E164);
+            }
+            catch (NumberParseException)
+            {
+                return EndpointHelpers.ValidationProblem(context,
+                    ("phoneNumber", "Enter a valid international phone number for your profile country."));
+            }
+        }
+        profile.SetContactAndPricing(normalizedPhone, request.PriceAmount, request.PriceCurrency,
+            request.SupportsVoiceCalls, request.SupportsVideoCalls, request.AcceptsInternationalClients,
+            request.ServiceCountryCodes);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.Id }, "Counsellor profile updated successfully.");
     }
@@ -723,6 +747,7 @@ internal static class CounsellingEndpoints
                     ? x.Counsellor.PhoneNumber
                     : null,
                 PaymentId = x.Payment != null ? x.Payment.Id : (Guid?)null,
+                PayoutStatus = x.Payment != null ? x.Payment.PayoutStatus : (PayoutStatus?)null,
                 HasRating = db.SessionRatings.Any(r => r.SessionId == x.Id)
             })
             .SingleOrDefaultAsync(cancellationToken);
@@ -735,7 +760,8 @@ internal static class CounsellingEndpoints
             row.Topic, row.ClientAnonymous, row.TrustUnlockStatus, row.PartnerUserId, row.PartnerAccepted,
             row.CreatedAt, row.UpdatedAt, row.CounsellorPhoneNumber, row.PaymentId, row.HasRating,
             rowBadges.GetValueOrDefault(row.CounsellorUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.CounsellorUserId)?.OrganisationName,
-            rowBadges.GetValueOrDefault(row.ClientUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.ClientUserId)?.OrganisationName);
+            rowBadges.GetValueOrDefault(row.ClientUserId)?.LogoUrl, rowBadges.GetValueOrDefault(row.ClientUserId)?.OrganisationName,
+            row.PayoutStatus);
         return ApiResults.Ok(context, session, "Session retrieved successfully.");
     }
 
@@ -743,7 +769,7 @@ internal static class CounsellingEndpoints
         NotificationService notifications, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var session = await db.CounsellingSessions.Include(x => x.Counsellor)
+        var session = await db.CounsellingSessions.Include(x => x.Counsellor).Include(x => x.Payment)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (session is null) return EndpointHelpers.NotFound(context, "Session was not found.");
         if (session.Counsellor.UserId != userId) return EndpointHelpers.Forbidden(context);
@@ -797,13 +823,14 @@ internal static class CounsellingEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var session = await db.CounsellingSessions.Include(x => x.Counsellor)
+        var session = await db.CounsellingSessions.Include(x => x.Counsellor).Include(x => x.Payment)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (session is null) return EndpointHelpers.NotFound(context, "Session was not found.");
         if (session.Counsellor.UserId != userId) return EndpointHelpers.Forbidden(context);
         try { session.Complete(); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         session.Counsellor.RecordCompletedFreeSession();
+        if (session.Payment is not null) session.Payment.RequestPayoutApproval();
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(id, userId, "SessionCompleted"));
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { session.Id, session.Status }, "Session completed.");

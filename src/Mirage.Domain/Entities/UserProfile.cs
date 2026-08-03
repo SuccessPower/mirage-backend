@@ -1,5 +1,6 @@
 using Mirage.Domain.Common;
 using Mirage.Domain.Enums;
+using Mirage.Domain.Services;
 
 namespace Mirage.Domain.Entities;
 
@@ -22,6 +23,7 @@ public sealed class UserProfile : Entity
         RelationshipStatus = relationshipStatus;
         Occupation = occupation?.Trim();
         SignupIpAddress = signupIpAddress;
+        SetLocationMetadata(country, null, null);
         IsProfileComplete = true;
     }
 
@@ -63,6 +65,11 @@ public sealed class UserProfile : Entity
     public string? Occupation { get; private set; }
     public string? SignupIpAddress { get; private set; }
     public bool IsProfileComplete { get; private set; }
+    public string? CountryCode { get; private set; }
+    public string? ContinentCode { get; private set; }
+    public string? TimeZoneId { get; private set; }
+    public DiscoveryScope DiscoveryScope { get; private set; } = DiscoveryScope.Continent;
+    public string[] PreferredCountryCodes { get; private set; } = [];
     public DateTimeOffset? DobFlaggedAt { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
@@ -73,6 +80,7 @@ public sealed class UserProfile : Entity
         DisplayName = displayName.Trim();
         City = city.Trim();
         Country = country.Trim();
+        SetLocationMetadata(country, null, TimeZoneId);
         Denomination = denomination.Trim();
         Bio = bio.Trim();
         AnonymityEnabled = anonymityEnabled;
@@ -102,7 +110,25 @@ public sealed class UserProfile : Entity
         if (relationshipStatus is not null) RelationshipStatus = relationshipStatus;
         if (occupation is not null) Occupation = occupation.Trim();
         IsProfileComplete = true;
+        SetLocationMetadata(country, null, TimeZoneId);
         Touch();
+    }
+
+    public void SetInternationalPreferences(string? countryCode, string? timeZoneId, DiscoveryScope scope,
+        string[]? preferredCountryCodes)
+    {
+        SetLocationMetadata(Country, countryCode, timeZoneId);
+        DiscoveryScope = scope;
+        PreferredCountryCodes = (preferredCountryCodes ?? []).Select(x => x.Trim().ToUpperInvariant())
+            .Where(x => x.Length == 2).Distinct().Take(10).ToArray();
+        Touch();
+    }
+
+    private void SetLocationMetadata(string country, string? countryCode, string? timeZoneId)
+    {
+        CountryCode = CountryMetadata.ResolveCountryCode(country, countryCode);
+        ContinentCode = CountryMetadata.ResolveContinentCode(CountryCode);
+        TimeZoneId = string.IsNullOrWhiteSpace(timeZoneId) ? TimeZoneId : timeZoneId.Trim();
     }
 
     public const int MaxPhotos = 6;
@@ -117,6 +143,7 @@ public sealed class UserProfile : Entity
     }
 
     public void Verify() { IsVerified = true; Touch(); }
+    public void RevokeVerification() { IsVerified = false; Touch(); }
 
     // Stamped once by DobValidationBackfillService so a flagged (pre-existing, invalid) DOB is
     // only ever notified about once — DateOfBirth itself is untouched, the user fixes it via the

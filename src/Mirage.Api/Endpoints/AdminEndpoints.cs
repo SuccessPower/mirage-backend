@@ -46,6 +46,11 @@ internal static class AdminEndpoints
         admin.MapPatch("/counsellors/{id:guid}/approve-charging", ApproveCounsellorCharging);
         admin.MapPatch("/counsellors/{id:guid}/decline-charging", DeclineCounsellorCharging);
 
+        // Provider-managed counsellor disbursements. Mirage records the commercial split and
+        // approval audit trail; funds move through the licensed payment provider.
+        admin.MapGet("/payouts", ListPayouts);
+        admin.MapPost("/payouts/{id:guid}/approve", ApprovePayout);
+
         // Mentor verification
         admin.MapGet("/mentors", ListMentorProfiles);
         admin.MapGet("/mentors/pending", ListPendingMentors);
@@ -71,6 +76,91 @@ internal static class AdminEndpoints
         reports.MapGet("/mine", ListMyReports);
 
         return api;
+    }
+
+    private static async Task<IResult> ListPayouts(HttpContext context, MirageDbContext db,
+        PayoutStatus? status, int page = 1, int pageSize = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var query = db.Payments.AsNoTracking().Where(x => x.Status == PaymentStatus.Successful);
+        if (status.HasValue) query = query.Where(x => x.PayoutStatus == status.Value);
+        var rows = query.OrderByDescending(x => x.UpdatedAt).Select(x => new
+        {
+            x.Id,
+            x.CounsellingSessionId,
+            x.CounsellorId,
+            CounsellorName = x.CounsellingSession.Counsellor.UserProfile.DisplayName,
+            x.Amount,
+            x.PlatformFeeAmount,
+            x.CounsellorAmount,
+            x.Currency,
+            x.Provider,
+            x.PayoutStatus,
+            x.PayoutReference,
+            x.ProviderTransferId,
+            x.PayoutApprovedByUserId,
+            x.PayoutApprovedAt,
+            x.PayoutPaidAt,
+            x.PayoutFailureReason,
+            SessionCompletedAt = x.CounsellingSession.UpdatedAt
+        });
+        return ApiResults.Ok(context, await rows.ToPagedResultAsync(page, pageSize, cancellationToken),
+            "Payouts retrieved successfully.");
+    }
+
+    private static async Task<IResult> ApprovePayout(Guid id, HttpContext context, MirageDbContext db,
+        PaystackService paystack, FlutterwaveService flutterwave, ILogger<Program> logger,
+        CancellationToken cancellationToken)
+    {
+        var payment = await db.Payments.Include(x => x.CounsellingSession).ThenInclude(x => x.Counsellor)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (payment is null) return EndpointHelpers.NotFound(context, "Payout was not found.");
+        if (payment.CounsellingSession.Status != SessionStatus.Completed)
+            return EndpointHelpers.Conflict(context, "The counselling session is not complete.");
+
+        var counsellor = payment.CounsellingSession.Counsellor;
+        if (string.IsNullOrWhiteSpace(counsellor.BankCode) || string.IsNullOrWhiteSpace(counsellor.BankAccountNumber)
+            || string.IsNullOrWhiteSpace(counsellor.BankAccountName))
+            return EndpointHelpers.Conflict(context, "The counsellor has no verified payout account.");
+        if (payment.Provider == PaymentProvider.Paystack
+            && string.IsNullOrWhiteSpace(counsellor.PaystackTransferRecipientCode))
+            return EndpointHelpers.Conflict(context, "The Paystack payout recipient is not configured.");
+
+        try { payment.ApprovePayout(context.User.GetUserId()); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
+
+        // Persist the stable payout reference before the external call. Provider retries reuse it,
+        // preventing duplicate credit if the HTTP response is lost after provider acceptance.
+        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            PayoutSubmissionResult result;
+            if (payment.Provider == PaymentProvider.Paystack)
+            {
+                result = await paystack.InitiateTransferAsync(payment, counsellor.PaystackTransferRecipientCode!,
+                    cancellationToken);
+            }
+            else
+            {
+                result = await flutterwave.InitiateTransferAsync(payment, counsellor.BankCode,
+                    counsellor.BankAccountNumber, counsellor.BankAccountName, cancellationToken);
+            }
+
+            payment.MarkPayoutSubmitted(result.ProviderTransferId);
+            if (result.Completed) payment.MarkPayoutPaid(result.ProviderTransferId);
+            await db.SaveChangesAsync(cancellationToken);
+            return ApiResults.Ok(context, new { payment.Id, payment.PayoutStatus, payment.PayoutReference },
+                result.Completed ? "Payout completed." : "Payout submitted and awaiting provider confirmation.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Payout submission failed for PaymentId {PaymentId} Reference {Reference}",
+                payment.Id, payment.PayoutReference);
+            payment.MarkPayoutFailed("Provider rejected or could not accept the payout request.");
+            await db.SaveChangesAsync(cancellationToken);
+            return EndpointHelpers.Problem(context, StatusCodes.Status502BadGateway,
+                "Payout provider error", "The payout was not completed. It can be retried with the same reference.");
+        }
     }
 
     // --- User management ---
@@ -115,6 +205,7 @@ internal static class AdminEndpoints
                             p.Country,
                             p.RelationshipStatus,
                             p.IsVerified,
+                            p.IsProfileComplete,
                             IsRecommended = db.Recommendations.Any(r =>
                                 r.RecommendedUserId == x.Id && r.Status == RecommendationStatus.Active)
                         })

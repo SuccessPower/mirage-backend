@@ -35,6 +35,13 @@ public sealed class Payment : Entity
     public string? ProviderReference { get; private set; }
     public string? ProviderTransactionId { get; private set; }
     public PaymentStatus Status { get; private set; } = PaymentStatus.Pending;
+    public PayoutStatus PayoutStatus { get; private set; } = PayoutStatus.Held;
+    public string? PayoutReference { get; private set; }
+    public string? ProviderTransferId { get; private set; }
+    public Guid? PayoutApprovedByUserId { get; private set; }
+    public DateTimeOffset? PayoutApprovedAt { get; private set; }
+    public DateTimeOffset? PayoutPaidAt { get; private set; }
+    public string? PayoutFailureReason { get; private set; }
     public DateTimeOffset? PaidAt { get; private set; }
     public CounsellingSession CounsellingSession { get; private set; } = null!;
 
@@ -62,6 +69,56 @@ public sealed class Payment : Entity
     {
         if (Status == PaymentStatus.Successful) return;
         Status = PaymentStatus.Failed;
+        Touch();
+    }
+
+    public void RequestPayoutApproval()
+    {
+        if (Status != PaymentStatus.Successful)
+            throw new InvalidOperationException("Only a successful payment can be submitted for payout.");
+        if (PayoutStatus != PayoutStatus.Held)
+            throw new InvalidOperationException("Payout is not held or has already been submitted.");
+        PayoutStatus = PayoutStatus.AwaitingApproval;
+        Touch();
+    }
+
+    public void ApprovePayout(Guid adminUserId)
+    {
+        if (PayoutStatus is not (PayoutStatus.AwaitingApproval or PayoutStatus.Failed))
+            throw new InvalidOperationException("Only an awaiting or failed payout can be approved.");
+        PayoutReference ??= $"mirage-payout-{Id:N}";
+        PayoutApprovedByUserId = adminUserId;
+        PayoutApprovedAt = DateTimeOffset.UtcNow;
+        PayoutFailureReason = null;
+        PayoutStatus = PayoutStatus.Processing;
+        Touch();
+    }
+
+    public void MarkPayoutSubmitted(string? providerTransferId)
+    {
+        if (PayoutStatus != PayoutStatus.Processing)
+            throw new InvalidOperationException("Payout is not being processed.");
+        ProviderTransferId = providerTransferId;
+        Touch();
+    }
+
+    public void MarkPayoutPaid(string? providerTransferId = null)
+    {
+        if (PayoutStatus == PayoutStatus.Paid) return;
+        if (PayoutStatus != PayoutStatus.Processing)
+            throw new InvalidOperationException("Only a processing payout can be paid.");
+        ProviderTransferId = providerTransferId ?? ProviderTransferId;
+        PayoutStatus = PayoutStatus.Paid;
+        PayoutPaidAt = DateTimeOffset.UtcNow;
+        PayoutFailureReason = null;
+        Touch();
+    }
+
+    public void MarkPayoutFailed(string reason)
+    {
+        if (PayoutStatus == PayoutStatus.Paid) return;
+        PayoutStatus = PayoutStatus.Failed;
+        PayoutFailureReason = reason.Trim()[..Math.Min(reason.Trim().Length, 500)];
         Touch();
     }
 }

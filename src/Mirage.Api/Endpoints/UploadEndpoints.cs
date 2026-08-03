@@ -21,6 +21,12 @@ internal static class UploadEndpoints
     {
         var userId = context.User.GetUserId();
 
+        var profileComplete = await db.Profiles.AsNoTracking()
+            .AnyAsync(x => x.UserId == userId && x.IsProfileComplete, cancellationToken);
+        if (!profileComplete && uploadContext != "profile-photo")
+            return EndpointHelpers.Forbidden(context,
+                "Only a profile photo can be uploaded until your profile is complete.");
+
         string folder;
         if (uploadContext == "chat")
         {

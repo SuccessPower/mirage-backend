@@ -30,6 +30,20 @@ public sealed class DomainInvariantTests
             candidate, "Nigeria", null, existing, "Nigeria", null));
     }
 
+    [Theory]
+    [InlineData("Nigeria", "NG", "AF")]
+    [InlineData("United Kingdom", "GB", "EU")]
+    [InlineData("United States", "US", "NA")]
+    public void Country_metadata_normalizes_international_locations(string country, string code, string continent)
+    {
+        var profile = new UserProfile(Guid.NewGuid(), "International User", new DateOnly(1990, 1, 1),
+            "City", country, "Other", "International profile description");
+
+        Assert.Equal(code, profile.CountryCode);
+        Assert.Equal(continent, profile.ContinentCode);
+        Assert.Equal(DiscoveryScope.Continent, profile.DiscoveryScope);
+    }
+
     [Fact]
     public void Organisation_identity_does_not_merge_same_name_across_countries()
     {
@@ -79,6 +93,27 @@ public sealed class DomainInvariantTests
         Assert.Equal(TrustUnlockStatus.Pending, session.TrustUnlockStatus);
         session.ConsentToReveal(false);
         Assert.Equal(TrustUnlockStatus.Unlocked, session.TrustUnlockStatus);
+    }
+
+    [Fact]
+    public void Paid_counselling_payout_requires_completion_then_admin_approval()
+    {
+        var payment = new Payment(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 10_000m, "ngn");
+        payment.Initialize(PaymentProvider.Paystack, PaymentMethod.Card, "payment-reference");
+        payment.MarkSuccessful("transaction-id");
+
+        Assert.Equal(1_500m, payment.PlatformFeeAmount);
+        Assert.Equal(8_500m, payment.CounsellorAmount);
+        Assert.Equal(PayoutStatus.Held, payment.PayoutStatus);
+
+        payment.RequestPayoutApproval();
+        payment.ApprovePayout(Guid.NewGuid());
+        payment.MarkPayoutSubmitted("transfer-id");
+        payment.MarkPayoutPaid();
+
+        Assert.Equal(PayoutStatus.Paid, payment.PayoutStatus);
+        Assert.NotNull(payment.PayoutPaidAt);
+        Assert.StartsWith("mirage-payout-", payment.PayoutReference);
     }
 
     [Fact]

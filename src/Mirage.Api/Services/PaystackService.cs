@@ -115,6 +115,56 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
             ?? throw new InvalidOperationException("Paystack did not return a subaccount code.");
     }
 
+    public async Task<string> CreateTransferRecipientAsync(string name, string bankCode, string accountNumber,
+        string currency, CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/transferrecipient", new
+        {
+            type = currency.Equals("NGN", StringComparison.OrdinalIgnoreCase) ? "nuban" : "basa",
+            name,
+            bank_code = bankCode,
+            account_number = accountNumber,
+            currency,
+        }, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        return body.GetProperty("data").GetProperty("recipient_code").GetString()
+            ?? throw new InvalidOperationException("Paystack did not return a transfer recipient code.");
+    }
+
+    public async Task<PayoutSubmissionResult> InitiateTransferAsync(Payment payment, string recipientCode,
+        CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/transfer", new
+        {
+            source = "balance",
+            amount = (long)Math.Round(payment.CounsellorAmount * 100),
+            recipient = recipientCode,
+            reference = payment.PayoutReference,
+            reason = $"Mirage counselling session {payment.CounsellingSessionId:N}",
+            currency = payment.Currency,
+        }, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        var data = body.GetProperty("data");
+        var status = data.GetProperty("status").GetString();
+        var transferCode = data.TryGetProperty("transfer_code", out var code) ? code.GetString() : null;
+        return new PayoutSubmissionResult(transferCode, status == "success");
+    }
+
+    public PaymentWebhookResult ParseTransferWebhook(string rawBody)
+    {
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        var eventName = root.TryGetProperty("event", out var e) ? e.GetString() : null;
+        if (!root.TryGetProperty("data", out var data)) return new PaymentWebhookResult(null, false, null);
+        var reference = data.TryGetProperty("reference", out var r) ? r.GetString() : null;
+        var transferCode = data.TryGetProperty("transfer_code", out var code) ? code.GetString() : null;
+        return new PaymentWebhookResult(reference, eventName == "transfer.success", transferCode);
+    }
+
     public bool VerifySignature(string rawBody, string? signatureHeader)
     {
         if (string.IsNullOrWhiteSpace(signatureHeader)) return false;

@@ -388,6 +388,7 @@ if (!app.Environment.IsDevelopment())
 app.UseCors("MirageFrontend");
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<ProfileCompletionMiddleware>();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });

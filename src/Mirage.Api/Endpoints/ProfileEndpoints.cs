@@ -128,11 +128,16 @@ internal static class ProfileEndpoints
             query = query.Where(x => !downvotedIds.Contains(x.UserId));
 
             var mine = await db.Profiles.AsNoTracking().Where(x => x.UserId == me)
-                .Select(x => new { x.City, x.Country, x.Sex, x.RelationshipStatus }).SingleOrDefaultAsync(cancellationToken);
+                .Select(x => new { x.City, x.Country, x.CountryCode, x.ContinentCode, x.DiscoveryScope,
+                    x.PreferredCountryCodes, x.Sex, x.RelationshipStatus }).SingleOrDefaultAsync(cancellationToken);
             myCity = mine?.City;
             myCountry = mine?.Country;
             mySex = mine?.Sex;
             viewerIsMarried = mine?.RelationshipStatus == RelationshipStatus.Married;
+            if (mine?.DiscoveryScope == DiscoveryScope.Country && mine.CountryCode is not null)
+                query = query.Where(x => x.CountryCode == mine.CountryCode);
+            else if (mine?.DiscoveryScope == DiscoveryScope.Continent && mine.ContinentCode is not null)
+                query = query.Where(x => x.ContinentCode == mine.ContinentCode);
         }
 
         if (section == SectionCategory.Friendship)
@@ -199,6 +204,10 @@ internal static class ProfileEndpoints
                 v => v.VoterUserId == currentUserId.Value && v.TargetUserId == x.UserId && v.Value > 0))
             .ThenByDescending(x => myCity != null && x.City == myCity)
             .ThenByDescending(x => myCountry != null && x.Country == myCountry)
+            .ThenByDescending(x => currentUserId.HasValue && db.Profiles.Any(me => me.UserId == currentUserId.Value
+                && me.PreferredCountryCodes.Contains(x.CountryCode!)))
+            .ThenByDescending(x => currentUserId.HasValue && db.Profiles.Any(me => me.UserId == currentUserId.Value
+                && me.ContinentCode != null && x.ContinentCode == me.ContinentCode))
             .ThenByDescending(x => x.IsVerified)
             .ThenByDescending(x => x.CreatedAt)
             .ToPagedResultAsync(page, pageSize, cancellationToken);
@@ -391,6 +400,8 @@ internal static class ProfileEndpoints
             request.Bio, request.AnonymityEnabled, request.Interests, request.AvatarUrl, request.Sex,
             request.RelationshipStatus, request.HeightInches, request.SkinTone, request.PreferredLanguage,
             request.Occupation);
+        profile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
+            request.DiscoveryScope, request.PreferredCountryCodes);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }
@@ -442,6 +453,9 @@ internal static class ProfileEndpoints
 
         profile.CompleteProfile(request.DateOfBirth, request.City, request.Country, request.Denomination,
             request.Bio, request.AvatarUrl, request.Sex, request.RelationshipStatus, request.Occupation);
+        profile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
+            request.DiscoveryScope, request.PreferredCountryCodes);
+        profile.Verify();
 
         if (churchSelection.OrganisationId.HasValue)
             db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
@@ -467,8 +481,13 @@ internal static class ProfileEndpoints
             errors.Add(("dateOfBirth", "Please enter a valid date of birth."));
         if (string.IsNullOrWhiteSpace(request.City)) errors.Add(("city", "City is required."));
         if (string.IsNullOrWhiteSpace(request.Country)) errors.Add(("country", "Country is required."));
+        if (string.IsNullOrWhiteSpace(request.Denomination))
+            errors.Add(("denomination", "Select your denomination."));
+        if (string.IsNullOrWhiteSpace(request.Bio) || request.Bio.Trim().Length < 20)
+            errors.Add(("bio", "Write at least 20 characters about yourself."));
         if (string.IsNullOrWhiteSpace(request.AvatarUrl)) errors.Add(("avatarUrl", "A clear profile photo is required."));
         if (request.Sex is null) errors.Add(("sex", "Select your sex."));
+        if (request.RelationshipStatus is null) errors.Add(("relationshipStatus", "Select your relationship status."));
         if (!string.IsNullOrWhiteSpace(request.Denomination) &&
             !Enum.TryParse<ChristianDenomination>(request.Denomination, ignoreCase: true, out _))
             errors.Add(("denomination", "Select a valid denomination."));

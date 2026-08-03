@@ -89,6 +89,28 @@ public sealed class FlutterwaveService(HttpClient http, IConfiguration configura
             ?? throw new InvalidOperationException("Flutterwave did not return a subaccount id.");
     }
 
+    public async Task<PayoutSubmissionResult> InitiateTransferAsync(Payment payment, string bankCode,
+        string accountNumber, string accountName, CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/transfers", new
+        {
+            account_bank = bankCode,
+            account_number = accountNumber,
+            amount = payment.CounsellorAmount,
+            currency = payment.Currency,
+            beneficiary_name = accountName,
+            reference = payment.PayoutReference,
+            narration = $"Mirage counselling session {payment.CounsellingSessionId:N}",
+        }, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+        var data = body.GetProperty("data");
+        var id = data.TryGetProperty("id", out var idValue) ? idValue.ToString() : null;
+        var status = data.TryGetProperty("status", out var statusValue) ? statusValue.GetString() : null;
+        return new PayoutSubmissionResult(id, status is "SUCCESSFUL" or "successful");
+    }
+
     public bool VerifySignature(string? signatureHeader)
     {
         var expected = configuration["Flutterwave:WebhookSecretHash"];
@@ -109,5 +131,19 @@ public sealed class FlutterwaveService(HttpClient http, IConfiguration configura
         var successful = eventName == "charge.completed" && status == "successful";
         var txId = data.TryGetProperty("id", out var id) ? id.ToString() : reference;
         return new PaymentWebhookResult(reference, successful, txId);
+    }
+
+    public PaymentWebhookResult ParseTransferWebhook(string rawBody)
+    {
+        using var doc = JsonDocument.Parse(rawBody);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("data", out var data))
+            return new PaymentWebhookResult(null, false, null);
+        var reference = data.TryGetProperty("reference", out var referenceValue)
+            ? referenceValue.GetString() : null;
+        var status = data.TryGetProperty("status", out var statusValue) ? statusValue.GetString() : null;
+        var id = data.TryGetProperty("id", out var idValue) ? idValue.ToString() : null;
+        return new PaymentWebhookResult(reference,
+            status is "SUCCESSFUL" or "successful", id);
     }
 }

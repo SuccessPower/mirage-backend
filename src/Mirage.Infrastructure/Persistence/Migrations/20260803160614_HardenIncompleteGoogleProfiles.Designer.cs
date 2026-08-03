@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803160614_HardenIncompleteGoogleProfiles")]
+    partial class HardenIncompleteGoogleProfiles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -789,9 +792,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<bool>("AcceptsFreeSessions")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("AcceptsInternationalClients")
-                        .HasColumnType("boolean");
-
                     b.Property<double>("AverageRating")
                         .HasColumnType("double precision");
 
@@ -856,10 +856,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
-                    b.Property<string[]>("ServiceCountryCodes")
-                        .IsRequired()
-                        .HasColumnType("text[]");
 
                     b.Property<string[]>("Specialisations")
                         .IsRequired()
@@ -2480,18 +2476,10 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("ContinentCode")
-                        .HasMaxLength(2)
-                        .HasColumnType("character varying(2)");
-
                     b.Property<string>("Country")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
-
-                    b.Property<string>("CountryCode")
-                        .HasMaxLength(2)
-                        .HasColumnType("character varying(2)");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2503,9 +2491,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
-
-                    b.Property<int>("DiscoveryScope")
-                        .HasColumnType("integer");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
@@ -2536,10 +2521,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text[]");
 
-                    b.Property<string[]>("PreferredCountryCodes")
-                        .IsRequired()
-                        .HasColumnType("text[]");
-
                     b.Property<string>("PreferredLanguage")
                         .HasMaxLength(60)
                         .HasColumnType("character varying(60)");
@@ -2560,10 +2541,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<int>("SubscriptionTier")
                         .HasColumnType("integer");
 
-                    b.Property<string>("TimeZoneId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2576,8 +2553,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.HasIndex("RelationshipStatus", "City");
-
-                    b.HasIndex("ContinentCode", "CountryCode", "RelationshipStatus");
 
                     b.ToTable("profiles", "mirage");
                 });

@@ -51,7 +51,12 @@ public sealed record ProfileResponse(
     bool? EmailConfirmed = null,
     string? OrganisationBadgeUrl = null,
     string? OrganisationName = null,
-    bool IsProfileComplete = true);
+    bool IsProfileComplete = true,
+    string? CountryCode = null,
+    string? ContinentCode = null,
+    string? TimeZoneId = null,
+    DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
+    string[]? PreferredCountryCodes = null);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,
@@ -435,7 +440,8 @@ public sealed record CounsellingSessionResponse(
     string? CounsellorOrgBadgeUrl = null,
     string? CounsellorOrgName = null,
     string? ClientOrgBadgeUrl = null,
-    string? ClientOrgName = null);
+    string? ClientOrgName = null,
+    PayoutStatus? PayoutStatus = null);
 
 public sealed record MatchResponse(
     Guid Id,
