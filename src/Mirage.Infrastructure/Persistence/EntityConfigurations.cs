@@ -13,9 +13,14 @@ public sealed class UserProfileConfiguration : IEntityTypeConfiguration<UserProf
         b.HasKey(x => x.Id);
         b.HasIndex(x => x.UserId).IsUnique();
         b.HasIndex(x => new { x.RelationshipStatus, x.City });
+        b.HasIndex(x => new { x.ContinentCode, x.CountryCode, x.RelationshipStatus });
         b.Property(x => x.DisplayName).HasMaxLength(120);
         b.Property(x => x.City).HasMaxLength(100);
         b.Property(x => x.Country).HasMaxLength(100);
+        b.Property(x => x.CountryCode).HasMaxLength(2);
+        b.Property(x => x.ContinentCode).HasMaxLength(2);
+        b.Property(x => x.TimeZoneId).HasMaxLength(100);
+        b.Property(x => x.PreferredCountryCodes).HasColumnType("text[]");
         b.Property(x => x.Denomination).HasMaxLength(100);
         b.Property(x => x.Bio).HasMaxLength(1000);
         b.Property(x => x.Interests).HasColumnType("text[]");
@@ -460,6 +465,7 @@ public sealed class CounsellorConfiguration : IEntityTypeConfiguration<Counsello
         b.Property(x => x.Specialisations).HasColumnType("text[]");
         b.Property(x => x.Languages).HasColumnType("text[]");
         b.Property(x => x.VerificationDocumentUrls).HasColumnType("text[]");
+        b.Property(x => x.ServiceCountryCodes).HasColumnType("text[]");
         b.Property(x => x.RejectionReason).HasMaxLength(500);
         b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.UserProfile).WithMany().HasForeignKey(x => x.UserId).HasPrincipalKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
@@ -567,6 +573,10 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         b.Property(x => x.Currency).HasMaxLength(3);
         b.Property(x => x.ProviderReference).HasMaxLength(200);
         b.Property(x => x.ProviderTransactionId).HasMaxLength(200);
+        b.HasIndex(x => x.PayoutReference).IsUnique();
+        b.Property(x => x.PayoutReference).HasMaxLength(50);
+        b.Property(x => x.ProviderTransferId).HasMaxLength(200);
+        b.Property(x => x.PayoutFailureReason).HasMaxLength(500);
         b.HasOne(x => x.CounsellingSession).WithOne(x => x.Payment)
             .HasForeignKey<Payment>(x => x.CounsellingSessionId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PayerUserId).OnDelete(DeleteBehavior.Restrict);

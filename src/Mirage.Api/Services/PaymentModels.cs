@@ -15,3 +15,5 @@ public sealed record PaymentWebhookResult(string? ProviderReference, bool Succes
 public sealed record BankOption(string Code, string Name);
 
 public sealed record ResolvedBankAccount(string AccountName);
+
+public sealed record PayoutSubmissionResult(string? ProviderTransferId, bool Completed);

@@ -41,11 +41,6 @@ internal static class PaymentEndpoints
         // No subaccount configured yet means the full amount lands in the platform account
         // instead of auto-splitting — booking already requires HasPayoutAccount before a
         // counsellor can charge at all, so this is a defensive fallback, not the normal path.
-        var counsellor = await db.Counsellors.AsNoTracking()
-            .Where(x => x.Id == payment.CounsellorId)
-            .Select(x => new { x.PaystackSubaccountCode, x.FlutterwaveSubaccountId })
-            .SingleAsync(cancellationToken);
-
         var reference = $"mirage-{payment.Id:N}-{DateTimeOffset.UtcNow.Ticks}";
         payment.Initialize(request.Provider, request.Method, reference);
         await db.SaveChangesAsync(cancellationToken);
@@ -59,9 +54,9 @@ internal static class PaymentEndpoints
             var result = request.Provider switch
             {
                 PaymentProvider.Paystack => await paystack.InitializeAsync(payment, payerEmail, request.Method,
-                    counsellor.PaystackSubaccountCode, redirectUrl, cancellationToken),
+                    null, redirectUrl, cancellationToken),
                 PaymentProvider.Flutterwave => await flutterwave.InitializeAsync(payment, payerEmail, request.Method,
-                    redirectUrl, counsellor.FlutterwaveSubaccountId, cancellationToken),
+                    redirectUrl, null, cancellationToken),
                 _ => throw new InvalidOperationException("Unsupported payment provider."),
             };
             return ApiResults.Ok(context, result, "Payment initialized successfully.");
@@ -145,6 +140,21 @@ internal static class PaymentEndpoints
             return Results.Unauthorized();
 
         var result = paystack.ParseWebhook(rawBody);
+        if (result.ProviderReference is not null && rawBody.Contains("\"transfer.", StringComparison.Ordinal))
+        {
+            var transfer = paystack.ParseTransferWebhook(rawBody);
+            var payout = await db.Payments.SingleOrDefaultAsync(
+                x => x.PayoutReference == transfer.ProviderReference, cancellationToken);
+            if (payout is not null)
+            {
+                if (transfer.Successful) payout.MarkPayoutPaid(transfer.ProviderTransactionId);
+                else if (rawBody.Contains("\"transfer.failed\"", StringComparison.Ordinal)
+                         || rawBody.Contains("\"transfer.reversed\"", StringComparison.Ordinal))
+                    payout.MarkPayoutFailed("Paystack reported that the transfer failed or was reversed.");
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            return Results.Ok();
+        }
         if (result.ProviderReference is not null)
         {
             if (result.Successful)
@@ -172,6 +182,23 @@ internal static class PaymentEndpoints
 
         using var reader = new StreamReader(context.Request.Body);
         var rawBody = await reader.ReadToEndAsync(cancellationToken);
+        if (rawBody.Contains("transfer", StringComparison.OrdinalIgnoreCase))
+        {
+            var transfer = flutterwave.ParseTransferWebhook(rawBody);
+            if (transfer.ProviderReference is not null)
+            {
+                var payout = await db.Payments.SingleOrDefaultAsync(
+                    x => x.PayoutReference == transfer.ProviderReference, cancellationToken);
+                if (payout is not null)
+                {
+                    if (transfer.Successful) payout.MarkPayoutPaid(transfer.ProviderTransactionId);
+                    else if (rawBody.Contains("FAILED", StringComparison.OrdinalIgnoreCase))
+                        payout.MarkPayoutFailed("Flutterwave reported that the transfer failed.");
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+            }
+            return Results.Ok();
+        }
         var result = flutterwave.ParseWebhook(rawBody);
         if (result.ProviderReference is not null)
         {

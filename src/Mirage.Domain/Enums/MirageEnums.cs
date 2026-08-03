@@ -8,6 +8,7 @@ public enum CoupleStatus { Pending = 1, Approved = 2, Declined = 3 }
 public enum CoupleFriendshipStatus { Active = 1, Ended = 2 }
 public enum SkinTone { Fair = 1, Light = 2, Medium = 3, Tan = 4, Brown = 5, Dark = 6 }
 public enum SubscriptionTier { Free = 1, Plus = 2, Premium = 3 }
+public enum DiscoveryScope { Country = 1, Continent = 2, Worldwide = 3 }
 public enum OrganisationStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
 public enum OrganisationMemberStatus { Pending = 1, Approved = 2, Rejected = 3, Removed = 4 }
 public enum CommunityStatus { Active = 1, Archived = 2 }
@@ -21,6 +22,7 @@ public enum SessionStatus { Requested = 1, Scheduled = 2, InProgress = 3, Comple
 public enum PaymentProvider { Paystack = 1, Flutterwave = 2 }
 public enum PaymentMethod { Card = 1, BankTransfer = 2 }
 public enum PaymentStatus { Pending = 1, Successful = 2, Failed = 3 }
+public enum PayoutStatus { NotApplicable = 0, Held = 1, AwaitingApproval = 2, Processing = 3, Paid = 4, Failed = 5 }
 public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3, PendingRequest = 4 }
 public enum MessageType { Text = 1, Image = 2 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }

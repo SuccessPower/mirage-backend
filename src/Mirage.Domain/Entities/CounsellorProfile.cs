@@ -40,6 +40,8 @@ public sealed class CounsellorProfile : Entity
     public string? PriceCurrency { get; private set; }
     public bool SupportsVoiceCalls { get; private set; } = true;
     public bool SupportsVideoCalls { get; private set; } = true;
+    public bool AcceptsInternationalClients { get; private set; } = true;
+    public string[] ServiceCountryCodes { get; private set; } = [];
     public double AverageRating { get; private set; }
     public int RatingCount { get; private set; }
     public bool ChargingRequested { get; private set; }
@@ -48,8 +50,9 @@ public sealed class CounsellorProfile : Entity
     public string? BankAccountNumber { get; private set; }
     public string? BankAccountName { get; private set; }
     public string? PaystackSubaccountCode { get; private set; }
+    public string? PaystackTransferRecipientCode { get; private set; }
     public string? FlutterwaveSubaccountId { get; private set; }
-    public bool HasPayoutAccount => PaystackSubaccountCode is not null || FlutterwaveSubaccountId is not null;
+    public bool HasPayoutAccount => BankCode is not null && BankAccountNumber is not null;
     public Organisation? Organisation { get; private set; }
     public UserProfile UserProfile { get; private set; } = null!;
 
@@ -107,6 +110,7 @@ public sealed class CounsellorProfile : Entity
     }
 
     public void SetPaystackSubaccountCode(string code) { PaystackSubaccountCode = code; Touch(); }
+    public void SetPaystackTransferRecipientCode(string code) { PaystackTransferRecipientCode = code; Touch(); }
     public void SetFlutterwaveSubaccountId(string id) { FlutterwaveSubaccountId = id; Touch(); }
 
     public void ApproveCharging()
@@ -133,13 +137,17 @@ public sealed class CounsellorProfile : Entity
     }
 
     public void SetContactAndPricing(string? phoneNumber, decimal? priceAmount, string? priceCurrency,
-        bool supportsVoiceCalls, bool supportsVideoCalls)
+        bool supportsVoiceCalls, bool supportsVideoCalls, bool acceptsInternationalClients = true,
+        string[]? serviceCountryCodes = null)
     {
         PhoneNumber = string.IsNullOrWhiteSpace(phoneNumber) ? null : phoneNumber.Trim();
         PriceAmount = priceAmount;
         PriceCurrency = string.IsNullOrWhiteSpace(priceCurrency) ? null : priceCurrency.Trim().ToUpperInvariant();
         SupportsVoiceCalls = supportsVoiceCalls;
         SupportsVideoCalls = supportsVideoCalls;
+        AcceptsInternationalClients = acceptsInternationalClients;
+        ServiceCountryCodes = (serviceCountryCodes ?? []).Select(x => x.Trim().ToUpperInvariant())
+            .Where(x => x.Length == 2).Distinct().ToArray();
         Touch();
     }
 

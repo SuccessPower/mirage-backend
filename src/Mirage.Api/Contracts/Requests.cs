@@ -23,7 +23,11 @@ public sealed record RegisterRequest(
     string? NewOrganisationName = null,
     string? NewOrganisationRegistrationNumber = null,
     string? NewBranchName = null,
-    string? NewBranchCity = null);
+    string? NewBranchCity = null,
+    string? CountryCode = null,
+    string? TimeZoneId = null,
+    DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
+    string[]? PreferredCountryCodes = null);
 
 public sealed record LoginRequest(string Email, string Password);
 public sealed record ContactRequest(
@@ -60,7 +64,11 @@ public sealed record UpdateProfileRequest(
     int? HeightInches = null,
     SkinTone? SkinTone = null,
     string? PreferredLanguage = null,
-    string? Occupation = null);
+    string? Occupation = null,
+    string? CountryCode = null,
+    string? TimeZoneId = null,
+    DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
+    string[]? PreferredCountryCodes = null);
 public sealed record SetProfilePhotosRequest(string[] PhotoUrls);
 public sealed record CompleteProfileRequest(
     DateOnly DateOfBirth,
@@ -77,7 +85,11 @@ public sealed record CompleteProfileRequest(
     string? NewOrganisationName = null,
     string? NewOrganisationRegistrationNumber = null,
     string? NewBranchName = null,
-    string? NewBranchCity = null);
+    string? NewBranchCity = null,
+    string? CountryCode = null,
+    string? TimeZoneId = null,
+    DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
+    string[]? PreferredCountryCodes = null);
 public sealed record JoinChurchRequest(
     Guid? OrganisationId = null,
     Guid? BranchId = null,
@@ -217,7 +229,9 @@ public sealed record UpdateCounsellorProfileRequest(
     decimal? PriceAmount = null,
     string? PriceCurrency = null,
     bool SupportsVoiceCalls = true,
-    bool SupportsVideoCalls = true);
+    bool SupportsVideoCalls = true,
+    bool AcceptsInternationalClients = true,
+    string[]? ServiceCountryCodes = null);
 public sealed record UpdateMentorProfileRequest(
     int YearsMarried,
     string Testimony,
