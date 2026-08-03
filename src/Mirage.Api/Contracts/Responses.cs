@@ -478,3 +478,43 @@ public sealed record AdminAnalyticsTimeseriesResponse(
     AnalyticsEventType EventType,
     string Bucket,
     IReadOnlyList<AdminAnalyticsTimeseriesPoint> Points);
+
+public sealed record AdminUserActivitySummary(
+    int RegisteredUsers,
+    int EnabledUsers,
+    int SuspendedUsers,
+    int ActiveUsers,
+    int InactiveUsers,
+    int NeverLoggedInUsers,
+    DateTimeOffset InactivityCutoff);
+
+public sealed record AdminTierSummary(SubscriptionTier Tier, int Users, int ActiveUsers, int InactiveUsers);
+
+public sealed record AdminCountrySummary(string Country, int Users, int ActiveUsers, int RegistrationsInPeriod);
+
+public sealed record AdminRevenueSummary(
+    string Source,
+    string Currency,
+    decimal GrossAmount,
+    decimal PlatformRevenue,
+    decimal ProviderPayable,
+    int TransactionCount,
+    decimal PaidOut,
+    decimal OutstandingPayout);
+
+public sealed record AdminComprehensiveAnalyticsResponse(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string? Country,
+    DateTimeOffset GeneratedAt,
+    AdminUserActivitySummary Users,
+    IReadOnlyList<AdminTierSummary> Tiers,
+    IReadOnlyList<AdminCountrySummary> Countries,
+    IReadOnlyList<AdminRevenueSummary> Revenue,
+    int NewRegistrations,
+    int CompletedCounsellingSessions,
+    int ApprovedCouples,
+    int ApprovedOrganisations,
+    int ApprovedCounsellors,
+    int ApprovedMentors,
+    int OpenContentReports);
