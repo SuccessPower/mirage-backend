@@ -176,7 +176,7 @@ internal static class AdminEndpoints
         {
             entry.AbsoluteExpirationRelativeToNow = AdminReadCacheDuration;
 
-            var query = db.Users.AsNoTracking().AsQueryable();
+            var query = db.Users.AsNoTracking().Where(x => !x.IsDeleted);
             if (!string.IsNullOrWhiteSpace(email))
                 query = query.Where(x => EF.Functions.ILike(x.Email!, $"%{email.Trim()}%"));
             if (isActive.HasValue)
@@ -226,7 +226,7 @@ internal static class AdminEndpoints
         UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
-        if (user is null) return EndpointHelpers.NotFound(context, "User was not found.");
+        if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "User was not found.");
         var roles = await userManager.GetRolesAsync(user);
         var profile = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == id)
@@ -250,7 +250,7 @@ internal static class AdminEndpoints
         var actor = context.User.GetUserId();
         if (actor == id) return EndpointHelpers.Conflict(context, "Cannot suspend your own account.");
         var user = await userManager.FindByIdAsync(id.ToString());
-        if (user is null) return EndpointHelpers.NotFound(context, "User was not found.");
+        if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "User was not found.");
         if (!user.IsActive) return EndpointHelpers.Conflict(context, "User is already suspended.");
         user.IsActive = false;
         await userManager.UpdateAsync(user);
@@ -262,7 +262,7 @@ internal static class AdminEndpoints
         UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByIdAsync(id.ToString());
-        if (user is null) return EndpointHelpers.NotFound(context, "User was not found.");
+        if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "User was not found.");
         if (user.IsActive) return EndpointHelpers.Conflict(context, "User is already active.");
         user.IsActive = true;
         await userManager.UpdateAsync(user);
@@ -287,7 +287,7 @@ internal static class AdminEndpoints
         return ApiResults.Ok(context, new { UserId = id, profile.IsVerified }, "Profile verified successfully.");
     }
 
-    private static void InvalidateAdminReads() => Interlocked.Increment(ref _adminReadCacheVersion);
+    internal static void InvalidateAdminReads() => Interlocked.Increment(ref _adminReadCacheVersion);
 
     private static async Task<IResult> SendInformationRequest(Guid id, SendAdminInformationRequest request,
         HttpContext context, MirageDbContext db, IEmailService email, IConfiguration configuration,
