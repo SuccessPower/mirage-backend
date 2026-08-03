@@ -775,12 +775,14 @@ internal static class AuthEndpoints
         // counselling sessions all Restrict-FK to the user, so other members' history would break.
         // Instead we deactivate the login and scrub the profile of anything personally identifying.
         user.IsActive = false;
+        user.IsDeleted = true;
         await userManager.UpdateAsync(user);
 
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == user.Id, cancellationToken);
         profile?.ScrubPersonalData();
 
         await RevokeAllSessionsAsync(user.Id, db, cancellationToken);
+        AdminEndpoints.InvalidateAdminReads();
 
         if (email is not null)
             await emailService.SendAccountClosedEmailAsync(email, displayName ?? "there", permanent: true, cancellationToken);

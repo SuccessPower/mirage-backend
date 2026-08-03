@@ -55,7 +55,7 @@ internal static class AdminAnalyticsEndpoints
         var inactivityCutoff = now.AddDays(-30);
         var normalizedCountry = string.IsNullOrWhiteSpace(country) ? null : country.Trim();
 
-        var users = db.Users.AsNoTracking().AsQueryable();
+        var users = db.Users.AsNoTracking().Where(x => !x.IsDeleted);
         if (normalizedCountry is not null)
             users = users.Where(u => db.Profiles.Any(p => p.UserId == u.Id && p.Country == normalizedCountry));
 
@@ -78,7 +78,8 @@ internal static class AdminAnalyticsEndpoints
 
         var countries = await db.Profiles.AsNoTracking()
             .Where(p => normalizedCountry == null || p.Country == normalizedCountry)
-            .Join(db.Users.AsNoTracking(), p => p.UserId, u => u.Id, (p, u) => new { p.Country, User = u })
+            .Join(db.Users.AsNoTracking().Where(u => !u.IsDeleted), p => p.UserId, u => u.Id,
+                (p, u) => new { p.Country, User = u })
             .GroupBy(x => x.Country)
             .Select(g => new AdminCountrySummary(g.Key, g.Count(),
                 g.Count(x => x.User.IsActive && x.User.LastLoginAt >= inactivityCutoff),
