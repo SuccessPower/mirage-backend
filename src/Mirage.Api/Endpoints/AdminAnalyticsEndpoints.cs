@@ -65,37 +65,58 @@ internal static class AdminAnalyticsEndpoints
         var neverLoggedIn = await users.CountAsync(x => x.LastLoginAt == null, cancellationToken);
         var newRegistrations = await users.CountAsync(x => x.CreatedAt >= from && x.CreatedAt <= to, cancellationToken);
 
-        var tierRows = await db.Profiles.AsNoTracking()
+        var tierData = await db.Profiles.AsNoTracking()
             .Where(p => normalizedCountry == null || p.Country == normalizedCountry)
             .Join(users, p => p.UserId, u => u.Id, (p, u) => new { p.SubscriptionTier, u.IsActive, u.LastLoginAt })
             .GroupBy(x => x.SubscriptionTier)
-            .Select(g => new AdminTierSummary(g.Key, g.Count(),
-                g.Count(x => x.IsActive && x.LastLoginAt >= inactivityCutoff),
-                g.Count(x => !x.IsActive || x.LastLoginAt < inactivityCutoff || x.LastLoginAt == null)))
+            .Select(g => new
+            {
+                Tier = g.Key,
+                Users = g.Count(),
+                ActiveUsers = g.Count(x => x.IsActive && x.LastLoginAt >= inactivityCutoff),
+                InactiveUsers = g.Count(x => !x.IsActive || x.LastLoginAt < inactivityCutoff || x.LastLoginAt == null)
+            })
             .ToListAsync(cancellationToken);
+        var tierRows = tierData.Select(x =>
+            new AdminTierSummary(x.Tier, x.Users, x.ActiveUsers, x.InactiveUsers)).ToList();
         var tiers = Enum.GetValues<SubscriptionTier>()
             .Select(t => tierRows.SingleOrDefault(x => x.Tier == t) ?? new AdminTierSummary(t, 0, 0, 0)).ToList();
 
-        var countries = await db.Profiles.AsNoTracking()
+        var countryData = await db.Profiles.AsNoTracking()
             .Where(p => normalizedCountry == null || p.Country == normalizedCountry)
             .Join(db.Users.AsNoTracking().Where(u => !u.IsDeleted), p => p.UserId, u => u.Id,
-                (p, u) => new { p.Country, User = u })
+                (p, u) => new { p.Country, u.IsActive, u.LastLoginAt, u.CreatedAt })
             .GroupBy(x => x.Country)
-            .Select(g => new AdminCountrySummary(g.Key, g.Count(),
-                g.Count(x => x.User.IsActive && x.User.LastLoginAt >= inactivityCutoff),
-                g.Count(x => x.User.CreatedAt >= from && x.User.CreatedAt <= to)))
+            .Select(g => new
+            {
+                Country = g.Key,
+                Users = g.Count(),
+                ActiveUsers = g.Count(x => x.IsActive && x.LastLoginAt >= inactivityCutoff),
+                RegistrationsInPeriod = g.Count(x => x.CreatedAt >= from && x.CreatedAt <= to)
+            })
             .OrderByDescending(x => x.Users).ToListAsync(cancellationToken);
+        var countries = countryData.Select(x =>
+            new AdminCountrySummary(x.Country, x.Users, x.ActiveUsers, x.RegistrationsInPeriod)).ToList();
 
         var paymentQuery = db.Payments.AsNoTracking().Where(p => p.Status == PaymentStatus.Successful
             && p.PaidAt >= from && p.PaidAt <= to);
         if (normalizedCountry is not null)
             paymentQuery = paymentQuery.Where(p => db.Profiles.Any(x => x.UserId == p.PayerUserId && x.Country == normalizedCountry));
-        var revenue = await paymentQuery.GroupBy(p => p.Currency)
-            .Select(g => new AdminRevenueSummary("Counselling session charges", g.Key,
-                g.Sum(x => x.Amount), g.Sum(x => x.PlatformFeeAmount), g.Sum(x => x.CounsellorAmount), g.Count(),
-                g.Sum(x => x.PayoutStatus == PayoutStatus.Paid ? x.CounsellorAmount : 0m),
-                g.Sum(x => x.PayoutStatus != PayoutStatus.Paid ? x.CounsellorAmount : 0m)))
+        var revenueData = await paymentQuery.GroupBy(p => p.Currency)
+            .Select(g => new
+            {
+                Currency = g.Key,
+                GrossAmount = g.Sum(x => x.Amount),
+                PlatformRevenue = g.Sum(x => x.PlatformFeeAmount),
+                ProviderPayable = g.Sum(x => x.CounsellorAmount),
+                TransactionCount = g.Count(),
+                PaidOut = g.Sum(x => x.PayoutStatus == PayoutStatus.Paid ? x.CounsellorAmount : 0m),
+                OutstandingPayout = g.Sum(x => x.PayoutStatus != PayoutStatus.Paid ? x.CounsellorAmount : 0m)
+            })
             .OrderBy(x => x.Currency).ToListAsync(cancellationToken);
+        var revenue = revenueData.Select(x => new AdminRevenueSummary("Counselling session charges", x.Currency,
+            x.GrossAmount, x.PlatformRevenue, x.ProviderPayable, x.TransactionCount, x.PaidOut,
+            x.OutstandingPayout)).ToList();
 
         var countryUserIds = normalizedCountry is null
             ? null
