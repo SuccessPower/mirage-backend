@@ -931,6 +931,7 @@ internal static class AuthEndpoints
     private static async Task<AuthResponse> IssueTokens(ApplicationUser user, IEnumerable<string> roles,
         MirageDbContext db, TokenService tokens, IConfiguration configuration, CancellationToken cancellationToken)
     {
+        user.LastLoginAt = DateTimeOffset.UtcNow;
         var access = tokens.CreateAccessToken(user, roles);
         var refreshValue = tokens.CreateRefreshToken();
         var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);

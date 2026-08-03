@@ -6,6 +6,7 @@ public sealed class ApplicationUser : IdentityUser<Guid>
 {
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastLoginAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? WelcomeEmailSentAt { get; set; }
 }
 

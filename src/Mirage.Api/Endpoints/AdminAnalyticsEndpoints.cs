@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Persistence;
 
 namespace Mirage.Api.Endpoints;
 
@@ -18,8 +20,114 @@ internal static class AdminAnalyticsEndpoints
             .RequireAuthorization(MiragePolicy.PlatformAdmin);
         admin.MapGet("/summary", GetSummary);
         admin.MapGet("/timeseries", GetTimeseries);
+        admin.MapGet("/overview", GetOverview);
+        admin.MapGet("/export/pdf", ExportPdf);
         return api;
     }
+
+    private static async Task<IResult> GetOverview(HttpContext context, MirageDbContext db,
+        DateTimeOffset? from, DateTimeOffset? to, string? country,
+        CancellationToken cancellationToken)
+    {
+        var validation = ValidateRange(context, from, to);
+        if (validation.Error is not null) return validation.Error;
+        var report = await BuildOverview(db, validation.From, validation.To, country, cancellationToken);
+        return ApiResults.Ok(context, report, "Comprehensive analytics retrieved successfully.");
+    }
+
+    private static async Task<IResult> ExportPdf(HttpContext context, MirageDbContext db,
+        DateTimeOffset? from, DateTimeOffset? to, string? country,
+        CancellationToken cancellationToken)
+    {
+        var validation = ValidateRange(context, from, to);
+        if (validation.Error is not null) return validation.Error;
+        var report = await BuildOverview(db, validation.From, validation.To, country, cancellationToken);
+        var bytes = AdminAnalyticsPdf.Generate(report);
+        var suffix = string.IsNullOrWhiteSpace(country) ? "all-countries" : Slug(country);
+        return Results.File(bytes, "application/pdf",
+            $"mirage-analytics-{validation.From:yyyyMMdd}-{validation.To:yyyyMMdd}-{suffix}.pdf");
+    }
+
+    private static async Task<AdminComprehensiveAnalyticsResponse> BuildOverview(MirageDbContext db,
+        DateTimeOffset from, DateTimeOffset to, string? country, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var inactivityCutoff = now.AddDays(-30);
+        var normalizedCountry = string.IsNullOrWhiteSpace(country) ? null : country.Trim();
+
+        var users = db.Users.AsNoTracking().AsQueryable();
+        if (normalizedCountry is not null)
+            users = users.Where(u => db.Profiles.Any(p => p.UserId == u.Id && p.Country == normalizedCountry));
+
+        var registered = await users.CountAsync(cancellationToken);
+        var enabled = await users.CountAsync(x => x.IsActive, cancellationToken);
+        var active = await users.CountAsync(x => x.IsActive && x.LastLoginAt >= inactivityCutoff, cancellationToken);
+        var neverLoggedIn = await users.CountAsync(x => x.LastLoginAt == null, cancellationToken);
+        var newRegistrations = await users.CountAsync(x => x.CreatedAt >= from && x.CreatedAt <= to, cancellationToken);
+
+        var tierRows = await db.Profiles.AsNoTracking()
+            .Where(p => normalizedCountry == null || p.Country == normalizedCountry)
+            .Join(users, p => p.UserId, u => u.Id, (p, u) => new { p.SubscriptionTier, u.IsActive, u.LastLoginAt })
+            .GroupBy(x => x.SubscriptionTier)
+            .Select(g => new AdminTierSummary(g.Key, g.Count(),
+                g.Count(x => x.IsActive && x.LastLoginAt >= inactivityCutoff),
+                g.Count(x => !x.IsActive || x.LastLoginAt < inactivityCutoff || x.LastLoginAt == null)))
+            .ToListAsync(cancellationToken);
+        var tiers = Enum.GetValues<SubscriptionTier>()
+            .Select(t => tierRows.SingleOrDefault(x => x.Tier == t) ?? new AdminTierSummary(t, 0, 0, 0)).ToList();
+
+        var countries = await db.Profiles.AsNoTracking()
+            .Where(p => normalizedCountry == null || p.Country == normalizedCountry)
+            .Join(db.Users.AsNoTracking(), p => p.UserId, u => u.Id, (p, u) => new { p.Country, User = u })
+            .GroupBy(x => x.Country)
+            .Select(g => new AdminCountrySummary(g.Key, g.Count(),
+                g.Count(x => x.User.IsActive && x.User.LastLoginAt >= inactivityCutoff),
+                g.Count(x => x.User.CreatedAt >= from && x.User.CreatedAt <= to)))
+            .OrderByDescending(x => x.Users).ToListAsync(cancellationToken);
+
+        var paymentQuery = db.Payments.AsNoTracking().Where(p => p.Status == PaymentStatus.Successful
+            && p.PaidAt >= from && p.PaidAt <= to);
+        if (normalizedCountry is not null)
+            paymentQuery = paymentQuery.Where(p => db.Profiles.Any(x => x.UserId == p.PayerUserId && x.Country == normalizedCountry));
+        var revenue = await paymentQuery.GroupBy(p => p.Currency)
+            .Select(g => new AdminRevenueSummary("Counselling session charges", g.Key,
+                g.Sum(x => x.Amount), g.Sum(x => x.PlatformFeeAmount), g.Sum(x => x.CounsellorAmount), g.Count(),
+                g.Sum(x => x.PayoutStatus == PayoutStatus.Paid ? x.CounsellorAmount : 0m),
+                g.Sum(x => x.PayoutStatus != PayoutStatus.Paid ? x.CounsellorAmount : 0m)))
+            .OrderBy(x => x.Currency).ToListAsync(cancellationToken);
+
+        var countryUserIds = normalizedCountry is null
+            ? null
+            : db.Profiles.Where(p => p.Country == normalizedCountry).Select(p => p.UserId);
+        var sessionQuery = db.CounsellingSessions.AsNoTracking().Where(x => x.Status == SessionStatus.Completed
+            && x.UpdatedAt >= from && x.UpdatedAt <= to);
+        if (countryUserIds is not null) sessionQuery = sessionQuery.Where(x => countryUserIds.Contains(x.ClientUserId));
+
+        return new AdminComprehensiveAnalyticsResponse(from, to, normalizedCountry, now,
+            new AdminUserActivitySummary(registered, enabled, registered - enabled, active, registered - active,
+                neverLoggedIn, inactivityCutoff), tiers, countries, revenue, newRegistrations,
+            await sessionQuery.CountAsync(cancellationToken),
+            await db.Couples.CountAsync(x => x.Status == CoupleStatus.Approved, cancellationToken),
+            await db.Organisations.CountAsync(x => x.Status == OrganisationStatus.Approved, cancellationToken),
+            await db.Counsellors.CountAsync(x => x.IsApproved, cancellationToken),
+            await db.Mentors.CountAsync(x => x.IsApproved, cancellationToken),
+            await db.ContentReports.CountAsync(x => x.Status == ContentReportStatus.Pending || x.Status == ContentReportStatus.UnderReview, cancellationToken));
+    }
+
+    private static (DateTimeOffset From, DateTimeOffset To, IResult? Error) ValidateRange(
+        HttpContext context, DateTimeOffset? from, DateTimeOffset? to)
+    {
+        var rangeTo = to ?? DateTimeOffset.UtcNow;
+        var rangeFrom = from ?? rangeTo.AddDays(-30);
+        if (rangeFrom > rangeTo)
+            return (rangeFrom, rangeTo, EndpointHelpers.ValidationProblem(context, ("from", "From must be before or equal to to.")));
+        if (rangeTo - rangeFrom > TimeSpan.FromDays(3660))
+            return (rangeFrom, rangeTo, EndpointHelpers.ValidationProblem(context, ("from", "The report range cannot exceed 10 years.")));
+        return (rangeFrom, rangeTo, null);
+    }
+
+    private static string Slug(string value) => new(value.Trim().ToLowerInvariant()
+        .Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
 
     private static async Task<IResult> GetSummary(HttpContext context, IMirageDbContext db,
         DateTimeOffset? from, DateTimeOffset? to, CancellationToken cancellationToken)

@@ -166,12 +166,12 @@ internal static class AdminEndpoints
     // --- User management ---
 
     private static async Task<IResult> ListUsers(HttpContext context, MirageDbContext db, IMemoryCache cache,
-        string? email, bool? isActive, int page = 1, int pageSize = 50,
+        string? email, bool? isActive, SubscriptionTier? tier, int page = 1, int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
         var normalizedEmail = email?.Trim().ToLowerInvariant() ?? string.Empty;
         var cacheKey =
-            $"admin:users:v{Volatile.Read(ref _adminReadCacheVersion)}:{normalizedEmail}:{isActive}:{page}:{pageSize}";
+            $"admin:users:v{Volatile.Read(ref _adminReadCacheVersion)}:{normalizedEmail}:{isActive}:{tier}:{page}:{pageSize}";
         var cached = await cache.GetOrCreateAsync(cacheKey, async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = AdminReadCacheDuration;
@@ -181,6 +181,8 @@ internal static class AdminEndpoints
                 query = query.Where(x => EF.Functions.ILike(x.Email!, $"%{email.Trim()}%"));
             if (isActive.HasValue)
                 query = query.Where(x => x.IsActive == isActive.Value);
+            if (tier.HasValue)
+                query = query.Where(x => db.Profiles.Any(p => p.UserId == x.Id && p.SubscriptionTier == tier.Value));
 
             // Profile summary fields are embedded here (rather than left for the admin UI to fetch
             // per-row via GET /profiles/{id}) so listing N users costs one query, not N+1 — the prior
@@ -206,6 +208,7 @@ internal static class AdminEndpoints
                             p.RelationshipStatus,
                             p.IsVerified,
                             p.IsProfileComplete,
+                            p.SubscriptionTier,
                             IsRecommended = db.Recommendations.Any(r =>
                                 r.RecommendedUserId == x.Id && r.Status == RecommendationStatus.Active)
                         })
