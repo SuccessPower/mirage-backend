@@ -60,5 +60,6 @@ public interface IMirageDbContext
     DbSet<TestimonialRead> TestimonialReads { get; }
     DbSet<TestimonialLike> TestimonialLikes { get; }
     DbSet<TestimonialComment> TestimonialComments { get; }
+    DbSet<TestimonialCommentLike> TestimonialCommentLikes { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

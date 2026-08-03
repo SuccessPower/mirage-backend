@@ -188,7 +188,8 @@ public sealed record TestimonialResponse(
 
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
-    Guid? ParentCommentId, string Body, DateTimeOffset CreatedAt);
+    Guid? ParentCommentId, string Body, DateTimeOffset CreatedAt,
+    int LikeCount, bool LikedByMe, int ReplyCount);
 
 public sealed record CommunityMemberResponse(
     Guid Id,

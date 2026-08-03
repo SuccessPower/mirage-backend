@@ -206,6 +206,17 @@ public sealed class TestimonialCommentConfiguration : IEntityTypeConfiguration<T
     }
 }
 
+public sealed class TestimonialCommentLikeConfiguration : IEntityTypeConfiguration<TestimonialCommentLike>
+{
+    public void Configure(EntityTypeBuilder<TestimonialCommentLike> b)
+    {
+        b.ToTable("testimonial_comment_likes");
+        b.HasIndex(x => new { x.CommentId, x.UserId }).IsUnique();
+        b.HasOne(x => x.Comment).WithMany(x => x.Likes).HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CommunityMemberConfiguration : IEntityTypeConfiguration<CommunityMember>
 {
     public void Configure(EntityTypeBuilder<CommunityMember> b)

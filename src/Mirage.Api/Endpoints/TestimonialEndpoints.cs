@@ -15,10 +15,14 @@ internal static class TestimonialEndpoints
         group.MapGet("/taggable-profiles", SearchTaggableProfiles);
         group.MapPost("/", Create);
         group.MapGet("/{id:guid}", Get);
+        group.MapPut("/{id:guid}", Update);
+        group.MapDelete("/{id:guid}", Delete);
         group.MapPost("/{id:guid}/likes", Like);
         group.MapDelete("/{id:guid}/likes", Unlike);
         group.MapGet("/{id:guid}/comments", ListComments);
         group.MapPost("/{id:guid}/comments", Comment);
+        group.MapPost("/{id:guid}/comments/{commentId:guid}/likes", LikeComment);
+        group.MapDelete("/{id:guid}/comments/{commentId:guid}/likes", UnlikeComment);
         return api;
     }
 
@@ -88,6 +92,48 @@ internal static class TestimonialEndpoints
         return ApiResults.Created(context, $"/api/v1/testimonials/{item.Id}", response, "Your testimony was published.");
     }
 
+    private static async Task<IResult> Update(Guid id, UpdateTestimonialRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length is < 8 or > 160)
+            return EndpointHelpers.ValidationProblem(context, ("title", "Use a title between 8 and 160 characters."));
+        if (string.IsNullOrWhiteSpace(request.Body) || request.Body.Trim().Length is < 100 or > 12000)
+            return EndpointHelpers.ValidationProblem(context, ("body", "Your story must be between 100 and 12,000 characters."));
+
+        var me = context.User.GetUserId();
+        var testimonial = await db.Testimonials.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (testimonial is null) return EndpointHelpers.NotFound(context, "Testimonial was not found.");
+        if (testimonial.AuthorUserId != me)
+            return EndpointHelpers.Forbidden(context, "Only the testimony author can edit this story.");
+        if (request.TaggedUserId == me)
+            return EndpointHelpers.ValidationProblem(context, ("taggedUserId", "You cannot tag yourself."));
+        if (request.TaggedUserId.HasValue && !await db.Profiles.AsNoTracking()
+                .AnyAsync(x => x.UserId == request.TaggedUserId, cancellationToken))
+            return EndpointHelpers.ValidationProblem(context, ("taggedUserId", "The tagged profile was not found."));
+
+        var images = NormaliseImages(request.ImageUrls, null);
+        if (images.Count > 3)
+            return EndpointHelpers.ValidationProblem(context, ("imageUrls", "A testimony can contain at most three images."));
+        testimonial.Update(request.Title, request.Body, images, request.TaggedUserId);
+        await db.SaveChangesAsync(cancellationToken);
+        var response = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me)
+            .SingleAsync(cancellationToken);
+        return ApiResults.Ok(context, response, "Your testimony was updated.");
+    }
+
+    private static async Task<IResult> Delete(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var testimonial = await db.Testimonials.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (testimonial is null) return EndpointHelpers.NotFound(context, "Testimonial was not found.");
+        if (testimonial.AuthorUserId != context.User.GetUserId())
+            return EndpointHelpers.Forbidden(context, "Only the testimony author can delete this story.");
+
+        db.Testimonials.Remove(testimonial);
+        await db.SaveChangesAsync(cancellationToken);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> Like(Guid id, HttpContext context, IMirageDbContext db, CancellationToken ct)
     {
         var me = context.User.GetUserId();
@@ -109,12 +155,14 @@ internal static class TestimonialEndpoints
 
     private static async Task<IResult> ListComments(Guid id, HttpContext context, IMirageDbContext db, CancellationToken ct)
     {
+        var me = context.User.GetUserId();
         var comments = await db.TestimonialComments.AsNoTracking().Where(x => x.TestimonialId == id)
             .OrderBy(x => x.CreatedAt)
             .Select(x => new TestimonialCommentResponse(x.Id, x.TestimonialId, x.AuthorUserId,
                 db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Mirage member",
                 db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
-                x.ParentCommentId, x.Body, x.CreatedAt)).ToListAsync(ct);
+                x.ParentCommentId, x.Body, x.CreatedAt, x.Likes.Count, x.Likes.Any(l => l.UserId == me),
+                x.Replies.Count)).ToListAsync(ct);
         return ApiResults.Ok(context, comments, "Comments retrieved.");
     }
 
@@ -124,16 +172,63 @@ internal static class TestimonialEndpoints
         if (string.IsNullOrWhiteSpace(request.Body) || request.Body.Trim().Length is < 2 or > 2000)
             return EndpointHelpers.ValidationProblem(context, ("body", "Comment must be between 2 and 2,000 characters."));
         if (!await db.Testimonials.AsNoTracking().AnyAsync(x => x.Id == id, ct)) return EndpointHelpers.NotFound(context, "Testimonial was not found.");
-        if (request.ParentCommentId.HasValue && !await db.TestimonialComments.AsNoTracking()
-                .AnyAsync(x => x.Id == request.ParentCommentId && x.TestimonialId == id, ct))
-            return EndpointHelpers.ValidationProblem(context, ("parentCommentId", "Reply target was not found."));
+        if (request.ParentCommentId.HasValue)
+        {
+            var parent = await db.TestimonialComments.AsNoTracking()
+                .Where(x => x.Id == request.ParentCommentId && x.TestimonialId == id)
+                .Select(x => new { x.ParentCommentId }).SingleOrDefaultAsync(ct);
+            if (parent is null)
+                return EndpointHelpers.ValidationProblem(context, ("parentCommentId", "Reply target was not found."));
+            if (parent.ParentCommentId.HasValue)
+                return EndpointHelpers.ValidationProblem(context, ("parentCommentId", "Replies can only be posted to top-level comments."));
+        }
         var comment = new TestimonialComment(id, context.User.GetUserId(), request.Body, request.ParentCommentId);
         db.TestimonialComments.Add(comment); await db.SaveChangesAsync(ct);
         var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == comment.AuthorUserId)
             .Select(x => new { x.DisplayName, x.AvatarUrl }).SingleAsync(ct);
         var response = new TestimonialCommentResponse(comment.Id, comment.TestimonialId, comment.AuthorUserId,
-            author.DisplayName, author.AvatarUrl, comment.ParentCommentId, comment.Body, comment.CreatedAt);
+            author.DisplayName, author.AvatarUrl, comment.ParentCommentId, comment.Body, comment.CreatedAt, 0, false, 0);
         return ApiResults.Created(context, $"/api/v1/testimonials/{id}", response, "Comment posted.");
+    }
+
+    private static async Task<IResult> LikeComment(Guid id, Guid commentId, HttpContext context,
+        IMirageDbContext db, CancellationToken ct)
+    {
+        var me = context.User.GetUserId();
+        if (!await db.TestimonialComments.AsNoTracking().AnyAsync(x => x.Id == commentId && x.TestimonialId == id, ct))
+            return EndpointHelpers.NotFound(context, "Comment was not found.");
+        if (!await db.TestimonialCommentLikes.AnyAsync(x => x.CommentId == commentId && x.UserId == me, ct))
+        {
+            db.TestimonialCommentLikes.Add(new TestimonialCommentLike(commentId, me));
+            await db.SaveChangesAsync(ct);
+        }
+        return ApiResults.Ok(context, new
+        {
+            CommentId = commentId,
+            LikeCount = await db.TestimonialCommentLikes.CountAsync(x => x.CommentId == commentId, ct),
+            LikedByMe = true
+        }, "Comment liked.");
+    }
+
+    private static async Task<IResult> UnlikeComment(Guid id, Guid commentId, HttpContext context,
+        IMirageDbContext db, CancellationToken ct)
+    {
+        var me = context.User.GetUserId();
+        if (!await db.TestimonialComments.AsNoTracking().AnyAsync(x => x.Id == commentId && x.TestimonialId == id, ct))
+            return EndpointHelpers.NotFound(context, "Comment was not found.");
+        var like = await db.TestimonialCommentLikes.SingleOrDefaultAsync(
+            x => x.CommentId == commentId && x.UserId == me, ct);
+        if (like is not null)
+        {
+            db.TestimonialCommentLikes.Remove(like);
+            await db.SaveChangesAsync(ct);
+        }
+        return ApiResults.Ok(context, new
+        {
+            CommentId = commentId,
+            LikeCount = await db.TestimonialCommentLikes.CountAsync(x => x.CommentId == commentId, ct),
+            LikedByMe = false
+        }, "Comment like removed.");
     }
 
     private static async Task<IResult> SearchTaggableProfiles(HttpContext context, IMirageDbContext db,

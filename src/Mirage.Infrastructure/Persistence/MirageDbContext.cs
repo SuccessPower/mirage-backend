@@ -65,6 +65,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<TestimonialRead> TestimonialReads => Set<TestimonialRead>();
     public DbSet<TestimonialLike> TestimonialLikes => Set<TestimonialLike>();
     public DbSet<TestimonialComment> TestimonialComments => Set<TestimonialComment>();
+    public DbSet<TestimonialCommentLike> TestimonialCommentLikes => Set<TestimonialCommentLike>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
