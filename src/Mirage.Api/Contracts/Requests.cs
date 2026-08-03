@@ -40,6 +40,8 @@ public sealed record ContactRequest(
 public sealed record SendAdminInformationRequest(string Message);
 public sealed record CreateTestimonialRequest(string Title, string Body, string? ImageUrl = null,
     Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null);
+public sealed record UpdateTestimonialRequest(string Title, string Body,
+    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null);
 public sealed record CreateTestimonialCommentRequest(string Body, Guid? ParentCommentId = null);
 public sealed record GoogleAuthRequest(string IdToken);
 public sealed record RefreshRequest(string RefreshToken);

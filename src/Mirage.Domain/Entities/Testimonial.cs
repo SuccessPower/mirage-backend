@@ -32,6 +32,18 @@ public sealed class Testimonial : Entity
     public List<TestimonialRead> Reads { get; private set; } = [];
     public List<TestimonialLike> Likes { get; private set; } = [];
     public List<TestimonialComment> Comments { get; private set; } = [];
+
+    public void Update(string title, string body, IReadOnlyList<string> imageUrls, Guid? taggedUserId)
+    {
+        if (taggedUserId == AuthorUserId) throw new ArgumentException("You cannot tag yourself.", nameof(taggedUserId));
+        Title = title.Trim();
+        Body = body.Trim();
+        ImageUrl = imageUrls.ElementAtOrDefault(0)?.Trim();
+        ImageUrl2 = imageUrls.ElementAtOrDefault(1)?.Trim();
+        ImageUrl3 = imageUrls.ElementAtOrDefault(2)?.Trim();
+        TaggedUserId = taggedUserId;
+        Touch();
+    }
 }
 
 public sealed class TestimonialRead : Entity
@@ -69,4 +81,14 @@ public sealed class TestimonialComment : Entity
     public Testimonial Testimonial { get; private set; } = null!;
     public TestimonialComment? ParentComment { get; private set; }
     public List<TestimonialComment> Replies { get; private set; } = [];
+    public List<TestimonialCommentLike> Likes { get; private set; } = [];
+}
+
+public sealed class TestimonialCommentLike : Entity
+{
+    private TestimonialCommentLike() { }
+    public TestimonialCommentLike(Guid commentId, Guid userId) { CommentId = commentId; UserId = userId; }
+    public Guid CommentId { get; private set; }
+    public Guid UserId { get; private set; }
+    public TestimonialComment Comment { get; private set; } = null!;
 }
