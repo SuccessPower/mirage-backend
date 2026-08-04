@@ -74,16 +74,42 @@ public sealed class EmailFailoverTests
         Assert.Contains("https://www.instagram.com/themiragehub", transport.LastMessage.Html);
     }
 
-    private static ResilientEmailService CreateService(IEnumerable<IEmailTransport> transports)
+    [Fact]
+    public async Task Send_UsesConfiguredFrontendDomainForOpenMirageFooter()
     {
+        var transport = new StubTransport("ZeptoMail", configured: true, succeeds: true);
+        var service = CreateService([
+            transport,
+            new StubTransport("AmazonSes", configured: false, succeeds: false),
+            new StubTransport("Mailjet", configured: false, succeeds: false)
+        ], new Dictionary<string, string?>
+        {
+            ["Frontend:BaseUrl"] = "https://test.themiragehub.com/"
+        });
+
+        await service.SendWelcomeEmailAsync("person@example.com", "Person");
+
+        Assert.NotNull(transport.LastMessage);
+        Assert.Contains("href=\"https://test.themiragehub.com", transport.LastMessage.Html);
+        Assert.DoesNotContain("{{APP_URL}}", transport.LastMessage.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("vercel.app", transport.LastMessage.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ResilientEmailService CreateService(IEnumerable<IEmailTransport> transports,
+        IReadOnlyDictionary<string, string?>? overrides = null)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["Email:ProviderOrder:0"] = "ZeptoMail",
+            ["Email:ProviderOrder:1"] = "AmazonSes",
+            ["Email:ProviderOrder:2"] = "Mailjet",
+            ["SocialMedia:Instagram"] = "https://www.instagram.com/themiragehub"
+        };
+        if (overrides is not null)
+            foreach (var (key, value) in overrides) values[key] = value;
+
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Email:ProviderOrder:0"] = "ZeptoMail",
-                ["Email:ProviderOrder:1"] = "AmazonSes",
-                ["Email:ProviderOrder:2"] = "Mailjet",
-                ["SocialMedia:Instagram"] = "https://www.instagram.com/themiragehub"
-            })
+            .AddInMemoryCollection(values)
             .Build();
         return new ResilientEmailService(
             transports,

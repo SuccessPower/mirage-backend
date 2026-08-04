@@ -8,6 +8,7 @@ namespace Mirage.Infrastructure.Email;
 
 public sealed class ResilientEmailService : IEmailService
 {
+    private const string DefaultAppUrl = "https://www.themiragehub.com";
     private const string DefaultBrandLogoUrl =
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
     private readonly IReadOnlyList<IEmailTransport> _transports;
@@ -130,6 +131,10 @@ public sealed class ResilientEmailService : IEmailService
     private string ApplyBranding(string html)
     {
         html = EnsureColorSchemeMetadata(html);
+        var appUrl = _configuration["Frontend:BaseUrl"]?.Trim().TrimEnd('/') is { Length: > 0 } configuredAppUrl
+            ? configuredAppUrl
+            : DefaultAppUrl;
+        html = html.Replace("{{APP_URL}}", WebUtility.HtmlEncode(appUrl), StringComparison.Ordinal);
         var logoUrl = _configuration["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configured
             ? configured
             : DefaultBrandLogoUrl;

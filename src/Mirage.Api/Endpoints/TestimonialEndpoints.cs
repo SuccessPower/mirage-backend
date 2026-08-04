@@ -15,6 +15,7 @@ internal static class TestimonialEndpoints
         group.MapGet("/taggable-profiles", SearchTaggableProfiles);
         group.MapPost("/", Create);
         group.MapGet("/{id:guid}", Get);
+        group.MapGet("/{id:guid}/share", GetShareInfo).AllowAnonymous();
         group.MapPut("/{id:guid}", Update);
         group.MapDelete("/{id:guid}", Delete);
         group.MapPost("/{id:guid}/likes", Like);
@@ -65,6 +66,32 @@ internal static class TestimonialEndpoints
         var result = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me)
             .SingleAsync(cancellationToken);
         return ApiResults.Ok(context, result, "Testimonial retrieved successfully.");
+    }
+
+    // Public by design: external recipients and link-preview clients need the story without a
+    // Mirage session. Keep this projection limited to data already displayed on a published story.
+    private static async Task<IResult> GetShareInfo(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var story = await db.Testimonials.AsNoTracking()
+            .Where(x => x.Id == id)
+            .Select(x => new TestimonialShareResponse(
+                x.Id, x.AuthorUserId,
+                db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault()
+                    ?? "Mirage member",
+                db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
+                x.TaggedUserId,
+                x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId)
+                    .Select(p => p.DisplayName).FirstOrDefault(),
+                x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId)
+                    .Select(p => p.AvatarUrl).FirstOrDefault(),
+                x.Title, x.Body, x.ImageUrl, x.ImageUrl2, x.ImageUrl3,
+                x.Reads.Count, x.Likes.Count, x.Comments.Count, x.CreatedAt))
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return story is null
+            ? EndpointHelpers.NotFound(context, "Testimonial was not found.")
+            : ApiResults.Ok(context, story, "Testimonial share info retrieved successfully.");
     }
 
     private static async Task<IResult> Create(CreateTestimonialRequest request, HttpContext context,
