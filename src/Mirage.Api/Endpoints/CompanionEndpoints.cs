@@ -176,31 +176,46 @@ internal static class CompanionEndpoints
     private static async Task<IResult> InvitePartner(InviteCompanionPartnerRequest request, HttpContext context,
         MirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.PartnerEmail))
-            return EndpointHelpers.ValidationProblem(context, ("partnerEmail", "Partner email is required."));
-
         var userId = context.User.GetUserId();
-        var normalizedEmail = request.PartnerEmail.Trim().ToLowerInvariant();
-        var partner = await db.Profiles.AsNoTracking()
-            .Join(db.Users.AsNoTracking(), p => p.UserId, u => u.Id, (p, u) => new { p.UserId, u.Email })
-            .SingleOrDefaultAsync(x => x.Email != null && x.Email.ToLower() == normalizedEmail, cancellationToken);
-        if (partner is null) return EndpointHelpers.NotFound(context, "No account found with that email address.");
-        if (partner.UserId == userId)
+        Guid partnerUserId;
+
+        if (request.PartnerUserId is { } explicitPartnerId)
+        {
+            // Already-synced couples can invite by user id directly, skipping the email
+            // re-entry — their partner's identity is already known from the Couple link.
+            if (!await db.Profiles.AsNoTracking().AnyAsync(p => p.UserId == explicitPartnerId, cancellationToken))
+                return EndpointHelpers.NotFound(context, "No account found for that partner.");
+            partnerUserId = explicitPartnerId;
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(request.PartnerEmail))
+                return EndpointHelpers.ValidationProblem(context, ("partnerEmail", "Partner email is required."));
+
+            var normalizedEmail = request.PartnerEmail.Trim().ToLowerInvariant();
+            var partner = await db.Profiles.AsNoTracking()
+                .Join(db.Users.AsNoTracking(), p => p.UserId, u => u.Id, (p, u) => new { p.UserId, u.Email })
+                .SingleOrDefaultAsync(x => x.Email != null && x.Email.ToLower() == normalizedEmail, cancellationToken);
+            if (partner is null) return EndpointHelpers.NotFound(context, "No account found with that email address.");
+            partnerUserId = partner.UserId;
+        }
+
+        if (partnerUserId == userId)
             return EndpointHelpers.ValidationProblem(context, ("partnerEmail", "You cannot link yourself as your own Companion partner."));
 
-        var user1Id = userId.CompareTo(partner.UserId) < 0 ? userId : partner.UserId;
-        var user2Id = userId.CompareTo(partner.UserId) < 0 ? partner.UserId : userId;
+        var user1Id = userId.CompareTo(partnerUserId) < 0 ? userId : partnerUserId;
+        var user2Id = userId.CompareTo(partnerUserId) < 0 ? partnerUserId : userId;
         if (await db.CompanionPartners.AnyAsync(x => x.User1Id == user1Id && x.User2Id == user2Id
                 && x.Status != CompanionPartnerStatus.Declined, cancellationToken))
             return EndpointHelpers.Conflict(context, "A Companion partner invitation already exists between you and this person.");
 
-        var link = new CompanionPartner(userId, partner.UserId);
+        var link = new CompanionPartner(userId, partnerUserId);
         db.CompanionPartners.Add(link);
         await db.SaveChangesAsync(cancellationToken);
 
         var requesterName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
-        await notifications.NotifyAsync(partner.UserId, NotificationType.CompanionPartnerInvite, "Companion partner request",
+        await notifications.NotifyAsync(partnerUserId, NotificationType.CompanionPartnerInvite, "Companion partner request",
             $"{requesterName} wants to share Companion journal answers with you.", link.Id, "CompanionPartner", cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/companion/partner/{link.Id}", new { link.Id, link.Status },

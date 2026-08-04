@@ -203,7 +203,7 @@ public sealed record ApplyMentorRequest(
 public sealed record ResolveBankAccountRequest(string BankCode, string AccountNumber);
 public sealed record SaveBankAccountRequest(string BankCode, string BankName, string AccountNumber, string AccountName);
 public sealed record InviteCoupleRequest(string PartnerEmail);
-public sealed record InviteCompanionPartnerRequest(string PartnerEmail);
+public sealed record InviteCompanionPartnerRequest(string? PartnerEmail = null, Guid? PartnerUserId = null);
 public sealed record CreateCompanionEntryRequest(Guid PromptId, string AnswerText);
 public sealed record SetCompanionCadenceRequest(CompanionCadence Cadence);
 public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
