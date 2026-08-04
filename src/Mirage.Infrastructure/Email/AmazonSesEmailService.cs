@@ -13,6 +13,7 @@ namespace Mirage.Infrastructure.Email;
 // SMTP ports. Authentication is supplied by the standard AWS credential provider chain.
 public sealed class AmazonSesEmailService : IEmailService
 {
+    private const string DefaultAppUrl = "https://www.themiragehub.com";
     private const string DefaultBrandLogoUrl =
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
     private readonly IAmazonSimpleEmailServiceV2 _ses;
@@ -148,6 +149,10 @@ public sealed class AmazonSesEmailService : IEmailService
 
     private string ApplyBranding(string html)
     {
+        var appUrl = _config["Frontend:BaseUrl"]?.Trim().TrimEnd('/') is { Length: > 0 } configuredAppUrl
+            ? configuredAppUrl
+            : DefaultAppUrl;
+        html = html.Replace("{{APP_URL}}", WebUtility.HtmlEncode(appUrl), StringComparison.Ordinal);
         var safeLogoUrl = WebUtility.HtmlEncode(_brandLogoUrl);
         if (html.Contains("{{BRAND_LOGO_URL}}", StringComparison.Ordinal))
             return html.Replace("{{BRAND_LOGO_URL}}", safeLogoUrl, StringComparison.Ordinal);

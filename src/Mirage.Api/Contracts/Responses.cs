@@ -186,6 +186,12 @@ public sealed record TestimonialResponse(
     int ReadCount, int LikeCount, int CommentCount,
     bool LikedByMe, DateTimeOffset CreatedAt);
 
+public sealed record TestimonialShareResponse(
+    Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
+    Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
+    string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
+    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt);
+
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
     Guid? ParentCommentId, string Body, DateTimeOffset CreatedAt,
