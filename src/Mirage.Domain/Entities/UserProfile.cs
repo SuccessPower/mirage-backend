@@ -71,6 +71,8 @@ public sealed class UserProfile : Entity
     public DiscoveryScope DiscoveryScope { get; private set; } = DiscoveryScope.Continent;
     public string[] PreferredCountryCodes { get; private set; } = [];
     public DateTimeOffset? DobFlaggedAt { get; private set; }
+    public DateOnly? WeddingAnniversaryDate { get; private set; }
+    public bool CelebrationOptOut { get; private set; }
 
     public void Update(string displayName, string city, string country, string denomination,
         string bio, bool anonymityEnabled, string[] interests, string? avatarUrl = null,
@@ -121,6 +123,16 @@ public sealed class UserProfile : Entity
         DiscoveryScope = scope;
         PreferredCountryCodes = (preferredCountryCodes ?? []).Select(x => x.Trim().ToUpperInvariant())
             .Where(x => x.Length == 2).Distinct().Take(10).ToArray();
+        Touch();
+    }
+
+    // Drives the automatic birthday/anniversary celebration posts — anniversary is self-reported
+    // (there's no reliable "married on" date elsewhere) and opt-out defaults to false (celebrations
+    // on) since this only ever posts a member's display name/avatar, never their date of birth.
+    public void SetCelebrationPreferences(DateOnly? weddingAnniversaryDate, bool celebrationOptOut)
+    {
+        WeddingAnniversaryDate = weddingAnniversaryDate;
+        CelebrationOptOut = celebrationOptOut;
         Touch();
     }
 

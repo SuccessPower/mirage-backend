@@ -27,6 +27,7 @@ public static class MirageEndpointExtensions
         api.MapAdminEndpoints();
         api.MapAdminAnalyticsEndpoints();
         api.MapVendorEndpoints();
+        api.MapCompanionEndpoints();
         return endpoints;
     }
 }

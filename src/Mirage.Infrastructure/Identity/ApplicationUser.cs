@@ -26,3 +26,13 @@ public static class IdentityCacheKeys
 {
     public const string DefaultUserRoleId = "mirage:identity:role:user";
 }
+
+// The "Mirage Team" account that authors automatic birthday/anniversary celebration posts and
+// comments (see CelebrationPostService). Seeded once by DatabaseInitialiser; no one signs in as
+// this account.
+public static class SystemAccounts
+{
+    public const string MirageTeamEmail = "system@mirage.internal";
+    public const string MirageTeamDisplayName = "Mirage Team";
+    public const string MirageTeamUserIdCacheKey = "mirage:system:mirageteam:userid";
+}

@@ -61,5 +61,9 @@ public interface IMirageDbContext
     DbSet<TestimonialLike> TestimonialLikes { get; }
     DbSet<TestimonialComment> TestimonialComments { get; }
     DbSet<TestimonialCommentLike> TestimonialCommentLikes { get; }
+    DbSet<CompanionPrompt> CompanionPrompts { get; }
+    DbSet<CompanionPartner> CompanionPartners { get; }
+    DbSet<CompanionEntry> CompanionEntries { get; }
+    DbSet<CompanionSubscription> CompanionSubscriptions { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

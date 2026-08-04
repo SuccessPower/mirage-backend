@@ -80,7 +80,8 @@ internal static class EndpointHelpers
             OrganisationBadgeUrl: badge?.LogoUrl, OrganisationName: badge?.OrganisationName,
             IsProfileComplete: profile.IsProfileComplete, CountryCode: profile.CountryCode,
             ContinentCode: profile.ContinentCode, TimeZoneId: profile.TimeZoneId,
-            DiscoveryScope: profile.DiscoveryScope, PreferredCountryCodes: profile.PreferredCountryCodes);
+            DiscoveryScope: profile.DiscoveryScope, PreferredCountryCodes: profile.PreferredCountryCodes,
+            WeddingAnniversaryDate: profile.WeddingAnniversaryDate, CelebrationOptOut: profile.CelebrationOptOut);
 
     // Badge eligibility: an approved member of an org (or the org's own owner/admin), where that
     // org has a logo uploaded and is itself approved. A user belongs to at most one org at a time

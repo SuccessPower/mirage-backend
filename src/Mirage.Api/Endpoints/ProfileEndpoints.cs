@@ -122,10 +122,9 @@ internal static class ProfileEndpoints
             query = query.Where(x => !openMatchedIds.Contains(x.UserId)
                 && !(likedIds.Contains(x.UserId) && !closedMatchedIds.Contains(x.UserId)));
 
-            // Downvotes are a personal, permanent hide for the viewer's own feed.
-            var downvotedIds = db.ProfileVotes.Where(v => v.VoterUserId == me && v.Value < 0)
-                .Select(v => v.TargetUserId);
-            query = query.Where(x => !downvotedIds.Contains(x.UserId));
+            // A pass only removes the card from the client's current deck. Keep the vote for
+            // analytics/history, but do not exclude it from a subsequent discovery request so
+            // refreshing starts a fresh deck that can include previously passed profiles.
 
             var mine = await db.Profiles.AsNoTracking().Where(x => x.UserId == me)
                 .Select(x => new { x.City, x.Country, x.CountryCode, x.ContinentCode, x.DiscoveryScope,
@@ -402,6 +401,7 @@ internal static class ProfileEndpoints
             request.Occupation);
         profile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
             request.DiscoveryScope, request.PreferredCountryCodes);
+        profile.SetCelebrationPreferences(request.WeddingAnniversaryDate, request.CelebrationOptOut);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }

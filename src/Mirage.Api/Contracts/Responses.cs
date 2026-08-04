@@ -56,7 +56,9 @@ public sealed record ProfileResponse(
     string? ContinentCode = null,
     string? TimeZoneId = null,
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
-    string[]? PreferredCountryCodes = null);
+    string[]? PreferredCountryCodes = null,
+    DateOnly? WeddingAnniversaryDate = null,
+    bool CelebrationOptOut = false);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,
@@ -184,13 +186,14 @@ public sealed record TestimonialResponse(
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
     int ReadCount, int LikeCount, int CommentCount,
-    bool LikedByMe, DateTimeOffset CreatedAt);
+    bool LikedByMe, DateTimeOffset CreatedAt, CelebrationType? CelebrationType = null);
 
 public sealed record TestimonialShareResponse(
     Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
-    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt);
+    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt,
+    CelebrationType? CelebrationType = null);
 
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
@@ -402,6 +405,35 @@ public sealed record CoupleFriendshipResponse(
     CoupleFriendshipStatus Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastActivityAt);
+
+public sealed record CompanionPromptResponse(
+    Guid Id,
+    string Text,
+    string Category,
+    CompanionCadence Cadence);
+
+public sealed record CompanionTodayResponse(
+    CompanionPromptResponse Prompt,
+    CompanionCadence Cadence,
+    DateTimeOffset NextDueAt,
+    bool AnsweredToday);
+
+public sealed record CompanionEntryResponse(
+    Guid Id,
+    Guid PromptId,
+    string PromptText,
+    Guid AuthorUserId,
+    string AuthorDisplayName,
+    string AnswerText,
+    DateTimeOffset CreatedAt);
+
+public sealed record CompanionPartnerResponse(
+    Guid Id,
+    Guid PartnerUserId,
+    string PartnerDisplayName,
+    Guid RequestedByUserId,
+    CompanionPartnerStatus Status,
+    DateTimeOffset CreatedAt);
 
 public sealed record CounsellingMessageResponse(
     Guid Id,
