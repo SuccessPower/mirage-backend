@@ -1,4 +1,5 @@
 using Mirage.Domain.Common;
+using Mirage.Domain.Enums;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Mirage.Domain.Entities;
@@ -8,7 +9,7 @@ public sealed class Testimonial : Entity
     private Testimonial() { }
 
     public Testimonial(Guid authorUserId, string title, string body, string? imageUrl = null, Guid? taggedUserId = null,
-        string? imageUrl2 = null, string? imageUrl3 = null)
+        string? imageUrl2 = null, string? imageUrl3 = null, CelebrationType? celebrationType = null)
     {
         if (authorUserId == taggedUserId) throw new ArgumentException("You cannot tag yourself.", nameof(taggedUserId));
         AuthorUserId = authorUserId;
@@ -18,6 +19,7 @@ public sealed class Testimonial : Entity
         ImageUrl2 = imageUrl2?.Trim();
         ImageUrl3 = imageUrl3?.Trim();
         TaggedUserId = taggedUserId;
+        CelebrationType = celebrationType;
     }
 
     public Guid AuthorUserId { get; private set; }
@@ -27,6 +29,9 @@ public sealed class Testimonial : Entity
     public string? ImageUrl { get; private set; }
     public string? ImageUrl2 { get; private set; }
     public string? ImageUrl3 { get; private set; }
+    // Set only by CelebrationPostService for automatic birthday/anniversary posts — never
+    // settable via the public testimonial create/update endpoints.
+    public CelebrationType? CelebrationType { get; private set; }
     [NotMapped] public IReadOnlyList<string> ImageUrls =>
         new[] { ImageUrl, ImageUrl2, ImageUrl3 }.OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
     public List<TestimonialRead> Reads { get; private set; } = [];

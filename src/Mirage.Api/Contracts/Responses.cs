@@ -56,7 +56,9 @@ public sealed record ProfileResponse(
     string? ContinentCode = null,
     string? TimeZoneId = null,
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
-    string[]? PreferredCountryCodes = null);
+    string[]? PreferredCountryCodes = null,
+    DateOnly? WeddingAnniversaryDate = null,
+    bool CelebrationOptOut = false);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,
@@ -184,13 +186,14 @@ public sealed record TestimonialResponse(
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
     int ReadCount, int LikeCount, int CommentCount,
-    bool LikedByMe, DateTimeOffset CreatedAt);
+    bool LikedByMe, DateTimeOffset CreatedAt, CelebrationType? CelebrationType = null);
 
 public sealed record TestimonialShareResponse(
     Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
-    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt);
+    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt,
+    CelebrationType? CelebrationType = null);
 
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,

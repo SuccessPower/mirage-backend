@@ -402,6 +402,7 @@ internal static class ProfileEndpoints
             request.Occupation);
         profile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
             request.DiscoveryScope, request.PreferredCountryCodes);
+        profile.SetCelebrationPreferences(request.WeddingAnniversaryDate, request.CelebrationOptOut);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }

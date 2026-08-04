@@ -131,3 +131,9 @@ public enum NotificationType
     CommunityMembershipRejected = 34,
     CommunityMemberRemoved = 35
 }
+
+public enum CelebrationType
+{
+    Birthday = 1,
+    Anniversary = 2
+}

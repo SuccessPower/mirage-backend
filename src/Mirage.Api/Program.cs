@@ -106,6 +106,8 @@ builder.Services.AddScoped<WelcomeEmailBackfillService>();
 builder.Services.AddHostedService<WelcomeEmailBackfillWorker>();
 builder.Services.AddScoped<DobValidationBackfillService>();
 builder.Services.AddHostedService<DobValidationBackfillWorker>();
+builder.Services.AddScoped<CelebrationPostService>();
+builder.Services.AddHostedService<CelebrationPostWorker>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";

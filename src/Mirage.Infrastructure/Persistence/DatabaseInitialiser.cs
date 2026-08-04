@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Caching.Memory;
+using Mirage.Domain.Entities;
 using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Infrastructure.Persistence;
@@ -38,6 +39,7 @@ public static class DatabaseInitialiser
 
             await SeedRolesAsync(scope.ServiceProvider, cancellationToken);
             await SeedSuperAdminAsync(scope.ServiceProvider, configuration, cancellationToken);
+            await SeedSystemAccountAsync(scope.ServiceProvider, db, cancellationToken);
             await SyncChurchDirectoryAsync(db, logger, cancellationToken);
             logger.LogInformation("Database migration and role initialization completed.");
         }
@@ -111,6 +113,38 @@ public static class DatabaseInitialiser
             logger.LogInformation(
                 "Church directory sync: updated {DenominationsUpdated} denomination(s), retired {Retired} church(es).",
                 result.DenominationsUpdated, result.Retired);
+    }
+
+    // Seeds the "Mirage Team" account used to author automatic birthday/anniversary celebration
+    // posts and comments (CelebrationPostService) — a real Profiles row so the existing testimonial
+    // author-lookup joins keep working unmodified. IsActive stays false and the password is a
+    // random value discarded immediately: no one is meant to sign in as this account.
+    private static async Task SeedSystemAccountAsync(IServiceProvider services, MirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var normalizedEmail = SystemAccounts.MirageTeamEmail.ToUpperInvariant();
+        if (await db.Users.AsNoTracking().AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
+            return;
+
+        var passwordHasher = services.GetRequiredService<IPasswordHasher<ApplicationUser>>();
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            Email = SystemAccounts.MirageTeamEmail,
+            NormalizedEmail = normalizedEmail,
+            UserName = SystemAccounts.MirageTeamEmail,
+            NormalizedUserName = normalizedEmail,
+            EmailConfirmed = true,
+            LockoutEnabled = true,
+            IsActive = false,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            ConcurrencyStamp = Guid.NewGuid().ToString()
+        };
+        user.PasswordHash = passwordHasher.HashPassword(user, Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"));
+
+        db.Users.Add(user);
+        db.Profiles.Add(new UserProfile(user.Id, SystemAccounts.MirageTeamDisplayName, avatarUrl: null));
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task SeedRolesAsync(IServiceProvider services, CancellationToken cancellationToken)

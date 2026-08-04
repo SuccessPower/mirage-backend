@@ -70,7 +70,9 @@ public sealed record UpdateProfileRequest(
     string? CountryCode = null,
     string? TimeZoneId = null,
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
-    string[]? PreferredCountryCodes = null);
+    string[]? PreferredCountryCodes = null,
+    DateOnly? WeddingAnniversaryDate = null,
+    bool CelebrationOptOut = false);
 public sealed record SetProfilePhotosRequest(string[] PhotoUrls);
 public sealed record CompleteProfileRequest(
     DateOnly DateOfBirth,
