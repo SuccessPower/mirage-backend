@@ -406,6 +406,35 @@ public sealed record CoupleFriendshipResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastActivityAt);
 
+public sealed record CompanionPromptResponse(
+    Guid Id,
+    string Text,
+    string Category,
+    CompanionCadence Cadence);
+
+public sealed record CompanionTodayResponse(
+    CompanionPromptResponse Prompt,
+    CompanionCadence Cadence,
+    DateTimeOffset NextDueAt,
+    bool AnsweredToday);
+
+public sealed record CompanionEntryResponse(
+    Guid Id,
+    Guid PromptId,
+    string PromptText,
+    Guid AuthorUserId,
+    string AuthorDisplayName,
+    string AnswerText,
+    DateTimeOffset CreatedAt);
+
+public sealed record CompanionPartnerResponse(
+    Guid Id,
+    Guid PartnerUserId,
+    string PartnerDisplayName,
+    Guid RequestedByUserId,
+    CompanionPartnerStatus Status,
+    DateTimeOffset CreatedAt);
+
 public sealed record CounsellingMessageResponse(
     Guid Id,
     Guid SessionId,

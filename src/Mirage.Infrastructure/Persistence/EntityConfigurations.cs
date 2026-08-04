@@ -759,3 +759,51 @@ public sealed class AnalyticsEventConfiguration : IEntityTypeConfiguration<Analy
         // independently of user deletion/anonymization.
     }
 }
+
+public sealed class CompanionPromptConfiguration : IEntityTypeConfiguration<CompanionPrompt>
+{
+    public void Configure(EntityTypeBuilder<CompanionPrompt> b)
+    {
+        b.ToTable("companion_prompts");
+        b.HasIndex(x => new { x.Cadence, x.IsActive });
+        b.Property(x => x.Text).HasMaxLength(500);
+        b.Property(x => x.Category).HasMaxLength(100);
+    }
+}
+
+public sealed class CompanionPartnerConfiguration : IEntityTypeConfiguration<CompanionPartner>
+{
+    public void Configure(EntityTypeBuilder<CompanionPartner> b)
+    {
+        b.ToTable("companion_partners");
+        b.HasIndex(x => new { x.User1Id, x.User2Id }).IsUnique();
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User1Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.User2Id).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CompanionEntryConfiguration : IEntityTypeConfiguration<CompanionEntry>
+{
+    public void Configure(EntityTypeBuilder<CompanionEntry> b)
+    {
+        b.ToTable("companion_entries");
+        b.HasIndex(x => new { x.AuthorUserId, x.CreatedAt });
+        b.HasIndex(x => x.PromptId);
+        b.Property(x => x.AnswerText).HasMaxLength(4000);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<CompanionPrompt>().WithMany().HasForeignKey(x => x.PromptId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CompanionSubscriptionConfiguration : IEntityTypeConfiguration<CompanionSubscription>
+{
+    public void Configure(EntityTypeBuilder<CompanionSubscription> b)
+    {
+        b.ToTable("companion_subscriptions");
+        b.HasIndex(x => x.UserId).IsUnique();
+        b.HasIndex(x => x.NextDueAt);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<CompanionPrompt>().WithMany().HasForeignKey(x => x.CurrentPromptId).OnDelete(DeleteBehavior.SetNull);
+    }
+}

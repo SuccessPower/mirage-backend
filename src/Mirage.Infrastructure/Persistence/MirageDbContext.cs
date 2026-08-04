@@ -66,6 +66,10 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<TestimonialLike> TestimonialLikes => Set<TestimonialLike>();
     public DbSet<TestimonialComment> TestimonialComments => Set<TestimonialComment>();
     public DbSet<TestimonialCommentLike> TestimonialCommentLikes => Set<TestimonialCommentLike>();
+    public DbSet<CompanionPrompt> CompanionPrompts => Set<CompanionPrompt>();
+    public DbSet<CompanionPartner> CompanionPartners => Set<CompanionPartner>();
+    public DbSet<CompanionEntry> CompanionEntries => Set<CompanionEntry>();
+    public DbSet<CompanionSubscription> CompanionSubscriptions => Set<CompanionSubscription>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

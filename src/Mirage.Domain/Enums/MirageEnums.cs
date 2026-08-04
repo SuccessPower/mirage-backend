@@ -36,6 +36,8 @@ public enum ContentReportStatus { Pending = 1, UnderReview = 2, ActionTaken = 3,
 public enum GatheringInviteKind { Community = 1, DateRequest = 2, OrganisationManager = 3 }
 public enum GatheringInviteStatus { Pending = 1, Accepted = 2, Declined = 3 }
 public enum VendorStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
+public enum CompanionCadence { Daily = 1, Weekly = 2, BiWeekly = 3, Monthly = 4 }
+public enum CompanionPartnerStatus { Pending = 1, Approved = 2, Declined = 3 }
 
 // Append-only admin analytics log — never inferred from live Match/Like/DateRequest state
 // so gender-pair counts stay accurate even after a profile's gender or a match's status changes.
@@ -129,7 +131,10 @@ public enum NotificationType
     ProfileVisited = 32,
     CommunityMembershipApproved = 33,
     CommunityMembershipRejected = 34,
-    CommunityMemberRemoved = 35
+    CommunityMemberRemoved = 35,
+    CompanionPromptDue = 36,
+    CompanionPartnerInvite = 37,
+    CompanionPartnerApproved = 38
 }
 
 public enum CelebrationType
