@@ -6,6 +6,7 @@ public static class MirageEndpointExtensions
     {
         var api = endpoints.MapGroup("/api/v1");
         api.MapContactEndpoints();
+        api.MapSearchEndpoints();
         api.MapAuthEndpoints();
         api.MapProfileEndpoints();
         api.MapOrganisationEndpoints();
