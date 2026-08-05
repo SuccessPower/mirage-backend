@@ -7,8 +7,8 @@ namespace Mirage.Api.Services;
 // Periodically sweeps for members whose birthday/anniversary is today (in their local timezone)
 // and publishes a celebration entry plus a one-per-recipient email — same shape as
 // DobValidationBackfillWorker. A 10-minute interval keeps celebrations (and email retries)
-// landing close to each member's local midnight; the per-year dedup and send-then-stamp email
-// tracking in CelebrationPostService make repeat runs on the same day a no-op.
+// landing within ten minutes of 09:00 in each member's own timezone; the per-year dedup and
+// send-then-stamp email tracking in CelebrationPostService make repeat runs on the same day a no-op.
 public sealed class CelebrationPostWorker(IServiceScopeFactory scopeFactory,
     ILogger<CelebrationPostWorker> logger) : BackgroundService
 {
