@@ -15,7 +15,7 @@ namespace Mirage.Api.Services;
 // failed send is retried every sweep until the member's local day rolls over. Driven by
 // CelebrationPostWorker every 10 minutes so celebrations land close to local midnight.
 public sealed class CelebrationPostService(MirageDbContext db, IEmailService email,
-    ILogger<CelebrationPostService> logger)
+    IConfiguration configuration, ILogger<CelebrationPostService> logger)
 {
     private sealed record Candidate(Guid UserId, string DisplayName, DateOnly Date, string? TimeZoneId);
 
@@ -165,6 +165,7 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
         var addresses = await db.Users.AsNoTracking()
             .Where(u => recipientIds.Contains(u.Id) && u.Email != null)
             .ToDictionaryAsync(u => u.Id, u => u.Email!, cancellationToken);
+        var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
 
         foreach (var entry in entries)
         {
@@ -188,7 +189,11 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
 
                 try
                 {
-                    if (await email.SendCelebrationEmailAsync(address, profile.DisplayName, entry.Type, cancellationToken))
+                    // The email's button links to the recipient's profile, where the permanent
+                    // celebration entry (and the banner while it's live) is shown.
+                    var celebrationUrl = $"{appUrl}/profiles/{recipientId}";
+                    if (await email.SendCelebrationEmailAsync(address, profile.DisplayName, entry.Type,
+                            celebrationUrl, cancellationToken))
                     {
                         entry.MarkEmailSent(recipientId);
                         await db.SaveChangesAsync(cancellationToken);

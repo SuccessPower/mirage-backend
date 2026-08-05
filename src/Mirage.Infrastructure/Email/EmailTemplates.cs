@@ -196,7 +196,7 @@ public static class EmailTemplates
         [CelebrationType.Anniversary] = ("💍", "Happy Anniversary", Amber)
     };
 
-    public static string Celebration(CelebrationType type, string displayName, string appUrl)
+    public static string Celebration(CelebrationType type, string displayName, string storyUrl)
     {
         var meta = CelebrationMeta[type];
         var body = type == CelebrationType.Birthday
@@ -204,7 +204,7 @@ public static class EmailTemplates
             : "wishing you a very happy anniversary! Here's to many more years of love and partnership.";
         var title = $"{meta.Emoji} {meta.Label}, {displayName}!";
         var preheader = $"{meta.Label}, {displayName} — the whole Mirage team is thinking of you today.";
-        var cta = TemplateEngine.PrimaryButton(appUrl, "Open Mirage", meta.Color);
+        var cta = TemplateEngine.PrimaryButton(storyUrl, "View your celebration", meta.Color);
 
         return TemplateEngine.RenderPage("celebration", preheader,
             new Dictionary<string, string>

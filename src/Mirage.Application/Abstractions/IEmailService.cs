@@ -46,5 +46,5 @@ public interface IEmailService
     // Sent alongside the in-app celebration post (see CelebrationPostService) when a member's
     // birthday or wedding anniversary falls on today's date.
     Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,
-        CancellationToken cancellationToken = default);
+        string storyUrl, CancellationToken cancellationToken = default);
 }

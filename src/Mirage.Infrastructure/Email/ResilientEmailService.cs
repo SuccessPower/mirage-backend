@@ -94,13 +94,12 @@ public sealed class ResilientEmailService : IEmailService
             EmailTemplates.AdminInformationRequest(displayName, message, profileUrl), cancellationToken);
 
     public Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,
-        CancellationToken cancellationToken = default)
+        string storyUrl, CancellationToken cancellationToken = default)
     {
-        var appUrl = _configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
         var subject = type == CelebrationType.Birthday
             ? $"🎉 Happy Birthday, {displayName}!"
             : $"💍 Happy Anniversary, {displayName}!";
-        return SendAsync(toEmail, subject, EmailTemplates.Celebration(type, displayName, appUrl), cancellationToken);
+        return SendAsync(toEmail, subject, EmailTemplates.Celebration(type, displayName, storyUrl), cancellationToken);
     }
 
     private async Task<bool> SendAsync(string to, string subject, string html,
