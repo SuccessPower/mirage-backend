@@ -2,6 +2,11 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Contracts;
 
+public sealed record GlobalSearchItemResponse(
+    string Type, Guid Id, string Title, string Subtitle, string? ImageUrl, string Route);
+
+public sealed record GlobalSearchResponse(IReadOnlyList<GlobalSearchItemResponse> Items);
+
 public sealed record ApiResponse<T>(
     bool Success,
     string Message,
