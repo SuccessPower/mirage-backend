@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
@@ -9,9 +10,10 @@ namespace Mirage.Api.Services;
 
 // Sweeps for members whose birthday (DateOfBirth) or wedding anniversary (WeddingAnniversaryDate)
 // falls on today's month/day and publishes a celebratory Testimonial + congratulatory comment,
-// both authored by the seeded "Mirage Team" account (see SystemAccounts). Same batched,
-// per-item try/catch shape as DobValidationBackfillService. Driven by CelebrationPostWorker.
-public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cache,
+// both authored by the seeded "Mirage Team" account (see SystemAccounts), plus sends the member a
+// "Happy Birthday"/"Happy Anniversary" email. Same batched, per-item try/catch shape as
+// DobValidationBackfillService. Driven by CelebrationPostWorker.
+public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cache, IEmailService email,
     ILogger<CelebrationPostService> logger)
 {
     private const string CommentBody = "Wishing you a wonderful day, from all of us at Mirage! 🎉";
@@ -62,6 +64,8 @@ public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cach
             {
                 var displayName = await db.Profiles.AsNoTracking().Where(p => p.UserId == userId)
                     .Select(p => p.DisplayName).SingleAsync(cancellationToken);
+                var userEmail = await db.Users.AsNoTracking().Where(u => u.Id == userId)
+                    .Select(u => u.Email).SingleOrDefaultAsync(cancellationToken);
 
                 var (title, body) = type == CelebrationType.Birthday
                     ? ($"🎉 Happy Birthday, {displayName}!",
@@ -76,6 +80,13 @@ public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cach
                 db.TestimonialComments.Add(new TestimonialComment(post.Id, mirageTeamUserId, CommentBody));
                 await db.SaveChangesAsync(cancellationToken);
                 created++;
+
+                if (!string.IsNullOrWhiteSpace(userEmail) &&
+                    !await email.SendCelebrationEmailAsync(userEmail, displayName, type, cancellationToken))
+                {
+                    logger.LogWarning("Celebration post sweep: {CelebrationType} email send failed for UserId {UserId}.",
+                        type, userId);
+                }
             }
             catch (Exception ex)
             {

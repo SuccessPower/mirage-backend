@@ -190,6 +190,34 @@ public static class EmailTemplates
             """;
     }
 
+    private static readonly Dictionary<CelebrationType, (string Emoji, string Label, string Color)> CelebrationMeta = new()
+    {
+        [CelebrationType.Birthday] = ("🎉", "Happy Birthday", Purple),
+        [CelebrationType.Anniversary] = ("💍", "Happy Anniversary", Amber)
+    };
+
+    public static string Celebration(CelebrationType type, string displayName, string appUrl)
+    {
+        var meta = CelebrationMeta[type];
+        var body = type == CelebrationType.Birthday
+            ? "wishing you a very happy birthday! May the year ahead be full of joy, growth, and beautiful moments."
+            : "wishing you a very happy anniversary! Here's to many more years of love and partnership.";
+        var title = $"{meta.Emoji} {meta.Label}, {displayName}!";
+        var preheader = $"{meta.Label}, {displayName} — the whole Mirage team is thinking of you today.";
+        var cta = TemplateEngine.PrimaryButton(appUrl, "Open Mirage", meta.Color);
+
+        return TemplateEngine.RenderPage("celebration", preheader,
+            new Dictionary<string, string>
+            {
+                [DisplayNameToken] = displayName,
+                ["EMOJI"] = meta.Emoji,
+                ["TITLE"] = title,
+                ["BODY"] = body,
+                ["COLOR"] = meta.Color,
+                ["COLOR_TINT"] = Tint(meta.Color)
+            }, cta);
+    }
+
     public static string Notification(NotificationType type, string displayName, string title, string body,
         string? actionUrl, string? actionLabel)
     {
