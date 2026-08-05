@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 
 namespace Mirage.Api.Services;
@@ -15,8 +17,10 @@ namespace Mirage.Api.Services;
 // failed send is retried every sweep until the member's local day rolls over. Driven by
 // CelebrationPostWorker every 10 minutes so celebrations land close to local midnight.
 public sealed class CelebrationPostService(MirageDbContext db, IEmailService email,
-    IConfiguration configuration, ILogger<CelebrationPostService> logger)
+    IMemoryCache cache, IConfiguration configuration, ILogger<CelebrationPostService> logger)
 {
+    private const string TeamWishBody = "Wishing you a wonderful day, from all of us at Mirage! 🎉";
+
     private sealed record Candidate(Guid UserId, string DisplayName, DateOnly Date, string? TimeZoneId);
 
     public async Task<int> RunBatchAsync(int batchSize, CancellationToken cancellationToken)
@@ -25,6 +29,7 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
         var created = 0;
         created += await CreateEntriesAsync(CelebrationType.Birthday, utcNow, batchSize, cancellationToken);
         created += await CreateEntriesAsync(CelebrationType.Anniversary, utcNow, batchSize, cancellationToken);
+        await BackfillTeamWishesAsync(utcNow, cancellationToken);
         await SendPendingEmailsAsync(utcNow, cancellationToken);
         return created;
     }
@@ -91,6 +96,7 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
                     : await BuildAnniversaryEntryAsync(item.Candidate, item.LocalToday.Year, cancellationToken);
                 db.CelebrationEntries.Add(entry);
                 await db.SaveChangesAsync(cancellationToken);
+                await SeedTeamWishAsync(entry.Id, cancellationToken);
                 celebrated.Add((entry.UserId, entry.Year));
                 if (entry.PartnerUserId is not null) celebrated.Add((entry.PartnerUserId.Value, entry.Year));
                 created++;
@@ -210,6 +216,47 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
                         entry.Type, recipientId);
                 }
             }
+        }
+    }
+
+    // Covers entries published before wishes existed (or where seeding failed): any recent
+    // entry with no wishes at all gets the Mirage Team's wish on the next sweep.
+    private async Task BackfillTeamWishesAsync(DateTimeOffset utcNow, CancellationToken cancellationToken)
+    {
+        var cutoff = utcNow.AddDays(-2);
+        var missing = await db.CelebrationEntries.AsNoTracking()
+            .Where(e => e.CreatedAt >= cutoff && !db.CelebrationWishes.Any(w => w.CelebrationEntryId == e.Id))
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken);
+        foreach (var id in missing) await SeedTeamWishAsync(id, cancellationToken);
+    }
+
+    // The Mirage Team account leaves the first wish on every celebration, so the post never
+    // looks empty and members see where to add their own. A missing system account only costs
+    // the seeded wish — the celebration itself is already saved.
+    private async Task SeedTeamWishAsync(Guid celebrationEntryId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var teamUserId = await cache.GetOrCreateAsync(SystemAccounts.MirageTeamUserIdCacheKey, async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
+                var normalizedEmail = SystemAccounts.MirageTeamEmail.ToUpperInvariant();
+                return await db.Users.AsNoTracking().Where(x => x.NormalizedEmail == normalizedEmail)
+                    .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
+            });
+            if (teamUserId is null)
+            {
+                logger.LogWarning("Celebration sweep: Mirage Team system account not found — skipping seeded wish.");
+                return;
+            }
+            db.CelebrationWishes.Add(new CelebrationWish(celebrationEntryId, teamUserId.Value, TeamWishBody));
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Celebration sweep: failed to seed the Mirage Team wish for entry {EntryId}.",
+                celebrationEntryId);
         }
     }
 

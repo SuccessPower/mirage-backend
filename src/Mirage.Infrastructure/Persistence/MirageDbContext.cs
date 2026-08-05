@@ -71,6 +71,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CompanionEntry> CompanionEntries => Set<CompanionEntry>();
     public DbSet<CompanionSubscription> CompanionSubscriptions => Set<CompanionSubscription>();
     public DbSet<CelebrationEntry> CelebrationEntries => Set<CelebrationEntry>();
+    public DbSet<CelebrationWish> CelebrationWishes => Set<CelebrationWish>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
