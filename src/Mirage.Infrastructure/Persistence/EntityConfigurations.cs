@@ -171,6 +171,21 @@ public sealed class TestimonialConfiguration : IEntityTypeConfiguration<Testimon
     }
 }
 
+public sealed class CelebrationEntryConfiguration : IEntityTypeConfiguration<CelebrationEntry>
+{
+    public void Configure(EntityTypeBuilder<CelebrationEntry> b)
+    {
+        b.ToTable("celebration_entries");
+        b.Property(x => x.Title).HasMaxLength(160);
+        b.Property(x => x.Body).HasMaxLength(12000);
+        b.HasIndex(x => x.CreatedAt);
+        b.HasIndex(x => new { x.Type, x.Year, x.UserId });
+        b.HasIndex(x => x.PartnerUserId);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PartnerUserId).OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
 public sealed class TestimonialReadConfiguration : IEntityTypeConfiguration<TestimonialRead>
 {
     public void Configure(EntityTypeBuilder<TestimonialRead> b)

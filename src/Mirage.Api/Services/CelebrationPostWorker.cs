@@ -4,15 +4,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Mirage.Api.Services;
 
-// Periodically sweeps for members whose birthday/anniversary is today and publishes a celebration
-// post — same shape as DobValidationBackfillWorker. An hourly interval keeps a new day's
-// celebrations reasonably prompt without being wasteful; the per-year dedup in
-// CelebrationPostService makes repeat runs on the same day a no-op.
+// Periodically sweeps for members whose birthday/anniversary is today (in their local timezone)
+// and publishes a celebration entry plus a one-per-recipient email — same shape as
+// DobValidationBackfillWorker. A 10-minute interval keeps celebrations (and email retries)
+// landing close to each member's local midnight; the per-year dedup and send-then-stamp email
+// tracking in CelebrationPostService make repeat runs on the same day a no-op.
 public sealed class CelebrationPostWorker(IServiceScopeFactory scopeFactory,
     ILogger<CelebrationPostWorker> logger) : BackgroundService
 {
     private const int BatchSize = 50;
-    private static readonly TimeSpan Interval = TimeSpan.FromHours(1);
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

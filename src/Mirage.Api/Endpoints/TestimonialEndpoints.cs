@@ -36,7 +36,7 @@ internal static class TestimonialEndpoints
             x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId).Select(p => p.DisplayName).FirstOrDefault(),
             x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
             x.Title, x.Body, x.ImageUrl, x.ImageUrl2, x.ImageUrl3, x.Reads.Count, x.Likes.Count, x.Comments.Count,
-            x.Likes.Any(l => l.UserId == me), x.CreatedAt, x.CelebrationType));
+            x.Likes.Any(l => l.UserId == me), x.CreatedAt));
 
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db, string? search,
         int page = 1, int pageSize = 12, CancellationToken cancellationToken = default)
@@ -86,7 +86,7 @@ internal static class TestimonialEndpoints
                 x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId)
                     .Select(p => p.AvatarUrl).FirstOrDefault(),
                 x.Title, x.Body, x.ImageUrl, x.ImageUrl2, x.ImageUrl3,
-                x.Reads.Count, x.Likes.Count, x.Comments.Count, x.CreatedAt, x.CelebrationType))
+                x.Reads.Count, x.Likes.Count, x.Comments.Count, x.CreatedAt))
             .SingleOrDefaultAsync(cancellationToken);
 
         return story is null

@@ -401,7 +401,28 @@ internal static class ProfileEndpoints
             request.Occupation);
         profile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
             request.DiscoveryScope, request.PreferredCountryCodes);
+        var anniversaryChanged = profile.WeddingAnniversaryDate != request.WeddingAnniversaryDate;
         profile.SetCelebrationPreferences(request.WeddingAnniversaryDate, request.CelebrationOptOut);
+
+        // A wedding anniversary belongs to the couple, not one spouse — mirror the date onto the
+        // approved partner's profile so either can set it once for both. The partner keeps their
+        // own CelebrationOptOut.
+        if (anniversaryChanged)
+        {
+            var partnerUserId = await db.Couples.AsNoTracking()
+                .Where(c => c.Status == CoupleStatus.Approved
+                    && (c.User1Id == profile.UserId || c.User2Id == profile.UserId))
+                .Select(c => c.User1Id == profile.UserId ? c.User2Id : c.User1Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (partnerUserId != Guid.Empty)
+            {
+                var partnerProfile = await db.Profiles
+                    .SingleOrDefaultAsync(x => x.UserId == partnerUserId, cancellationToken);
+                partnerProfile?.SetCelebrationPreferences(request.WeddingAnniversaryDate,
+                    partnerProfile.CelebrationOptOut);
+            }
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }

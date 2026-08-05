@@ -65,5 +65,6 @@ public interface IMirageDbContext
     DbSet<CompanionPartner> CompanionPartners { get; }
     DbSet<CompanionEntry> CompanionEntries { get; }
     DbSet<CompanionSubscription> CompanionSubscriptions { get; }
+    DbSet<CelebrationEntry> CelebrationEntries { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
