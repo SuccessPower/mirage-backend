@@ -191,14 +191,19 @@ public sealed record TestimonialResponse(
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
     int ReadCount, int LikeCount, int CommentCount,
-    bool LikedByMe, DateTimeOffset CreatedAt, CelebrationType? CelebrationType = null);
+    bool LikedByMe, DateTimeOffset CreatedAt);
 
 public sealed record TestimonialShareResponse(
     Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
-    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt,
-    CelebrationType? CelebrationType = null);
+    int ReadCount, int LikeCount, int CommentCount, DateTimeOffset CreatedAt);
+
+public sealed record CelebrationResponse(
+    Guid Id, CelebrationType Type, string Title, string Body,
+    Guid UserId, string DisplayName, string? AvatarUrl,
+    Guid? PartnerUserId, string? PartnerDisplayName, string? PartnerAvatarUrl,
+    DateTimeOffset CreatedAt);
 
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
