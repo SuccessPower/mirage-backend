@@ -41,7 +41,9 @@ internal static class TestimonialEndpoints
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db, string? search,
         int page = 1, int pageSize = 12, CancellationToken cancellationToken = default)
     {
-        var query = db.Testimonials.AsNoTracking().AsQueryable();
+        var celebrationCutoff = DateTimeOffset.UtcNow.AddHours(-24);
+        var query = db.Testimonials.AsNoTracking()
+            .Where(x => x.CelebrationType == null || x.CreatedAt > celebrationCutoff);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var term = $"%{search.Trim()}%";
@@ -56,7 +58,9 @@ internal static class TestimonialEndpoints
         CancellationToken cancellationToken)
     {
         var me = context.User.GetUserId();
-        if (!await db.Testimonials.AsNoTracking().AnyAsync(x => x.Id == id, cancellationToken))
+        var celebrationCutoff = DateTimeOffset.UtcNow.AddHours(-24);
+        if (!await db.Testimonials.AsNoTracking().AnyAsync(x => x.Id == id
+                && (x.CelebrationType == null || x.CreatedAt > celebrationCutoff), cancellationToken))
             return EndpointHelpers.NotFound(context, "Testimonial was not found.");
         if (!await db.TestimonialReads.AnyAsync(x => x.TestimonialId == id && x.UserId == me, cancellationToken))
         {
@@ -73,8 +77,9 @@ internal static class TestimonialEndpoints
     private static async Task<IResult> GetShareInfo(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
+        var celebrationCutoff = DateTimeOffset.UtcNow.AddHours(-24);
         var story = await db.Testimonials.AsNoTracking()
-            .Where(x => x.Id == id)
+            .Where(x => x.Id == id && (x.CelebrationType == null || x.CreatedAt > celebrationCutoff))
             .Select(x => new TestimonialShareResponse(
                 x.Id, x.AuthorUserId,
                 db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault()

@@ -75,6 +75,25 @@ public static class EmailTemplates
                 ["CURRENCY"] = currency
             });
 
+    public static string Celebration(string displayName, CelebrationType type, string storyUrl)
+    {
+        var isBirthday = type == CelebrationType.Birthday;
+        var title = isBirthday ? $"Happy birthday, {displayName}! 🎉" : $"Happy anniversary, {displayName}! 💍";
+        var body = isBirthday
+            ? "The Mirage community is celebrating you today. May the year ahead bring joy, growth, and beautiful moments."
+            : "The Mirage community is celebrating your wedding anniversary today. Here’s to many more years of love and partnership.";
+        return TemplateEngine.RenderPage("notification", body,
+            new Dictionary<string, string>
+            {
+                [DisplayNameToken] = displayName,
+                ["TITLE"] = title,
+                ["BODY"] = body,
+                ["LABEL"] = isBirthday ? "Birthday celebration" : "Wedding anniversary",
+                ["COLOR"] = isBirthday ? Purple : "#E25576",
+                ["COLOR_TINT"] = isBirthday ? Tint(Purple) : "rgba(226,85,118,0.14)"
+            }, TemplateEngine.PrimaryButton(storyUrl, "View your celebration"));
+    }
+
     // All in-app NotificationTypes render through the single "notification" template now —
     // they only ever differed by an eyebrow label and an accent color, so one shared file
     // (see Templates/notification.html) replaces what used to be ~23 near-duplicate files.

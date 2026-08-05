@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Email;
 using Xunit;
 
@@ -93,6 +94,26 @@ public sealed class EmailFailoverTests
         Assert.Contains("href=\"https://test.themiragehub.com", transport.LastMessage.Html);
         Assert.DoesNotContain("{{APP_URL}}", transport.LastMessage.Html, StringComparison.Ordinal);
         Assert.DoesNotContain("vercel.app", transport.LastMessage.Html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData(CelebrationType.Birthday, "Happy birthday")]
+    [InlineData(CelebrationType.Anniversary, "Happy anniversary")]
+    public async Task Send_CelebrationEmail_UsesDedicatedContent(CelebrationType type, string expectedSubject)
+    {
+        var transport = new StubTransport("ZeptoMail", configured: true, succeeds: true);
+        var service = CreateService([
+            transport,
+            new StubTransport("AmazonSes", configured: false, succeeds: false),
+            new StubTransport("Mailjet", configured: false, succeeds: false)
+        ]);
+
+        await service.SendCelebrationEmailAsync("person@example.com", "Person", type,
+            "https://www.themiragehub.com/testimonials/123");
+
+        Assert.NotNull(transport.LastMessage);
+        Assert.Contains(expectedSubject, transport.LastMessage.Subject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("View your celebration", transport.LastMessage.Html);
     }
 
     private static ResilientEmailService CreateService(IEnumerable<IEmailTransport> transports,

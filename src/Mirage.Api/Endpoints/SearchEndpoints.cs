@@ -87,8 +87,10 @@ internal static class SearchEndpoints
                 post.Community.Name, post.ImageUrl, $"/communities/{post.CommunityId}?post={post.Id}"))
             .ToListAsync(cancellationToken));
 
+        var celebrationCutoff = DateTimeOffset.UtcNow.AddHours(-24);
         results.AddRange(await db.Testimonials.AsNoTracking()
-            .Where(story => EF.Functions.ILike(story.Title, pattern) || EF.Functions.ILike(story.Body, pattern))
+            .Where(story => (story.CelebrationType == null || story.CreatedAt > celebrationCutoff)
+                && (EF.Functions.ILike(story.Title, pattern) || EF.Functions.ILike(story.Body, pattern)))
             .OrderByDescending(story => story.CreatedAt)
             .Take(limit)
             .Select(story => new GlobalSearchItemResponse("Story", story.Id, story.Title,

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
+using Mirage.Application.Abstractions;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 
@@ -11,13 +12,14 @@ namespace Mirage.Api.Services;
 // falls on today's month/day and publishes a celebratory Testimonial + congratulatory comment,
 // both authored by the seeded "Mirage Team" account (see SystemAccounts). Same batched,
 // per-item try/catch shape as DobValidationBackfillService. Driven by CelebrationPostWorker.
-public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cache,
-    ILogger<CelebrationPostService> logger)
+public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cache, IEmailService email,
+    IConfiguration configuration, ILogger<CelebrationPostService> logger)
 {
     private const string CommentBody = "Wishing you a wonderful day, from all of us at Mirage! 🎉";
 
     public async Task<int> RunBatchAsync(int batchSize, CancellationToken cancellationToken)
     {
+        await DeleteExpiredCelebrationsAsync(cancellationToken);
         var mirageTeamUserId = await ResolveMirageTeamUserIdAsync(cancellationToken);
         if (mirageTeamUserId is null)
         {
@@ -60,8 +62,13 @@ public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cach
         {
             try
             {
-                var displayName = await db.Profiles.AsNoTracking().Where(p => p.UserId == userId)
-                    .Select(p => p.DisplayName).SingleAsync(cancellationToken);
+                var recipient = await db.Profiles.AsNoTracking().Where(p => p.UserId == userId)
+                    .Select(p => new
+                    {
+                        p.DisplayName,
+                        Email = db.Users.Where(user => user.Id == p.UserId).Select(user => user.Email).FirstOrDefault()
+                    }).SingleAsync(cancellationToken);
+                var displayName = recipient.DisplayName;
 
                 var (title, body) = type == CelebrationType.Birthday
                     ? ($"🎉 Happy Birthday, {displayName}!",
@@ -76,6 +83,13 @@ public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cach
                 db.TestimonialComments.Add(new TestimonialComment(post.Id, mirageTeamUserId, CommentBody));
                 await db.SaveChangesAsync(cancellationToken);
                 created++;
+
+                if (!string.IsNullOrWhiteSpace(recipient.Email))
+                {
+                    var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
+                    await email.SendCelebrationEmailAsync(recipient.Email, displayName, type,
+                        $"{appUrl}/testimonials/{post.Id}", cancellationToken);
+                }
             }
             catch (Exception ex)
             {
@@ -87,6 +101,16 @@ public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cach
         logger.LogInformation("Celebration post sweep: published {Created}/{Pending} {CelebrationType} celebration(s).",
             created, pending.Count, type);
         return created;
+    }
+
+    private async Task DeleteExpiredCelebrationsAsync(CancellationToken cancellationToken)
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddHours(-24);
+        var deleted = await db.Testimonials
+            .Where(post => post.CelebrationType != null && post.CreatedAt <= cutoff)
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted > 0)
+            logger.LogInformation("Celebration post sweep: deleted {Deleted} post(s) older than 24 hours.", deleted);
     }
 
     private async Task<Guid?> ResolveMirageTeamUserIdAsync(CancellationToken cancellationToken)

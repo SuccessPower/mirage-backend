@@ -68,6 +68,14 @@ public sealed class AmazonSesEmailService : IEmailService
         SendAsync(toEmail, $"Payment confirmed: {description}",
             EmailTemplates.PaymentConfirmed(displayName, description, amount, currency), cancellationToken);
 
+    public Task SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType celebrationType,
+        string storyUrl, CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail,
+            celebrationType == CelebrationType.Birthday
+                ? $"Happy birthday, {displayName}!"
+                : $"Happy anniversary, {displayName}!",
+            EmailTemplates.Celebration(displayName, celebrationType, storyUrl), cancellationToken);
+
     public bool HasNotificationTemplate(NotificationType type) => EmailTemplates.HasTemplate(type);
 
     public Task SendProfileVisitEmailAsync(string toEmail, string displayName, string visitorName,
