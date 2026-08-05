@@ -203,7 +203,11 @@ public sealed record CelebrationResponse(
     Guid Id, CelebrationType Type, string Title, string Body,
     Guid UserId, string DisplayName, string? AvatarUrl,
     Guid? PartnerUserId, string? PartnerDisplayName, string? PartnerAvatarUrl,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt, int WishCount);
+
+public sealed record CelebrationWishResponse(
+    Guid Id, Guid CelebrationId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
+    string Body, DateTimeOffset CreatedAt);
 
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,

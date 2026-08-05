@@ -186,6 +186,18 @@ public sealed class CelebrationEntryConfiguration : IEntityTypeConfiguration<Cel
     }
 }
 
+public sealed class CelebrationWishConfiguration : IEntityTypeConfiguration<CelebrationWish>
+{
+    public void Configure(EntityTypeBuilder<CelebrationWish> b)
+    {
+        b.ToTable("celebration_wishes");
+        b.Property(x => x.Body).HasMaxLength(2000);
+        b.HasIndex(x => new { x.CelebrationEntryId, x.CreatedAt });
+        b.HasOne<CelebrationEntry>().WithMany().HasForeignKey(x => x.CelebrationEntryId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class TestimonialReadConfiguration : IEntityTypeConfiguration<TestimonialRead>
 {
     public void Configure(EntityTypeBuilder<TestimonialRead> b)

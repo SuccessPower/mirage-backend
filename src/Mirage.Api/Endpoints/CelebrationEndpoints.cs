@@ -13,6 +13,8 @@ internal static class CelebrationEndpoints
         var group = api.MapGroup("/celebrations").WithTags("Celebrations").RequireAuthorization();
         group.MapGet("/active", ListActive);
         group.MapGet("/user/{userId:guid}", ListForUser);
+        group.MapGet("/{id:guid}/wishes", ListWishes);
+        group.MapPost("/{id:guid}/wishes", AddWish);
         return api;
     }
 
@@ -41,6 +43,41 @@ internal static class CelebrationEndpoints
         return ApiResults.Ok(context, result, "Celebrations retrieved successfully.");
     }
 
+    private static async Task<IResult> ListWishes(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (!await db.CelebrationEntries.AsNoTracking().AnyAsync(x => x.Id == id, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Celebration was not found.");
+        var wishes = await db.CelebrationWishes.AsNoTracking()
+            .Where(x => x.CelebrationEntryId == id)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new CelebrationWishResponse(x.Id, x.CelebrationEntryId, x.AuthorUserId,
+                db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Mirage member",
+                db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
+                x.Body, x.CreatedAt))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, wishes, "Wishes retrieved successfully.");
+    }
+
+    private static async Task<IResult> AddWish(Guid id, CreateCelebrationWishRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Body) || request.Body.Trim().Length is < 2 or > 500)
+            return EndpointHelpers.ValidationProblem(context, ("body", "A wish must be between 2 and 500 characters."));
+        if (!await db.CelebrationEntries.AsNoTracking().AnyAsync(x => x.Id == id, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Celebration was not found.");
+
+        var wish = new CelebrationWish(id, context.User.GetUserId(), request.Body);
+        db.CelebrationWishes.Add(wish);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == wish.AuthorUserId)
+            .Select(x => new { x.DisplayName, x.AvatarUrl }).SingleAsync(cancellationToken);
+        var response = new CelebrationWishResponse(wish.Id, wish.CelebrationEntryId, wish.AuthorUserId,
+            author.DisplayName, author.AvatarUrl, wish.Body, wish.CreatedAt);
+        return ApiResults.Created(context, $"/api/v1/celebrations/{id}/wishes", response, "Wish posted.");
+    }
+
     private static async Task<IReadOnlyList<CelebrationResponse>> ProjectAsync(
         IReadOnlyList<CelebrationEntry> entries, IMirageDbContext db, CancellationToken cancellationToken)
     {
@@ -51,6 +88,12 @@ internal static class CelebrationEndpoints
             .Where(p => featuredIds.Contains(p.UserId))
             .Select(p => new { p.UserId, p.DisplayName, p.AvatarUrl })
             .ToDictionaryAsync(p => p.UserId, cancellationToken);
+        var entryIds = entries.Select(x => x.Id).ToList();
+        var wishCounts = await db.CelebrationWishes.AsNoTracking()
+            .Where(x => entryIds.Contains(x.CelebrationEntryId))
+            .GroupBy(x => x.CelebrationEntryId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Key, g => g.Count, cancellationToken);
 
         return entries.Select(x =>
         {
@@ -61,7 +104,7 @@ internal static class CelebrationEndpoints
                 x.Id, x.Type, x.Title, x.Body,
                 x.UserId, user?.DisplayName ?? "Mirage member", user?.AvatarUrl,
                 x.PartnerUserId, partner?.DisplayName, partner?.AvatarUrl,
-                x.CreatedAt);
+                x.CreatedAt, wishCounts.GetValueOrDefault(x.Id));
         }).ToList();
     }
 }

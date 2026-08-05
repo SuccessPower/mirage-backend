@@ -44,3 +44,21 @@ public sealed class CelebrationEntry : Entity
         Touch();
     }
 }
+
+// A congratulatory message left on a celebration entry — the Mirage Team seeds the first wish
+// when the entry is published, then any member can add their own from the celebrant's profile.
+public sealed class CelebrationWish : Entity
+{
+    private CelebrationWish() { }
+
+    public CelebrationWish(Guid celebrationEntryId, Guid authorUserId, string body)
+    {
+        CelebrationEntryId = celebrationEntryId;
+        AuthorUserId = authorUserId;
+        Body = body.Trim();
+    }
+
+    public Guid CelebrationEntryId { get; private set; }
+    public Guid AuthorUserId { get; private set; }
+    public string Body { get; private set; } = string.Empty;
+}
