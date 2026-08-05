@@ -66,14 +66,6 @@ public sealed class ResilientEmailService : IEmailService
         await SendAsync(toEmail, $"Payment confirmed: {description}",
             EmailTemplates.PaymentConfirmed(displayName, description, amount, currency), cancellationToken);
 
-    public async Task SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType celebrationType,
-        string storyUrl, CancellationToken cancellationToken = default) =>
-        await SendAsync(toEmail,
-            celebrationType == CelebrationType.Birthday
-                ? $"Happy birthday, {displayName}!"
-                : $"Happy anniversary, {displayName}!",
-            EmailTemplates.Celebration(displayName, celebrationType, storyUrl), cancellationToken);
-
     public bool HasNotificationTemplate(NotificationType type) => EmailTemplates.HasTemplate(type);
 
     public async Task SendProfileVisitEmailAsync(string toEmail, string displayName, string visitorName,
@@ -100,6 +92,15 @@ public sealed class ResilientEmailService : IEmailService
         string profileUrl, CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, "Action needed: please update your Mirage profile",
             EmailTemplates.AdminInformationRequest(displayName, message, profileUrl), cancellationToken);
+
+    public Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,
+        string storyUrl, CancellationToken cancellationToken = default)
+    {
+        var subject = type == CelebrationType.Birthday
+            ? $"🎉 Happy Birthday, {displayName}!"
+            : $"💍 Happy Anniversary, {displayName}!";
+        return SendAsync(toEmail, subject, EmailTemplates.Celebration(type, displayName, storyUrl), cancellationToken);
+    }
 
     private async Task<bool> SendAsync(string to, string subject, string html,
         CancellationToken cancellationToken, string? replyTo = null)

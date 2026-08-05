@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
-using Mirage.Application.Abstractions;
 using Mirage.Infrastructure.Identity;
 using Mirage.Infrastructure.Persistence;
 
@@ -10,8 +10,9 @@ namespace Mirage.Api.Services;
 
 // Sweeps for members whose birthday (DateOfBirth) or wedding anniversary (WeddingAnniversaryDate)
 // falls on today's month/day and publishes a celebratory Testimonial + congratulatory comment,
-// both authored by the seeded "Mirage Team" account (see SystemAccounts). Same batched,
-// per-item try/catch shape as DobValidationBackfillService. Driven by CelebrationPostWorker.
+// both authored by the seeded "Mirage Team" account (see SystemAccounts), plus sends the member a
+// "Happy Birthday"/"Happy Anniversary" email. Same batched, per-item try/catch shape as
+// DobValidationBackfillService. Driven by CelebrationPostWorker.
 public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cache, IEmailService email,
     IConfiguration configuration, ILogger<CelebrationPostService> logger)
 {
@@ -87,8 +88,10 @@ public sealed class CelebrationPostService(MirageDbContext db, IMemoryCache cach
                 if (!string.IsNullOrWhiteSpace(recipient.Email))
                 {
                     var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
-                    await email.SendCelebrationEmailAsync(recipient.Email, displayName, type,
-                        $"{appUrl}/testimonials/{post.Id}", cancellationToken);
+                    if (!await email.SendCelebrationEmailAsync(recipient.Email, displayName, type,
+                            $"{appUrl}/testimonials/{post.Id}", cancellationToken))
+                        logger.LogWarning("Celebration post sweep: {CelebrationType} email send failed for UserId {UserId}.",
+                            type, userId);
                 }
             }
             catch (Exception ex)

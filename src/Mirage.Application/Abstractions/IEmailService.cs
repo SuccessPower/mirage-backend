@@ -26,9 +26,6 @@ public interface IEmailService
     Task SendPaymentConfirmedEmailAsync(string toEmail, string displayName, string description, decimal amount,
         string currency, CancellationToken cancellationToken = default);
 
-    Task SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType celebrationType,
-        string storyUrl, CancellationToken cancellationToken = default);
-
     // Dispatches to the dedicated template for `type` (see EmailTemplates.TypeTemplates in
     // Mirage.Infrastructure). Callers should check HasNotificationTemplate first.
     Task SendNotificationEmailAsync(string toEmail, string displayName, NotificationType type, string title,
@@ -45,4 +42,9 @@ public interface IEmailService
 
     Task<bool> SendAdminInformationRequestEmailAsync(string toEmail, string displayName, string message,
         string profileUrl, CancellationToken cancellationToken = default);
+
+    // Sent alongside the in-app celebration post (see CelebrationPostService) when a member's
+    // birthday or wedding anniversary falls on today's date.
+    Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,
+        string storyUrl, CancellationToken cancellationToken = default);
 }
