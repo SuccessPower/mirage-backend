@@ -220,6 +220,17 @@ internal static class CoupleEndpoints
         profile1?.MarkMarried();
         profile2?.MarkMarried();
 
+        // The wedding anniversary belongs to the couple — if one spouse set it before this link
+        // was approved, carry it over so the other doesn't have to enter it again. (Once linked,
+        // profile updates keep the two in sync; this covers dates set pre-link.)
+        if (profile1 is not null && profile2 is not null)
+        {
+            if (profile1.WeddingAnniversaryDate is null && profile2.WeddingAnniversaryDate is not null)
+                profile1.SetCelebrationPreferences(profile2.WeddingAnniversaryDate, profile1.CelebrationOptOut);
+            else if (profile2.WeddingAnniversaryDate is null && profile1.WeddingAnniversaryDate is not null)
+                profile2.SetCelebrationPreferences(profile1.WeddingAnniversaryDate, profile2.CelebrationOptOut);
+        }
+
         var match = await db.Matches.SingleOrDefaultAsync(
             x => x.User1Id == couple.User1Id && x.User2Id == couple.User2Id, cancellationToken);
         if (match is null)
