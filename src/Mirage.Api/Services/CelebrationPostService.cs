@@ -15,11 +15,16 @@ namespace Mirage.Api.Services;
 // member is emailed exactly once per celebration: EmailSentAt/PartnerEmailSentAt is stamped only
 // after a successful send (send-then-stamp, same idiom as DobValidationBackfillService), so a
 // failed send is retried every sweep until the member's local day rolls over. Driven by
-// CelebrationPostWorker every 10 minutes so celebrations land close to local midnight.
+// CelebrationPostWorker every 10 minutes so celebrations land just after 09:00 local time.
 public sealed class CelebrationPostService(MirageDbContext db, IEmailService email,
     IMemoryCache cache, IConfiguration configuration, ILogger<CelebrationPostService> logger)
 {
     private const string TeamWishBody = "Wishing you a wonderful day, from all of us at Mirage! 🎉";
+
+    // Celebrations go live — and emails go out — at 09:00 in the member's own timezone rather than
+    // at local midnight, so the email lands in a morning inbox. With a 10-minute sweep that means
+    // 09:00–09:10 local; members with no TimeZoneId fall back to 09:00 UTC.
+    private const int SendHourLocal = 9;
 
     private sealed record Candidate(Guid UserId, string DisplayName, DateOnly Date, string? TimeZoneId);
 
@@ -61,13 +66,14 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
                 .ToListAsync(cancellationToken);
 
         var active = candidates
-            .Select(c => new { Candidate = c, LocalToday = LocalToday(c.TimeZoneId, utcNow) })
-            .Where(x => x.LocalToday.Month == x.Candidate.Date.Month && x.LocalToday.Day == x.Candidate.Date.Day)
+            .Select(c => new { Candidate = c, Year = DueYear(c.Date, c.TimeZoneId, utcNow) })
+            .Where(x => x.Year is not null)
+            .Select(x => new { x.Candidate, Year = x.Year!.Value })
             .ToList();
         if (active.Count == 0) return 0;
 
         var ids = active.Select(x => x.Candidate.UserId).ToList();
-        var years = active.Select(x => x.LocalToday.Year).Distinct().ToList();
+        var years = active.Select(x => x.Year).Distinct().ToList();
         var existing = await db.CelebrationEntries.AsNoTracking()
             .Where(e => e.Type == type && years.Contains(e.Year)
                 && (ids.Contains(e.UserId) || (e.PartnerUserId != null && ids.Contains(e.PartnerUserId.Value))))
@@ -80,7 +86,7 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
             if (e.PartnerUserId is not null) celebrated.Add((e.PartnerUserId.Value, e.Year));
         }
 
-        var pending = active.Where(x => !celebrated.Contains((x.Candidate.UserId, x.LocalToday.Year)))
+        var pending = active.Where(x => !celebrated.Contains((x.Candidate.UserId, x.Year)))
             .Take(batchSize).ToList();
         if (pending.Count == 0) return 0;
 
@@ -88,12 +94,12 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
         foreach (var item in pending)
         {
             // A shared entry created earlier in this same loop may have covered this member.
-            if (celebrated.Contains((item.Candidate.UserId, item.LocalToday.Year))) continue;
+            if (celebrated.Contains((item.Candidate.UserId, item.Year))) continue;
             try
             {
                 var entry = type == CelebrationType.Birthday
-                    ? BuildBirthdayEntry(item.Candidate, item.LocalToday.Year)
-                    : await BuildAnniversaryEntryAsync(item.Candidate, item.LocalToday.Year, cancellationToken);
+                    ? BuildBirthdayEntry(item.Candidate, item.Year)
+                    : await BuildAnniversaryEntryAsync(item.Candidate, item.Year, cancellationToken);
                 db.CelebrationEntries.Add(entry);
                 await db.SaveChangesAsync(cancellationToken);
                 await SeedTeamWishAsync(entry.Id, cancellationToken);
@@ -171,6 +177,16 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
         var addresses = await db.Users.AsNoTracking()
             .Where(u => recipientIds.Contains(u.Id) && u.Email != null)
             .ToDictionaryAsync(u => u.Id, u => u.Email!, cancellationToken);
+
+        // The anniversary date is normally mirrored onto both spouses' profiles, but a couple
+        // approved *after* one spouse set it leaves the other's blank — fall back to the date on the
+        // entry owner's profile so the featured partner still gets their email.
+        var ownerIds = entries.Where(e => e.Type == CelebrationType.Anniversary).Select(e => e.UserId).ToList();
+        var anniversaryDates = ownerIds.Count == 0
+            ? new Dictionary<Guid, DateOnly>()
+            : await db.Profiles.AsNoTracking()
+                .Where(p => ownerIds.Contains(p.UserId) && p.WeddingAnniversaryDate != null)
+                .ToDictionaryAsync(p => p.UserId, p => p.WeddingAnniversaryDate!.Value, cancellationToken);
         var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
 
         foreach (var entry in entries)
@@ -184,14 +200,14 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
                 if (!profiles.TryGetValue(recipientId, out var profile)) continue;
                 if (!addresses.TryGetValue(recipientId, out var address)) continue;
 
-                // Only send while it is still the celebration day in the recipient's timezone —
-                // once their local day rolls over, the retry window closes for good.
+                // Send from 09:00 local until the recipient's local day rolls over, after which the
+                // retry window closes for good. A shared anniversary entry is keyed off the
+                // initiating member's date when a spouse hasn't recorded one on their own profile.
                 var celebrationDate = entry.Type == CelebrationType.Birthday
                     ? (profile.DateOfBirth == default ? (DateOnly?)null : profile.DateOfBirth)
-                    : profile.WeddingAnniversaryDate;
+                    : profile.WeddingAnniversaryDate ?? anniversaryDates.GetValueOrDefault(entry.UserId);
                 if (celebrationDate is null) continue;
-                var localToday = LocalToday(profile.TimeZoneId, utcNow);
-                if (localToday.Month != celebrationDate.Value.Month || localToday.Day != celebrationDate.Value.Day) continue;
+                if (DueYear(celebrationDate.Value, profile.TimeZoneId, utcNow) is null) continue;
 
                 try
                 {
@@ -260,15 +276,27 @@ public sealed class CelebrationPostService(MirageDbContext db, IEmailService ema
         }
     }
 
-    private static DateOnly LocalToday(string? timeZoneId, DateTimeOffset utcNow)
+    private static DateTime LocalNow(string? timeZoneId, DateTimeOffset utcNow)
     {
-        if (string.IsNullOrWhiteSpace(timeZoneId)) return DateOnly.FromDateTime(utcNow.UtcDateTime);
+        if (string.IsNullOrWhiteSpace(timeZoneId)) return utcNow.UtcDateTime;
         try
         {
             var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-            return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(utcNow, zone).DateTime);
+            return TimeZoneInfo.ConvertTime(utcNow, zone).DateTime;
         }
-        catch (TimeZoneNotFoundException) { return DateOnly.FromDateTime(utcNow.UtcDateTime); }
-        catch (InvalidTimeZoneException) { return DateOnly.FromDateTime(utcNow.UtcDateTime); }
+        catch (TimeZoneNotFoundException) { return utcNow.UtcDateTime; }
+        catch (InvalidTimeZoneException) { return utcNow.UtcDateTime; }
+    }
+
+    // A celebration is "due" once the member's local clock has reached 09:00 on the day whose
+    // month/day matches their birthday or anniversary; returns that local year, else null.
+    private static int? DueYear(DateOnly celebrationDate, string? timeZoneId, DateTimeOffset utcNow)
+    {
+        var localNow = LocalNow(timeZoneId, utcNow);
+        return localNow.Month == celebrationDate.Month
+            && localNow.Day == celebrationDate.Day
+            && localNow.Hour >= SendHourLocal
+                ? localNow.Year
+                : null;
     }
 }
