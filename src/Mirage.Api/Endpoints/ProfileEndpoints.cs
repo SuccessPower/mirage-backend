@@ -401,7 +401,8 @@ internal static class ProfileEndpoints
             request.Occupation);
         profile.SetInternationalPreferences(request.CountryCode, request.TimeZoneId,
             request.DiscoveryScope, request.PreferredCountryCodes);
-        var anniversaryChanged = profile.WeddingAnniversaryDate != request.WeddingAnniversaryDate;
+        var previousAnniversary = profile.WeddingAnniversaryDate;
+        var anniversaryChanged = previousAnniversary != request.WeddingAnniversaryDate;
         profile.SetCelebrationPreferences(request.WeddingAnniversaryDate, request.CelebrationOptOut);
 
         // A wedding anniversary belongs to the couple, not one spouse — mirror the date onto the
@@ -420,6 +421,32 @@ internal static class ProfileEndpoints
                     .SingleOrDefaultAsync(x => x.UserId == partnerUserId, cancellationToken);
                 partnerProfile?.SetCelebrationPreferences(request.WeddingAnniversaryDate,
                     partnerProfile.CelebrationOptOut);
+            }
+
+            // A date change makes any current-year anniversary post wrong (it was published for
+            // the old date), so remove it — the home banner stops showing it immediately, and the
+            // sweep can publish a fresh entry when the corrected date comes around. Only the year
+            // component changing keeps the post (same month/day means it's still accurate, and
+            // deleting would discard its wishes). Wishes cascade-delete with the entry.
+            var sameMonthDay = previousAnniversary is not null && request.WeddingAnniversaryDate is not null
+                && previousAnniversary.Value.Month == request.WeddingAnniversaryDate.Value.Month
+                && previousAnniversary.Value.Day == request.WeddingAnniversaryDate.Value.Day;
+            if (!sameMonthDay)
+            {
+                // CreatedAt clause catches a banner-visible entry stamped with last year's Year
+                // right around New Year; the Year clause catches this year's entry regardless of age.
+                var utcNow = DateTimeOffset.UtcNow;
+                var currentYear = utcNow.Year;
+                var recentCutoff = utcNow.AddDays(-2);
+                var featuredIds = partnerUserId == Guid.Empty
+                    ? new[] { profile.UserId }
+                    : new[] { profile.UserId, partnerUserId };
+                await db.CelebrationEntries
+                    .Where(e => e.Type == CelebrationType.Anniversary
+                        && (featuredIds.Contains(e.UserId)
+                            || (e.PartnerUserId != null && featuredIds.Contains(e.PartnerUserId.Value)))
+                        && (e.Year == currentYear || e.CreatedAt >= recentCutoff))
+                    .ExecuteDeleteAsync(cancellationToken);
             }
         }
 
