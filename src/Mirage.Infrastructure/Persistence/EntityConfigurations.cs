@@ -166,6 +166,7 @@ public sealed class TestimonialConfiguration : IEntityTypeConfiguration<Testimon
         b.Property(x => x.ImageUrl2).HasMaxLength(1000);
         b.Property(x => x.ImageUrl3).HasMaxLength(1000);
         b.HasIndex(x => x.CreatedAt);
+        b.Property(x => x.MentionedUserIds).HasColumnType("uuid[]");
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.TaggedUserId).OnDelete(DeleteBehavior.SetNull);
     }
@@ -226,6 +227,7 @@ public sealed class TestimonialCommentConfiguration : IEntityTypeConfiguration<T
     {
         b.ToTable("testimonial_comments");
         b.Property(x => x.Body).HasMaxLength(2000);
+        b.Property(x => x.MentionedUserIds).HasColumnType("uuid[]");
         b.HasIndex(x => new { x.TestimonialId, x.CreatedAt });
         b.HasOne(x => x.Testimonial).WithMany(x => x.Comments).HasForeignKey(x => x.TestimonialId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.ParentComment).WithMany(x => x.Replies).HasForeignKey(x => x.ParentCommentId).OnDelete(DeleteBehavior.Cascade);
@@ -267,6 +269,7 @@ public sealed class CommunityPostConfiguration : IEntityTypeConfiguration<Commun
         b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.Property(x => x.ImageUrl2).HasMaxLength(1000);
         b.Property(x => x.ImageUrl3).HasMaxLength(1000);
+        b.Property(x => x.MentionedUserIds).HasColumnType("uuid[]");
         b.HasOne(x => x.Community).WithMany(x => x.Posts).HasForeignKey(x => x.CommunityId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
     }

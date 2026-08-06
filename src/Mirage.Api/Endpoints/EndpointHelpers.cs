@@ -133,6 +133,34 @@ internal static class EndpointHelpers
         return badges.GetValueOrDefault(userId);
     }
 
+    // Display names for the users tagged with @ in a body, so readers see the name and never the
+    // raw "@handle" the author typed. Names are resolved at read time on purpose — a mention keeps
+    // pointing at the person even after they rename themselves.
+    public static async Task<MentionNameLookup> ResolveMentionsAsync(this IMirageDbContext db,
+        IEnumerable<Guid> userIds, CancellationToken cancellationToken)
+    {
+        var ids = userIds.Distinct().ToArray();
+        if (ids.Length == 0) return new MentionNameLookup(new Dictionary<Guid, string>());
+
+        var names = await db.Profiles.AsNoTracking()
+            .Where(p => ids.Contains(p.UserId))
+            .ToDictionaryAsync(p => p.UserId, p => p.DisplayName, cancellationToken);
+        return new MentionNameLookup(names);
+    }
+
+    public sealed class MentionNameLookup(Dictionary<Guid, string> names)
+    {
+        public IReadOnlyList<MentionedUserResponse>? For(IEnumerable<Guid>? userIds)
+        {
+            if (userIds is null) return null;
+            var mentions = userIds
+                .Where(names.ContainsKey)
+                .Select(id => new MentionedUserResponse(id, names[id]))
+                .ToList();
+            return mentions.Count == 0 ? null : mentions;
+        }
+    }
+
     public static IResult ValidationProblem(HttpContext context, params (string Field, string Error)[] errors) =>
         ValidationProblem(context,
             errors.GroupBy(x => x.Field).ToDictionary(

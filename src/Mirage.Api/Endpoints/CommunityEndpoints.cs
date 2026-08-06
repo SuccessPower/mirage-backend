@@ -565,25 +565,30 @@ internal static class CommunityEndpoints
                 DownvoteCount = post.Votes.Count(v => v.Value < 0),
                 MyVote = post.Votes.Where(v => v.UserId == userId).Select(v => (sbyte?)v.Value).FirstOrDefault(),
                 post.IsHidden,
+                post.MentionedUserIds,
                 post.CreatedAt
             })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         var badges = await db.GetOrgBadgesAsync(paged.Items.Select(x => x.AuthorUserId), cancellationToken);
+        var mentionNames = await db.ResolveMentionsAsync(
+            paged.Items.SelectMany(x => x.MentionedUserIds), cancellationToken);
         var posts = new Mirage.Application.Common.PagedResult<CommunityPostResponse>(
             paged.Items.Select(x => new CommunityPostResponse(x.Id, x.CommunityId, x.AuthorUserId, x.AuthorName,
                 x.AuthorAvatarUrl, x.Body, x.ImageUrl, x.ImageUrl2, x.ImageUrl3,
                 x.LikeCount, x.CommentCount, x.LikedByMe, x.CreatedAt,
                 badges.GetValueOrDefault(x.AuthorUserId)?.LogoUrl, badges.GetValueOrDefault(x.AuthorUserId)?.OrganisationName,
                 x.UpvoteCount, x.DownvoteCount, x.MyVote,
-                CommunityVoteScoring.ColorFor(x.UpvoteCount, x.DownvoteCount), x.IsHidden)).ToList(),
+                CommunityVoteScoring.ColorFor(x.UpvoteCount, x.DownvoteCount), x.IsHidden,
+                mentionNames.For(x.MentionedUserIds))).ToList(),
             paged.Page, paged.PageSize, paged.TotalCount);
 
         return ApiResults.Ok(context, posts, "Community posts retrieved successfully.");
     }
 
     private static async Task<IResult> CreatePost(Guid id, CreateCommunityPostRequest request,
-        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+        HttpContext context, IMirageDbContext db, NotificationService notifications,
+        CancellationToken cancellationToken)
     {
         var images = request.ImageUrls?.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim())
             .Distinct(StringComparer.Ordinal).ToList() ?? [];
@@ -598,8 +603,20 @@ internal static class CommunityEndpoints
         var isMember = await IsActiveMemberAsync(id, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
+        // Only fellow members of this community can be tagged in its posts.
+        var mentionedUserIds = Array.Empty<Guid>();
+        if (request.MentionedUserIds is { Length: > 0 })
+        {
+            mentionedUserIds = await db.CommunityMembers.AsNoTracking()
+                .Where(x => x.CommunityId == id && x.LeftAt == null &&
+                            x.Status == CommunityMemberStatus.Approved &&
+                            request.MentionedUserIds.Contains(x.UserId))
+                .Select(x => x.UserId)
+                .ToArrayAsync(cancellationToken);
+        }
+
         var post = new CommunityPost(id, userId, request.Body, images.ElementAtOrDefault(0),
-            images.ElementAtOrDefault(1), images.ElementAtOrDefault(2));
+            images.ElementAtOrDefault(1), images.ElementAtOrDefault(2), mentionedUserIds);
         db.CommunityPosts.Add(post);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -608,11 +625,20 @@ internal static class CommunityEndpoints
             .Select(x => new { x.DisplayName, x.AvatarUrl })
             .SingleOrDefaultAsync(cancellationToken);
 
+        foreach (var mentionedUserId in mentionedUserIds.Where(x => x != userId))
+        {
+            await notifications.NotifyAsync(mentionedUserId, NotificationType.Mention, "You were mentioned",
+                $"{author?.DisplayName ?? "Someone"} mentioned you in a community post.", post.Id,
+                "CommunityPost", cancellationToken);
+        }
+
         var authorBadge = await db.GetOrgBadgeAsync(userId, cancellationToken);
+        var mentionNames = await db.ResolveMentionsAsync(mentionedUserIds, cancellationToken);
         var response = new CommunityPostResponse(post.Id, post.CommunityId, post.AuthorUserId,
             author?.DisplayName ?? "Member", author?.AvatarUrl, post.Body, post.ImageUrl, post.ImageUrl2,
             post.ImageUrl3, 0, 0, false,
-            post.CreatedAt, authorBadge?.LogoUrl, authorBadge?.OrganisationName);
+            post.CreatedAt, authorBadge?.LogoUrl, authorBadge?.OrganisationName,
+            MentionedUsers: mentionNames.For(mentionedUserIds));
         return ApiResults.Created(context, $"/api/v1/communities/{id}/posts/{post.Id}", response,
             "Community post created successfully.");
     }

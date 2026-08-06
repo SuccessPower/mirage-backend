@@ -39,10 +39,11 @@ public sealed record ContactRequest(
     string? Website = null);
 public sealed record SendAdminInformationRequest(string Message);
 public sealed record CreateTestimonialRequest(string Title, string Body, string? ImageUrl = null,
-    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null);
+    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null, Guid[]? MentionedUserIds = null);
 public sealed record UpdateTestimonialRequest(string Title, string Body,
-    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null);
-public sealed record CreateTestimonialCommentRequest(string Body, Guid? ParentCommentId = null);
+    Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null, Guid[]? MentionedUserIds = null);
+public sealed record CreateTestimonialCommentRequest(string Body, Guid? ParentCommentId = null,
+    Guid[]? MentionedUserIds = null);
 public sealed record CreateCelebrationWishRequest(string Body);
 public sealed record GoogleAuthRequest(string IdToken);
 public sealed record RefreshRequest(string RefreshToken);
@@ -131,7 +132,8 @@ public sealed record UpdateCommunityAvatarRequest(string? AvatarUrl, string? Ava
 public sealed record UpdateCommunityMemberRoleRequest(CommunityMemberRole Role);
 public sealed record UpdateCommunitySettingsRequest(bool RequireApproval);
 public sealed record CastVoteRequest(sbyte Value);
-public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null, IReadOnlyList<string>? ImageUrls = null);
+public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl = null, IReadOnlyList<string>? ImageUrls = null,
+    Guid[]? MentionedUserIds = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);
 public sealed record InviteToGatheringRequest(string EmailOrUsername);
