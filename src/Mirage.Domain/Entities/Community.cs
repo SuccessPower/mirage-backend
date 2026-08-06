@@ -121,7 +121,7 @@ public sealed class CommunityPost : Entity
     private CommunityPost() { }
 
     public CommunityPost(Guid communityId, Guid authorUserId, string? body, string? imageUrl = null,
-        string? imageUrl2 = null, string? imageUrl3 = null)
+        string? imageUrl2 = null, string? imageUrl3 = null, Guid[]? mentionedUserIds = null)
     {
         CommunityId = communityId;
         AuthorUserId = authorUserId;
@@ -129,11 +129,14 @@ public sealed class CommunityPost : Entity
         ImageUrl = imageUrl?.Trim();
         ImageUrl2 = imageUrl2?.Trim();
         ImageUrl3 = imageUrl3?.Trim();
+        MentionedUserIds = mentionedUserIds ?? [];
     }
 
     public Guid CommunityId { get; private set; }
     public Guid AuthorUserId { get; private set; }
     public string Body { get; private set; } = string.Empty;
+    // Members of this same community tagged with @ in the body — validated at the endpoint.
+    public Guid[] MentionedUserIds { get; private set; } = [];
     public string? ImageUrl { get; private set; }
     public string? ImageUrl2 { get; private set; }
     public string? ImageUrl3 { get; private set; }

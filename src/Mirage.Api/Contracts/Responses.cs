@@ -191,12 +191,20 @@ public sealed record CommunityResponse(
     Guid? OrganisationId = null,
     bool IsMyChurch = false);
 
+// A person tagged with @ in a body, paired with the name to render in their place — the raw "@"
+// is only a typing trigger and never shown back to readers.
+public sealed record MentionedUserResponse(Guid UserId, string DisplayName);
+
+// Someone the current user is allowed to tag with @ in a given context.
+public sealed record CommunityMentionCandidateResponse(Guid UserId, string DisplayName, string? AvatarUrl);
+
 public sealed record TestimonialResponse(
     Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
     Guid? TaggedUserId, string? TaggedUserName, string? TaggedUserAvatarUrl,
     string Title, string Body, string? ImageUrl, string? ImageUrl2, string? ImageUrl3,
     int ReadCount, int LikeCount, int CommentCount,
-    bool LikedByMe, DateTimeOffset CreatedAt);
+    bool LikedByMe, DateTimeOffset CreatedAt,
+    IReadOnlyList<MentionedUserResponse>? MentionedUsers = null);
 
 public sealed record TestimonialShareResponse(
     Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
@@ -217,7 +225,8 @@ public sealed record CelebrationWishResponse(
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
     Guid? ParentCommentId, string Body, DateTimeOffset CreatedAt,
-    int LikeCount, bool LikedByMe, int ReplyCount);
+    int LikeCount, bool LikedByMe, int ReplyCount,
+    IReadOnlyList<MentionedUserResponse>? MentionedUsers = null);
 
 public sealed record CommunityMemberResponse(
     Guid Id,
@@ -263,7 +272,8 @@ public sealed record CommunityPostResponse(
     int DownvoteCount = 0,
     sbyte? MyVote = null,
     CommunityVoteColor VoteColor = CommunityVoteColor.White,
-    bool IsHidden = false);
+    bool IsHidden = false,
+    IReadOnlyList<MentionedUserResponse>? MentionedUsers = null);
 
 public sealed record CommunityPostCommentResponse(
     Guid Id,
@@ -285,7 +295,8 @@ public sealed record CommunityPostCommentResponse(
     int DownvoteCount = 0,
     sbyte? MyVote = null,
     CommunityVoteColor VoteColor = CommunityVoteColor.White,
-    bool IsHidden = false);
+    bool IsHidden = false,
+    IReadOnlyList<MentionedUserResponse>? MentionedUsers = null);
 
 public sealed record CommunityCommentLocationResponse(Guid CommunityId, Guid PostId, Guid CommentId);
 

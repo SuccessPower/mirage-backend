@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
+using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Endpoints;
 
@@ -13,6 +15,10 @@ internal static class TestimonialEndpoints
         var group = api.MapGroup("/testimonials").WithTags("Testimonials").RequireAuthorization();
         group.MapGet("/", List);
         group.MapGet("/taggable-profiles", SearchTaggableProfiles);
+        // Who you're allowed to @ — your spouse when writing a story, and anyone who has engaged
+        // with a story when commenting on it.
+        group.MapGet("/mention-candidates", ListSpouseMentionCandidates);
+        group.MapGet("/{id:guid}/mention-candidates", ListEngagedMentionCandidates);
         group.MapPost("/", Create);
         group.MapGet("/{id:guid}", Get);
         group.MapGet("/{id:guid}/share", GetShareInfo).AllowAnonymous();
@@ -27,8 +33,12 @@ internal static class TestimonialEndpoints
         return api;
     }
 
-    private static IQueryable<TestimonialResponse> Project(IQueryable<Testimonial> query, IMirageDbContext db, Guid me) =>
-        query.Select(x => new TestimonialResponse(
+    // Mention display names can't be resolved inside the query (they're a uuid[] needing a join),
+    // so the row carries the ids and they're hydrated in memory right after.
+    private sealed record TestimonialRow(TestimonialResponse Response, Guid[] MentionedUserIds);
+
+    private static IQueryable<TestimonialRow> Project(IQueryable<Testimonial> query, IMirageDbContext db, Guid me) =>
+        query.Select(x => new TestimonialRow(new TestimonialResponse(
             x.Id, x.AuthorUserId,
             db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Mirage member",
             db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
@@ -36,7 +46,103 @@ internal static class TestimonialEndpoints
             x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId).Select(p => p.DisplayName).FirstOrDefault(),
             x.TaggedUserId == null ? null : db.Profiles.Where(p => p.UserId == x.TaggedUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
             x.Title, x.Body, x.ImageUrl, x.ImageUrl2, x.ImageUrl3, x.Reads.Count, x.Likes.Count, x.Comments.Count,
-            x.Likes.Any(l => l.UserId == me), x.CreatedAt));
+            x.Likes.Any(l => l.UserId == me), x.CreatedAt, null), x.MentionedUserIds));
+
+    private static async Task<TestimonialResponse> SingleResponseAsync(IQueryable<Testimonial> query,
+        IMirageDbContext db, Guid me, CancellationToken cancellationToken)
+    {
+        var row = await Project(query, db, me).SingleAsync(cancellationToken);
+        var names = await db.ResolveMentionsAsync(row.MentionedUserIds, cancellationToken);
+        return row.Response with { MentionedUsers = names.For(row.MentionedUserIds) };
+    }
+
+    private static async Task<Mirage.Application.Common.PagedResult<TestimonialResponse>> PagedResponsesAsync(
+        IQueryable<Testimonial> query, IMirageDbContext db, Guid me, int page, int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var paged = await Project(query, db, me).ToPagedResultAsync(page, pageSize, cancellationToken);
+        var names = await db.ResolveMentionsAsync(paged.Items.SelectMany(x => x.MentionedUserIds), cancellationToken);
+        return new Mirage.Application.Common.PagedResult<TestimonialResponse>(
+            paged.Items.Select(row => row.Response with { MentionedUsers = names.For(row.MentionedUserIds) }).ToList(),
+            paged.Page, paged.PageSize, paged.TotalCount);
+    }
+
+    // A story's own body may only tag the author's spouse — the person the testimony is about.
+    private static async Task<Guid[]> SpouseUserIdsAsync(IMirageDbContext db, Guid me,
+        CancellationToken cancellationToken) =>
+        await db.Couples.AsNoTracking()
+            .Where(c => c.Status == CoupleStatus.Approved && (c.User1Id == me || c.User2Id == me))
+            .Select(c => c.User1Id == me ? c.User2Id : c.User1Id)
+            .ToArrayAsync(cancellationToken);
+
+    // Comments may only tag people already part of the conversation: the author, the person tagged
+    // in the story, and anyone who has commented on or liked it.
+    private static async Task<Guid[]> EngagedUserIdsAsync(IMirageDbContext db, Guid testimonialId,
+        CancellationToken cancellationToken)
+    {
+        var owners = await db.Testimonials.AsNoTracking()
+            .Where(x => x.Id == testimonialId)
+            .Select(x => new { x.AuthorUserId, x.TaggedUserId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (owners is null) return [];
+
+        var commenters = await db.TestimonialComments.AsNoTracking()
+            .Where(x => x.TestimonialId == testimonialId).Select(x => x.AuthorUserId)
+            .ToListAsync(cancellationToken);
+        var likers = await db.TestimonialLikes.AsNoTracking()
+            .Where(x => x.TestimonialId == testimonialId).Select(x => x.UserId)
+            .ToListAsync(cancellationToken);
+
+        var ids = new HashSet<Guid> { owners.AuthorUserId };
+        if (owners.TaggedUserId is { } tagged) ids.Add(tagged);
+        foreach (var id in commenters) ids.Add(id);
+        foreach (var id in likers) ids.Add(id);
+        return [.. ids];
+    }
+
+    private static async Task<List<CommunityMentionCandidateResponse>> MentionCandidatesAsync(IMirageDbContext db,
+        IEnumerable<Guid> userIds, Guid exclude, CancellationToken cancellationToken)
+    {
+        var ids = userIds.Where(id => id != exclude).Distinct().ToArray();
+        if (ids.Length == 0) return [];
+        return await db.Profiles.AsNoTracking()
+            .Where(p => ids.Contains(p.UserId))
+            .OrderBy(p => p.DisplayName)
+            .Select(p => new CommunityMentionCandidateResponse(p.UserId, p.DisplayName, p.AvatarUrl))
+            .ToListAsync(cancellationToken);
+    }
+
+    private static async Task<IResult> ListSpouseMentionCandidates(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var me = context.User.GetUserId();
+        var spouses = await SpouseUserIdsAsync(db, me, cancellationToken);
+        var candidates = await MentionCandidatesAsync(db, spouses, me, cancellationToken);
+        return ApiResults.Ok(context, candidates, "Mention candidates retrieved successfully.");
+    }
+
+    private static async Task<IResult> ListEngagedMentionCandidates(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (!await db.Testimonials.AsNoTracking().AnyAsync(x => x.Id == id, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Testimonial was not found.");
+        var me = context.User.GetUserId();
+        var engaged = await EngagedUserIdsAsync(db, id, cancellationToken);
+        var candidates = await MentionCandidatesAsync(db, engaged, me, cancellationToken);
+        return ApiResults.Ok(context, candidates, "Mention candidates retrieved successfully.");
+    }
+
+    private static async Task NotifyMentionsAsync(IMirageDbContext db, NotificationService notifications,
+        Guid actorUserId, IReadOnlyCollection<Guid> mentionedUserIds, Guid entityId, string entityType,
+        string action, CancellationToken cancellationToken)
+    {
+        if (mentionedUserIds.Count == 0) return;
+        var actorName = await db.Profiles.AsNoTracking().Where(x => x.UserId == actorUserId)
+            .Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken) ?? "Someone";
+        foreach (var mentionedUserId in mentionedUserIds.Where(x => x != actorUserId))
+            await notifications.NotifyAsync(mentionedUserId, NotificationType.Mention, "You were mentioned",
+                $"{actorName} {action}.", entityId, entityType, cancellationToken);
+    }
 
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db, string? search,
         int page = 1, int pageSize = 12, CancellationToken cancellationToken = default)
@@ -47,8 +153,8 @@ internal static class TestimonialEndpoints
             var term = $"%{search.Trim()}%";
             query = query.Where(x => EF.Functions.ILike(x.Title, term) || EF.Functions.ILike(x.Body, term));
         }
-        var result = await Project(query.OrderByDescending(x => x.CreatedAt), db, context.User.GetUserId())
-            .ToPagedResultAsync(page, pageSize, cancellationToken);
+        var result = await PagedResponsesAsync(query.OrderByDescending(x => x.CreatedAt), db,
+            context.User.GetUserId(), page, pageSize, cancellationToken);
         return ApiResults.Ok(context, result, "Testimonials retrieved successfully.");
     }
 
@@ -63,8 +169,8 @@ internal static class TestimonialEndpoints
             db.TestimonialReads.Add(new TestimonialRead(id, me));
             await db.SaveChangesAsync(cancellationToken);
         }
-        var result = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me)
-            .SingleAsync(cancellationToken);
+        var result = await SingleResponseAsync(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me,
+            cancellationToken);
         return ApiResults.Ok(context, result, "Testimonial retrieved successfully.");
     }
 
@@ -95,7 +201,7 @@ internal static class TestimonialEndpoints
     }
 
     private static async Task<IResult> Create(CreateTestimonialRequest request, HttpContext context,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Title) || request.Title.Trim().Length is < 8 or > 160)
             return EndpointHelpers.ValidationProblem(context, ("title", "Use a title between 8 and 160 characters."));
@@ -110,12 +216,20 @@ internal static class TestimonialEndpoints
         var images = NormaliseImages(request.ImageUrls, request.ImageUrl);
         if (images.Count > 3)
             return EndpointHelpers.ValidationProblem(context, ("imageUrls", "A testimony can contain at most three images."));
+        var spouses = await SpouseUserIdsAsync(db, me, cancellationToken);
+        var mentionedUserIds = request.MentionedUserIds?.Where(spouses.Contains).Distinct().ToArray() ?? [];
+        if (request.MentionedUserIds is { Length: > 0 } && mentionedUserIds.Length == 0)
+            return EndpointHelpers.ValidationProblem(context,
+                ("mentionedUserIds", "You can only mention your spouse in a testimony."));
+
         var item = new Testimonial(me, request.Title, request.Body, images.ElementAtOrDefault(0),
-            request.TaggedUserId, images.ElementAtOrDefault(1), images.ElementAtOrDefault(2));
+            request.TaggedUserId, images.ElementAtOrDefault(1), images.ElementAtOrDefault(2), mentionedUserIds);
         db.Testimonials.Add(item);
         await db.SaveChangesAsync(cancellationToken);
-        var response = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == item.Id), db, me)
-            .SingleAsync(cancellationToken);
+        await NotifyMentionsAsync(db, notifications, me, mentionedUserIds, item.Id, "Testimonial",
+            "mentioned you in a testimony", cancellationToken);
+        var response = await SingleResponseAsync(db.Testimonials.AsNoTracking().Where(x => x.Id == item.Id), db, me,
+            cancellationToken);
         return ApiResults.Created(context, $"/api/v1/testimonials/{item.Id}", response, "Your testimony was published.");
     }
 
@@ -141,10 +255,16 @@ internal static class TestimonialEndpoints
         var images = NormaliseImages(request.ImageUrls, null);
         if (images.Count > 3)
             return EndpointHelpers.ValidationProblem(context, ("imageUrls", "A testimony can contain at most three images."));
-        testimonial.Update(request.Title, request.Body, images, request.TaggedUserId);
+        var updateSpouses = await SpouseUserIdsAsync(db, me, cancellationToken);
+        var updateMentions = request.MentionedUserIds?.Where(updateSpouses.Contains).Distinct().ToArray() ?? [];
+        if (request.MentionedUserIds is { Length: > 0 } && updateMentions.Length == 0)
+            return EndpointHelpers.ValidationProblem(context,
+                ("mentionedUserIds", "You can only mention your spouse in a testimony."));
+
+        testimonial.Update(request.Title, request.Body, images, request.TaggedUserId, updateMentions);
         await db.SaveChangesAsync(cancellationToken);
-        var response = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me)
-            .SingleAsync(cancellationToken);
+        var response = await SingleResponseAsync(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me,
+            cancellationToken);
         return ApiResults.Ok(context, response, "Your testimony was updated.");
     }
 
@@ -167,7 +287,7 @@ internal static class TestimonialEndpoints
         if (!await db.Testimonials.AsNoTracking().AnyAsync(x => x.Id == id, ct)) return EndpointHelpers.NotFound(context, "Testimonial was not found.");
         if (!await db.TestimonialLikes.AnyAsync(x => x.TestimonialId == id && x.UserId == me, ct))
         { db.TestimonialLikes.Add(new TestimonialLike(id, me)); await db.SaveChangesAsync(ct); }
-        var response = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me).SingleAsync(ct);
+        var response = await SingleResponseAsync(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me, ct);
         return ApiResults.Ok(context, response, "Testimonial liked.");
     }
 
@@ -176,25 +296,33 @@ internal static class TestimonialEndpoints
         var me = context.User.GetUserId();
         var like = await db.TestimonialLikes.SingleOrDefaultAsync(x => x.TestimonialId == id && x.UserId == me, ct);
         if (like is not null) { db.TestimonialLikes.Remove(like); await db.SaveChangesAsync(ct); }
-        var response = await Project(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me).SingleAsync(ct);
+        var response = await SingleResponseAsync(db.Testimonials.AsNoTracking().Where(x => x.Id == id), db, me, ct);
         return ApiResults.Ok(context, response, "Like removed.");
     }
 
     private static async Task<IResult> ListComments(Guid id, HttpContext context, IMirageDbContext db, CancellationToken ct)
     {
         var me = context.User.GetUserId();
-        var comments = await db.TestimonialComments.AsNoTracking().Where(x => x.TestimonialId == id)
+        var rows = await db.TestimonialComments.AsNoTracking().Where(x => x.TestimonialId == id)
             .OrderBy(x => x.CreatedAt)
-            .Select(x => new TestimonialCommentResponse(x.Id, x.TestimonialId, x.AuthorUserId,
-                db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Mirage member",
-                db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
-                x.ParentCommentId, x.Body, x.CreatedAt, x.Likes.Count, x.Likes.Any(l => l.UserId == me),
-                x.Replies.Count)).ToListAsync(ct);
+            .Select(x => new
+            {
+                Response = new TestimonialCommentResponse(x.Id, x.TestimonialId, x.AuthorUserId,
+                    db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Mirage member",
+                    db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
+                    x.ParentCommentId, x.Body, x.CreatedAt, x.Likes.Count, x.Likes.Any(l => l.UserId == me),
+                    x.Replies.Count, null),
+                x.MentionedUserIds
+            }).ToListAsync(ct);
+        var names = await db.ResolveMentionsAsync(rows.SelectMany(x => x.MentionedUserIds), ct);
+        var comments = rows
+            .Select(row => row.Response with { MentionedUsers = names.For(row.MentionedUserIds) })
+            .ToList();
         return ApiResults.Ok(context, comments, "Comments retrieved.");
     }
 
     private static async Task<IResult> Comment(Guid id, CreateTestimonialCommentRequest request,
-        HttpContext context, IMirageDbContext db, CancellationToken ct)
+        HttpContext context, IMirageDbContext db, NotificationService notifications, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Body) || request.Body.Trim().Length is < 2 or > 2000)
             return EndpointHelpers.ValidationProblem(context, ("body", "Comment must be between 2 and 2,000 characters."));
@@ -209,12 +337,23 @@ internal static class TestimonialEndpoints
             if (parent.ParentCommentId.HasValue)
                 return EndpointHelpers.ValidationProblem(context, ("parentCommentId", "Replies can only be posted to top-level comments."));
         }
-        var comment = new TestimonialComment(id, context.User.GetUserId(), request.Body, request.ParentCommentId);
+        var me = context.User.GetUserId();
+        var engaged = await EngagedUserIdsAsync(db, id, ct);
+        var mentionedUserIds = request.MentionedUserIds?.Where(engaged.Contains).Distinct().ToArray() ?? [];
+        if (request.MentionedUserIds is { Length: > 0 } && mentionedUserIds.Length == 0)
+            return EndpointHelpers.ValidationProblem(context,
+                ("mentionedUserIds", "You can only mention people who have engaged with this testimony."));
+
+        var comment = new TestimonialComment(id, me, request.Body, request.ParentCommentId, mentionedUserIds);
         db.TestimonialComments.Add(comment); await db.SaveChangesAsync(ct);
         var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == comment.AuthorUserId)
             .Select(x => new { x.DisplayName, x.AvatarUrl }).SingleAsync(ct);
+        await NotifyMentionsAsync(db, notifications, me, mentionedUserIds, comment.Id, "TestimonialComment",
+            "mentioned you in a comment", ct);
+        var names = await db.ResolveMentionsAsync(mentionedUserIds, ct);
         var response = new TestimonialCommentResponse(comment.Id, comment.TestimonialId, comment.AuthorUserId,
-            author.DisplayName, author.AvatarUrl, comment.ParentCommentId, comment.Body, comment.CreatedAt, 0, false, 0);
+            author.DisplayName, author.AvatarUrl, comment.ParentCommentId, comment.Body, comment.CreatedAt, 0, false, 0,
+            names.For(mentionedUserIds));
         return ApiResults.Created(context, $"/api/v1/testimonials/{id}", response, "Comment posted.");
     }
 
