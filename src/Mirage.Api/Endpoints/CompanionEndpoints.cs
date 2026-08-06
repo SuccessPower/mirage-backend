@@ -110,18 +110,29 @@ internal static class CompanionEndpoints
         return ApiResults.Created(context, $"/api/v1/companion/entries/{entry.Id}", response, "Journal entry saved successfully.");
     }
 
+    // markRead stamps the entries as seen — used when a partner reads the author's journal, so the
+    // author gets a read receipt next to each answer.
     private static async Task<List<CompanionEntryResponse>> LoadEntriesAsync(MirageDbContext db, Guid authorUserId,
-        int page, int pageSize, CancellationToken cancellationToken)
+        int page, int pageSize, CancellationToken cancellationToken, bool markRead = false)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var entries = await db.CompanionEntries.AsNoTracking()
+        var query = markRead ? db.CompanionEntries.AsQueryable() : db.CompanionEntries.AsNoTracking();
+        var entries = await query
             .Where(e => e.AuthorUserId == authorUserId)
             .OrderByDescending(e => e.CreatedAt)
             .Skip((page - 1) * pageSize).Take(pageSize)
             .ToListAsync(cancellationToken);
         if (entries.Count == 0) return [];
+
+        if (markRead)
+        {
+            var readAt = DateTimeOffset.UtcNow;
+            var touched = false;
+            foreach (var entry in entries) touched |= entry.MarkReadByPartner(readAt);
+            if (touched) await db.SaveChangesAsync(cancellationToken);
+        }
 
         var promptIds = entries.Select(e => e.PromptId).Distinct().ToArray();
         var promptTexts = await db.CompanionPrompts.AsNoTracking()
@@ -131,7 +142,7 @@ internal static class CompanionEndpoints
 
         return entries.Select(e => new CompanionEntryResponse(e.Id, e.PromptId,
             promptTexts.GetValueOrDefault(e.PromptId, "Companion prompt"), authorUserId,
-            authorName ?? "Unknown", e.AnswerText, e.CreatedAt)).ToList();
+            authorName ?? "Unknown", e.AnswerText, e.CreatedAt, e.PartnerReadAt)).ToList();
     }
 
     private static async Task<IResult> GetMyEntries(HttpContext context, MirageDbContext db,
@@ -149,7 +160,7 @@ internal static class CompanionEndpoints
         var partnerUserId = await GetApprovedPartnerUserIdAsync(userId, db, cancellationToken);
         if (partnerUserId is null) return ApiResults.Ok(context, new List<CompanionEntryResponse>(), "No linked Companion partner yet.");
 
-        var entries = await LoadEntriesAsync(db, partnerUserId.Value, page, pageSize, cancellationToken);
+        var entries = await LoadEntriesAsync(db, partnerUserId.Value, page, pageSize, cancellationToken, markRead: true);
         return ApiResults.Ok(context, entries, "Partner's journal entries retrieved successfully.");
     }
 
@@ -163,13 +174,16 @@ internal static class CompanionEndpoints
             .ToListAsync(cancellationToken);
 
         var otherIds = partners.Select(x => x.OtherUserId).Distinct().ToList();
-        var names = await db.Profiles.AsNoTracking()
+        var profiles = await db.Profiles.AsNoTracking()
             .Where(p => otherIds.Contains(p.UserId))
-            .ToDictionaryAsync(p => p.UserId, p => p.DisplayName, cancellationToken);
+            .Select(p => new { p.UserId, p.DisplayName, p.AvatarUrl })
+            .ToDictionaryAsync(p => p.UserId, cancellationToken);
 
         var response = partners.Select(x => new CompanionPartnerResponse(
-            x.Partner.Id, x.OtherUserId, names.GetValueOrDefault(x.OtherUserId, "Unknown"),
-            x.Partner.RequestedByUserId, x.Partner.Status, x.Partner.CreatedAt)).ToList();
+            x.Partner.Id, x.OtherUserId,
+            profiles.TryGetValue(x.OtherUserId, out var profile) ? profile.DisplayName : "Unknown",
+            x.Partner.RequestedByUserId, x.Partner.Status, x.Partner.CreatedAt,
+            profile?.AvatarUrl)).ToList();
         return ApiResults.Ok(context, response, "Companion partner records retrieved successfully.");
     }
 

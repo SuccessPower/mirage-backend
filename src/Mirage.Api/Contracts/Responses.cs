@@ -184,7 +184,12 @@ public sealed record CommunityResponse(
     int PostCount,
     bool IsMember,
     CommunityMemberRole? MyRole,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    // Set for the auto-managed community of a church. IsMyChurch is true only for the one church
+    // the viewer is an approved member of — an admin seat on some other church's community makes
+    // them a moderator there, not a member of that church.
+    Guid? OrganisationId = null,
+    bool IsMyChurch = false);
 
 public sealed record TestimonialResponse(
     Guid Id, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
@@ -439,7 +444,8 @@ public sealed record CompanionEntryResponse(
     Guid AuthorUserId,
     string AuthorDisplayName,
     string AnswerText,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? PartnerReadAt = null);
 
 public sealed record CompanionPartnerResponse(
     Guid Id,
@@ -447,7 +453,8 @@ public sealed record CompanionPartnerResponse(
     string PartnerDisplayName,
     Guid RequestedByUserId,
     CompanionPartnerStatus Status,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? PartnerAvatarUrl = null);
 
 public sealed record CounsellingMessageResponse(
     Guid Id,

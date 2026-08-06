@@ -90,7 +90,11 @@ internal static class CommunityEndpoints
                     .Where(m => m.UserId == userId && m.LeftAt == null && m.Status == CommunityMemberStatus.Approved)
                     .Select(m => (CommunityMemberRole?)m.Role)
                     .FirstOrDefault(),
-                x.CreatedAt))
+                x.CreatedAt,
+                x.OrganisationId,
+                x.OrganisationId.HasValue && db.OrganisationMembers.Any(om =>
+                    om.OrganisationId == x.OrganisationId.Value && om.UserId == userId &&
+                    om.Status == OrganisationMemberStatus.Approved)))
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         return ApiResults.Ok(context, result, "Communities retrieved successfully.");
@@ -121,7 +125,11 @@ internal static class CommunityEndpoints
                     .Where(m => m.UserId == userId && m.LeftAt == null && m.Status == CommunityMemberStatus.Approved)
                     .Select(m => (CommunityMemberRole?)m.Role)
                     .FirstOrDefault(),
-                x.CreatedAt))
+                x.CreatedAt,
+                x.OrganisationId,
+                x.OrganisationId.HasValue && db.OrganisationMembers.Any(om =>
+                    om.OrganisationId == x.OrganisationId.Value && om.UserId == userId &&
+                    om.Status == OrganisationMemberStatus.Approved)))
             .SingleOrDefaultAsync(cancellationToken);
 
         return community is null
@@ -415,6 +423,14 @@ internal static class CommunityEndpoints
             if (!isApprovedChurchMember)
                 return EndpointHelpers.Forbidden(context,
                     "You can only join this church's community once your membership with that church is approved.");
+
+            // One church community at a time — a member has to leave their current church's
+            // community before joining another's.
+            var otherChurchCommunity = await ChurchCommunityService.FindOtherChurchCommunityAsync(
+                db, userId, organisationId, cancellationToken);
+            if (otherChurchCommunity is not null)
+                return EndpointHelpers.Conflict(context,
+                    $"You already belong to {otherChurchCommunity}. Leave that church community before joining another one.");
 
             if (community.Category == Community.ChurchMarriedCategory)
             {

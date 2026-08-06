@@ -70,6 +70,10 @@ internal static class AdminEndpoints
         admin.MapPost("/organisations/seed-churches", SeedChurches);
         admin.MapPost("/organisations/{sourceId:guid}/merge", MergeOrganisation);
 
+        // Repairs accounts that ended up in more than one church's community before the
+        // one-church-community rule was enforced at join time.
+        admin.MapPost("/communities/prune-church-memberships", PruneChurchCommunityMemberships);
+
         // Content reports can also be submitted by any authenticated user
         var reports = api.MapGroup("/reports").WithTags("Reports").RequireAuthorization();
         reports.MapPost("/", SubmitReport);
@@ -912,6 +916,89 @@ internal static class AdminEndpoints
             $"Seeded {result.Created} church(es) with {result.BranchesCreated} branch(es); " +
             $"updated {result.DenominationsUpdated} denomination(s); retired {result.Retired}; " +
             $"skipped {result.Skipped} already present.");
+    }
+
+    // --- Church community repair ---
+
+    // Every user belongs to at most one church, so they must sit in at most one church community
+    // (Community.OrganisationId != null). Accounts that predate that rule being enforced at join
+    // time can hold several; this keeps the community matching their approved church membership
+    // (falling back to the most recently joined) and ends the rest. Owner seats are never touched —
+    // those belong to the church's own admin. Safe to re-run: it's a no-op once clean.
+    private static async Task<IResult> PruneChurchCommunityMemberships(HttpContext context, MirageDbContext db,
+        bool apply = false, CancellationToken cancellationToken = default)
+    {
+        var churchCommunities = await db.Communities.AsNoTracking()
+            .Where(c => c.OrganisationId != null)
+            .Select(c => new { c.Id, c.Name, OrganisationId = c.OrganisationId!.Value })
+            .ToDictionaryAsync(c => c.Id, cancellationToken);
+        if (churchCommunities.Count == 0)
+            return ApiResults.Ok(context, new { Apply = apply, UsersAffected = 0, MembershipsEnded = 0, Details = Array.Empty<object>() },
+                "No church communities exist yet.");
+
+        var communityIds = churchCommunities.Keys.ToList();
+        var memberships = await db.CommunityMembers
+            .Where(m => communityIds.Contains(m.CommunityId) && m.LeftAt == null
+                && m.Role != CommunityMemberRole.Owner
+                && m.Status != CommunityMemberStatus.Removed && m.Status != CommunityMemberStatus.Rejected)
+            .ToListAsync(cancellationToken);
+
+        var offenders = memberships
+            .GroupBy(m => m.UserId)
+            .Select(g => new
+            {
+                UserId = g.Key,
+                Organisations = g.Select(m => churchCommunities[m.CommunityId].OrganisationId).Distinct().Count(),
+                Memberships = g.ToList()
+            })
+            .Where(g => g.Organisations > 1)
+            .ToList();
+
+        var userIds = offenders.Select(g => g.UserId).ToList();
+        var approvedOrgByUser = await db.OrganisationMembers.AsNoTracking()
+            .Where(m => userIds.Contains(m.UserId) && m.Status == OrganisationMemberStatus.Approved)
+            .OrderBy(m => m.ReviewedAt ?? DateTimeOffset.MinValue)
+            .Select(m => new { m.UserId, m.OrganisationId })
+            .ToListAsync(cancellationToken);
+        var keepOrgByUser = approvedOrgByUser
+            .GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.Last().OrganisationId);
+
+        var details = new List<object>();
+        var ended = 0;
+        foreach (var offender in offenders)
+        {
+            // Their approved church membership decides which community stays; with none on record,
+            // keep the newest join so the account still lands somewhere deterministic.
+            var keepOrgId = keepOrgByUser.TryGetValue(offender.UserId, out var orgId)
+                ? orgId
+                : churchCommunities[offender.Memberships.OrderByDescending(m => m.CreatedAt).First().CommunityId].OrganisationId;
+
+            var toEnd = offender.Memberships
+                .Where(m => churchCommunities[m.CommunityId].OrganisationId != keepOrgId)
+                .ToList();
+            if (toEnd.Count == 0) continue;
+
+            if (apply) foreach (var member in toEnd) member.Leave();
+            ended += toEnd.Count;
+            details.Add(new
+            {
+                offender.UserId,
+                Kept = churchCommunities.Values.First(c => c.OrganisationId == keepOrgId).Name,
+                Removed = toEnd.Select(m => churchCommunities[m.CommunityId].Name).ToArray()
+            });
+        }
+
+        if (apply && ended > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            InvalidateAdminReads();
+        }
+
+        var message = apply
+            ? $"Ended {ended} extra church community membership(s) across {details.Count} account(s)."
+            : $"Found {ended} extra church community membership(s) across {details.Count} account(s). Re-run with apply=true to fix.";
+        return ApiResults.Ok(context, new { Apply = apply, UsersAffected = details.Count, MembershipsEnded = ended, Details = details }, message);
     }
 
     // --- Organisation admin invites ---
