@@ -10,9 +10,44 @@ namespace Mirage.Api.Services;
 // and managers are seeded as Owner/Moderator the first time the community is created.
 internal static class ChurchCommunityService
 {
+    // A user belongs to at most one church at a time (enforced on OrganisationMember join/approve),
+    // so their church-community memberships must never span two organisations. Returns the name of
+    // the other church's community if one is found, so callers can name it in an error.
+    public static async Task<string?> FindOtherChurchCommunityAsync(IMirageDbContext db, Guid userId,
+        Guid organisationId, CancellationToken cancellationToken) =>
+        await db.CommunityMembers.AsNoTracking()
+            .Where(m => m.UserId == userId && m.LeftAt == null
+                && m.Status != CommunityMemberStatus.Removed && m.Status != CommunityMemberStatus.Rejected)
+            .Join(db.Communities.AsNoTracking().Where(c => c.OrganisationId != null && c.OrganisationId != organisationId),
+                m => m.CommunityId, c => c.Id, (m, c) => c.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    // Ends any active membership in another church's auto-managed community. Owner seats belong to
+    // an org's own admin and are left alone.
+    public static async Task<int> LeaveOtherChurchCommunitiesAsync(IMirageDbContext db, Guid userId,
+        Guid organisationId, CancellationToken cancellationToken)
+    {
+        var otherCommunityIds = await db.Communities.AsNoTracking()
+            .Where(c => c.OrganisationId != null && c.OrganisationId != organisationId)
+            .Select(c => c.Id)
+            .ToListAsync(cancellationToken);
+        if (otherCommunityIds.Count == 0) return 0;
+
+        var stale = await db.CommunityMembers
+            .Where(m => m.UserId == userId && m.LeftAt == null && m.Role != CommunityMemberRole.Owner
+                && otherCommunityIds.Contains(m.CommunityId))
+            .ToListAsync(cancellationToken);
+        foreach (var member in stale) member.Leave();
+        return stale.Count;
+    }
+
     public static async Task JoinChurchCommunityAsync(IMirageDbContext db, Guid organisationId, string category,
         Guid userId, CancellationToken cancellationToken)
     {
+        // Their church has changed if they were still sitting in another org's community — the org
+        // membership is the source of truth, so drop the stale one rather than stacking up.
+        await LeaveOtherChurchCommunitiesAsync(db, userId, organisationId, cancellationToken);
+
         var community = await db.Communities
             .SingleOrDefaultAsync(x => x.OrganisationId == organisationId && x.Category == category, cancellationToken);
 

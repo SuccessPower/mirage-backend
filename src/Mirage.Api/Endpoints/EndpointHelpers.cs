@@ -116,9 +116,12 @@ internal static class EndpointHelpers
             .ToListAsync(cancellationToken);
 
         var result = new Dictionary<Guid, OrgBadge>();
-        foreach (var b in memberBadges)
-            result[b.UserId] = new OrgBadge(b.LogoUrl, b.Name);
+        // Admin seats fill in first so that a user's own church membership overrides them: someone
+        // who administers several churches still belongs to exactly one as a member, and that is
+        // the church their profile should name.
         foreach (var b in adminBadges)
+            result[b.UserId] = new OrgBadge(b.LogoUrl, b.Name);
+        foreach (var b in memberBadges)
             result[b.UserId] = new OrgBadge(b.LogoUrl, b.Name);
         return result;
     }

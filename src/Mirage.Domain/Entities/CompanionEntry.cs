@@ -19,9 +19,20 @@ public sealed class CompanionEntry : Entity
     public Guid AuthorUserId { get; private set; }
     public string AnswerText { get; private set; } = string.Empty;
 
+    // Set the first time the linked CompanionPartner reads this entry, so the author can see
+    // their answer landed. Never cleared — a re-read keeps the original timestamp.
+    public DateTimeOffset? PartnerReadAt { get; private set; }
+
     public void Update(string answerText)
     {
         AnswerText = answerText.Trim();
         Touch();
+    }
+
+    public bool MarkReadByPartner(DateTimeOffset readAt)
+    {
+        if (PartnerReadAt is not null) return false;
+        PartnerReadAt = readAt;
+        return true;
     }
 }
