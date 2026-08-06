@@ -6,6 +6,8 @@ namespace Mirage.Domain.Entities;
 // One per user: how often Companion should surface a new prompt, and which prompt is currently
 // "the one to answer". CompanionReminderService advances NextDueAt and pushes a Notification
 // when it elapses; CompanionEndpoints.GetToday assigns CurrentPromptId lazily on first request.
+// The schedule anchors on LastPromptAt (when the current prompt was delivered), so switching
+// cadence back and forth never restarts the clock from "now".
 public sealed class CompanionSubscription : Entity
 {
     private CompanionSubscription() { }
@@ -20,24 +22,29 @@ public sealed class CompanionSubscription : Entity
     public Guid UserId { get; private set; }
     public CompanionCadence Cadence { get; private set; }
     public DateTimeOffset NextDueAt { get; private set; }
+    public DateTimeOffset? LastPromptAt { get; private set; }
     public Guid? CurrentPromptId { get; private set; }
 
     public void SetCadence(CompanionCadence cadence)
     {
         Cadence = cadence;
-        NextDueAt = ComputeNextDueAt(DateTimeOffset.UtcNow, cadence);
+        var now = DateTimeOffset.UtcNow;
+        var next = ComputeNextDueAt(LastPromptAt ?? now, cadence);
+        NextDueAt = next < now ? now : next;
         Touch();
     }
 
     public void AssignPrompt(Guid promptId)
     {
         CurrentPromptId = promptId;
+        LastPromptAt = DateTimeOffset.UtcNow;
         Touch();
     }
 
     public void Advance()
     {
-        NextDueAt = ComputeNextDueAt(DateTimeOffset.UtcNow, Cadence);
+        LastPromptAt = DateTimeOffset.UtcNow;
+        NextDueAt = ComputeNextDueAt(LastPromptAt.Value, Cadence);
         Touch();
     }
 
