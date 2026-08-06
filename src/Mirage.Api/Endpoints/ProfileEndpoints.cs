@@ -506,7 +506,8 @@ internal static class ProfileEndpoints
         profile.Verify();
 
         if (churchSelection.OrganisationId.HasValue)
-            db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
+            await OrganisationMembershipService.AddMemberAsync(db, churchSelection.OrganisationId.Value,
+                userId, churchSelection.BranchId, profile, cancellationToken);
 
         await db.SaveChangesAsync(cancellationToken);
 
@@ -548,7 +549,8 @@ internal static class ProfileEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        // Tracked (not AsNoTracking) so an instant-join church can verify the profile below.
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
 
         if (await db.OrganisationMembers.AnyAsync(x => x.UserId == userId &&
@@ -564,7 +566,8 @@ internal static class ProfileEndpoints
         if (churchSelection.OrganisationId is null)
             return EndpointHelpers.ValidationProblem(context, ("organisationId", "Select or propose a church."));
 
-        db.OrganisationMembers.Add(new OrganisationMember(churchSelection.OrganisationId.Value, userId, churchSelection.BranchId));
+        await OrganisationMembershipService.AddMemberAsync(db, churchSelection.OrganisationId.Value,
+            userId, churchSelection.BranchId, profile, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
         await ChurchCommunityService.JoinChurchCommunityAsync(db, churchSelection.OrganisationId.Value,
