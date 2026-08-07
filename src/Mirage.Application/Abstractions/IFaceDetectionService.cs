@@ -10,11 +10,20 @@ public enum FaceDetectionResult
     Unavailable
 }
 
+// A comparison can fail for reasons that have nothing to do with the two people being different,
+// and telling someone their own face isn't theirs is the worst way to get it wrong. Each photo can
+// individually be unusable (no detectable face, or several faces so there's no single subject to
+// match), and which of the two failed decides who is asked to fix what — blaming a new upload for a
+// years-old photo that no longer analyses cleanly just leaves the member stuck.
 public enum FaceComparisonResult
 {
     SamePerson,
     DifferentPerson,
-    Unavailable
+    Unavailable,
+    NoFaceInFirstPhoto,
+    MultipleFacesInFirstPhoto,
+    NoFaceInSecondPhoto,
+    MultipleFacesInSecondPhoto
 }
 
 // Registration/profile-photo gate: rejects uploads (cartoons, screenshots, blank images) that
