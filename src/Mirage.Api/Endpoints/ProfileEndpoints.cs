@@ -453,6 +453,32 @@ internal static class ProfileEndpoints
         return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }
 
+    // Turns a comparison outcome into the response the member actually reads. Everything that isn't
+    // SamePerson used to collapse into "these are different people", which is both wrong and
+    // unactionable when the real problem was a photo with no detectable face, a group shot, or a
+    // stored photo that no longer analyses cleanly. The two nouns name each side of the comparison
+    // so the message points at the photo that needs changing.
+    private static IResult? FaceComparisonProblem(HttpContext context, FaceComparisonResult comparison,
+        string field, string firstPhoto, string secondPhoto)
+        => comparison switch
+        {
+            FaceComparisonResult.SamePerson => null,
+            FaceComparisonResult.Unavailable => EndpointHelpers.Conflict(context,
+                "Photo identity verification is temporarily unavailable. Please try again in a moment."),
+            FaceComparisonResult.DifferentPerson => EndpointHelpers.ValidationProblem(context, (field,
+                "The people in your photos don't look like the same person. Every photo needs to clearly show you.")),
+            FaceComparisonResult.NoFaceInFirstPhoto => EndpointHelpers.ValidationProblem(context, (field,
+                $"We couldn't find a clear face in {firstPhoto}, so we can't check it against this one. Please replace it with a well-lit photo taken face-on.")),
+            FaceComparisonResult.MultipleFacesInFirstPhoto => EndpointHelpers.ValidationProblem(context, (field,
+                $"We found more than one face in {firstPhoto}, so there's no single person to match against. Please replace it with a photo of just you.")),
+            FaceComparisonResult.NoFaceInSecondPhoto => EndpointHelpers.ValidationProblem(context, (field,
+                $"We couldn't find a clear face in {secondPhoto}. Please use a well-lit photo taken face-on, without sunglasses or a heavy filter.")),
+            FaceComparisonResult.MultipleFacesInSecondPhoto => EndpointHelpers.ValidationProblem(context, (field,
+                $"We found more than one face in {secondPhoto}. Please upload a photo of just you.")),
+            _ => EndpointHelpers.Conflict(context,
+                "Photo identity verification is temporarily unavailable. Please try again in a moment.")
+        };
+
     private static async Task<IResult> UpdateMine(UpdateProfileRequest request, HttpContext context,
         IMirageDbContext db, ProfileImageValidationService imageValidation, CancellationToken cancellationToken)
     {
@@ -474,11 +500,9 @@ internal static class ProfileEndpoints
         {
             var comparison = await imageValidation.AreSamePersonAsync(profile.PhotoUrls[0], request.AvatarUrl,
                 cancellationToken);
-            if (comparison != FaceComparisonResult.SamePerson)
-                return comparison == FaceComparisonResult.Unavailable
-                    ? EndpointHelpers.Conflict(context, "Photo identity verification is temporarily unavailable. Please try again.")
-                    : EndpointHelpers.ValidationProblem(context,
-                        ("avatarUrl", "Your profile photo must show the same person as your existing photos."));
+            var problem = FaceComparisonProblem(context, comparison, "avatarUrl",
+                "your existing profile photo", "this photo");
+            if (problem is not null) return problem;
         }
 
         profile.Update(request.DisplayName, request.City, request.Country, request.Denomination,
@@ -563,12 +587,9 @@ internal static class ProfileEndpoints
             foreach (var photo in photosToCompare)
             {
                 var comparison = await imageValidation.AreSamePersonAsync(cleanedUrls[0], photo, cancellationToken);
-                if (comparison == FaceComparisonResult.Unavailable)
-                    return EndpointHelpers.Conflict(context,
-                        "Photo identity verification is temporarily unavailable. Please try again.");
-                if (comparison == FaceComparisonResult.DifferentPerson)
-                    return EndpointHelpers.ValidationProblem(context,
-                        ("photoUrls", "Every profile photo must clearly show the same person, with exactly one face in each photo."));
+                var problem = FaceComparisonProblem(context, comparison, "photoUrls",
+                    "your first photo", "one of your photos");
+                if (problem is not null) return problem;
             }
         }
 

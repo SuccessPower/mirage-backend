@@ -13,6 +13,17 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
 {
     private const float ScoreThreshold = 0.5f;
     private const double CosineSimilarityThreshold = 0.363;
+    private const int LandmarkCount = 5;
+
+    // SFace's canonical 112x112 landmark template, as interleaved x/y pairs.
+    private static readonly double[] AlignmentTemplate =
+    [
+        38.2946, 51.6963,
+        73.5318, 51.5014,
+        56.0252, 71.7366,
+        41.5493, 92.3655,
+        70.7299, 92.2041
+    ];
 
     private readonly string _modelPath;
     private readonly string _recognitionModelPath;
@@ -55,11 +66,20 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
         {
             using var first = Cv2.ImDecode(firstImageBytes, ImreadModes.Color);
             using var second = Cv2.ImDecode(secondImageBytes, ImreadModes.Color);
-            if (first.Empty() || second.Empty()) return Task.FromResult(FaceComparisonResult.DifferentPerson);
+            // An undecodable image is a broken/unsupported file, not evidence about who is in it.
+            if (first.Empty()) return Task.FromResult(FaceComparisonResult.NoFaceInFirstPhoto);
+            if (second.Empty()) return Task.FromResult(FaceComparisonResult.NoFaceInSecondPhoto);
 
-            using var firstFace = DetectSingleFace(first);
-            using var secondFace = DetectSingleFace(second);
-            if (firstFace is null || secondFace is null) return Task.FromResult(FaceComparisonResult.DifferentPerson);
+            using var firstFace = DetectSingleFace(first, out var firstFaceCount);
+            if (firstFace is null)
+                return Task.FromResult(firstFaceCount == 0
+                    ? FaceComparisonResult.NoFaceInFirstPhoto
+                    : FaceComparisonResult.MultipleFacesInFirstPhoto);
+            using var secondFace = DetectSingleFace(second, out var secondFaceCount);
+            if (secondFace is null)
+                return Task.FromResult(secondFaceCount == 0
+                    ? FaceComparisonResult.NoFaceInSecondPhoto
+                    : FaceComparisonResult.MultipleFacesInSecondPhoto);
 
             using var firstCrop = AlignFace(first, firstFace);
             using var secondCrop = AlignFace(second, secondFace);
@@ -68,7 +88,9 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
             using var firstFeature = ExtractFeature(net, firstCrop);
             using var secondFeature = ExtractFeature(net, secondCrop);
             var denominator = Cv2.Norm(firstFeature) * Cv2.Norm(secondFeature);
-            if (denominator == 0) return Task.FromResult(FaceComparisonResult.DifferentPerson);
+            // A zero-norm embedding means the model produced nothing usable — a failure of the
+            // check, not a verdict on the two faces.
+            if (denominator == 0) return Task.FromResult(FaceComparisonResult.Unavailable);
             var similarity = firstFeature.Dot(secondFeature) / denominator;
             return Task.FromResult(similarity >= CosineSimilarityThreshold
                 ? FaceComparisonResult.SamePerson
@@ -81,30 +103,64 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
         }
     }
 
-    private Mat? DetectSingleFace(Mat image)
+    // Null when there isn't exactly one subject to match; faceCount lets the caller say which of the
+    // two problems it was rather than lumping both under a generic rejection.
+    private Mat? DetectSingleFace(Mat image, out int faceCount)
     {
         using var detector = FaceDetectorYN.Create(_modelPath, string.Empty, image.Size(), ScoreThreshold);
         using var faces = new Mat();
         detector.Detect(image, faces);
+        faceCount = faces.Rows;
         if (faces.Rows != 1) return null;
         return faces.Row(0).Clone();
     }
 
     private static Mat AlignFace(Mat image, Mat face)
     {
-        using var source = Mat.FromArray(
-            face.At<float>(0, 4), face.At<float>(0, 5),
-            face.At<float>(0, 6), face.At<float>(0, 7),
-            face.At<float>(0, 8), face.At<float>(0, 9),
-            face.At<float>(0, 10), face.At<float>(0, 11),
-            face.At<float>(0, 12), face.At<float>(0, 13)).Reshape(1, 5);
-        using var target = Mat.FromArray(
-            38.2946f, 51.6963f, 73.5318f, 51.5014f, 56.0252f,
-            71.7366f, 41.5493f, 92.3655f, 70.7299f, 92.2041f).Reshape(1, 5);
-        using var inliers = new Mat();
-        using var transform = Cv2.EstimateAffinePartial2D(source, target, inliers);
-        if (transform is null || transform.Empty())
+        // Closed-form least-squares similarity transform (uniform scale + rotation + translation)
+        // mapping the five detected landmarks onto SFace's canonical template. Cv2.EstimateAffinePartial2D
+        // computes the same thing, but its RANSAC pass over only five points asserts inside native
+        // OpenCV on ordinary photos, which surfaced to users as "verification temporarily unavailable".
+        // Solving it directly is deterministic, allocation-free and can only fail on degenerate points.
+        double sourceMeanX = 0, sourceMeanY = 0, targetMeanX = 0, targetMeanY = 0;
+        Span<double> sourceX = stackalloc double[LandmarkCount];
+        Span<double> sourceY = stackalloc double[LandmarkCount];
+        for (var i = 0; i < LandmarkCount; i++)
+        {
+            // YuNet emits the landmarks (right eye, left eye, nose tip, right and left mouth corner)
+            // as interleaved x/y pairs in columns 4..13 of the detection row.
+            sourceX[i] = face.At<float>(0, 4 + i * 2);
+            sourceY[i] = face.At<float>(0, 5 + i * 2);
+            sourceMeanX += sourceX[i];
+            sourceMeanY += sourceY[i];
+            targetMeanX += AlignmentTemplate[i * 2];
+            targetMeanY += AlignmentTemplate[i * 2 + 1];
+        }
+        sourceMeanX /= LandmarkCount;
+        sourceMeanY /= LandmarkCount;
+        targetMeanX /= LandmarkCount;
+        targetMeanY /= LandmarkCount;
+
+        double dot = 0, cross = 0, sourceVariance = 0;
+        for (var i = 0; i < LandmarkCount; i++)
+        {
+            var sx = sourceX[i] - sourceMeanX;
+            var sy = sourceY[i] - sourceMeanY;
+            var tx = AlignmentTemplate[i * 2] - targetMeanX;
+            var ty = AlignmentTemplate[i * 2 + 1] - targetMeanY;
+            dot += sx * tx + sy * ty;
+            cross += sx * ty - sy * tx;
+            sourceVariance += sx * sx + sy * sy;
+        }
+        if (sourceVariance <= double.Epsilon || !double.IsFinite(dot) || !double.IsFinite(cross))
             throw new InvalidOperationException("Could not align the detected face.");
+
+        var scaledCos = dot / sourceVariance;
+        var scaledSin = cross / sourceVariance;
+        using var transform = new Mat(2, 3, MatType.CV_64FC1);
+        transform.SetArray(
+            scaledCos, -scaledSin, targetMeanX - (scaledCos * sourceMeanX - scaledSin * sourceMeanY),
+            scaledSin, scaledCos, targetMeanY - (scaledSin * sourceMeanX + scaledCos * sourceMeanY));
         var aligned = new Mat();
         Cv2.WarpAffine(image, aligned, transform, new Size(112, 112));
         return aligned;
@@ -112,9 +168,14 @@ public sealed class YuNetFaceDetectionService : IFaceDetectionService
 
     private static Mat ExtractFeature(Net net, Mat face)
     {
-        using var blob = CvDnn.BlobFromImage(face, 1d / 127.5d, new Size(112, 112),
-            new Scalar(127.5, 127.5, 127.5), swapRB: true, crop: false);
+        // SFace was trained through OpenCV's own FaceRecognizerSF::feature, which feeds the aligned
+        // 112x112 crop in as-is: raw 0-255 BGR, no scaling and no mean subtraction. Normalising to
+        // [-1,1] or swapping to RGB here produces embeddings off the manifold the model learned, so
+        // cosine distances between two photos of the same person land well below the 0.363 threshold
+        // that OpenCV publishes for this model — i.e. it rejects the same face.
+        using var blob = CvDnn.BlobFromImage(face, 1d, new Size(112, 112),
+            new Scalar(0, 0, 0), swapRB: false, crop: false);
         net.SetInput(blob);
-        return net.Forward();
+        return net.Forward().Clone();
     }
 }
