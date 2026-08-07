@@ -144,6 +144,7 @@ public sealed class UserProfile : Entity
     }
 
     public const int MaxPhotos = 6;
+    public const int MinimumRequiredPhotos = 2;
 
     public void SetPhotos(string[] photoUrls)
     {

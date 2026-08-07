@@ -36,7 +36,8 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         NotificationType.ProfileVerified,
         NotificationType.VendorApproved,
         NotificationType.VendorRejected,
-        NotificationType.DateOfBirthInvalid
+        NotificationType.DateOfBirthInvalid,
+        NotificationType.ProfilePhotosRequired
     ];
 
     public async Task NotifyAsync(Guid userId, NotificationType type, string title, string body,

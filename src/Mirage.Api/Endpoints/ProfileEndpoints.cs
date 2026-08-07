@@ -97,7 +97,8 @@ internal static class ProfileEndpoints
 
         // AvatarUrl can only ever be set to a URL that already passed face-detection
         // (UpdateMine), so this alone keeps caricatures/blank photos out of Discovery.
-        query = query.Where(x => x.AvatarUrl != null && x.AvatarUrl != "");
+        query = query.Where(x => x.AvatarUrl != null && x.AvatarUrl != ""
+            && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos);
 
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
@@ -133,6 +134,23 @@ internal static class ProfileEndpoints
             myCountry = mine?.Country;
             mySex = mine?.Sex;
             viewerIsMarried = mine?.RelationshipStatus == RelationshipStatus.Married;
+
+            var viewerHasRequiredPhotos = await db.Profiles.AsNoTracking()
+                .AnyAsync(x => x.UserId == me && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos,
+                    cancellationToken);
+            if (!viewerHasRequiredPhotos)
+            {
+                var viewedIds = db.DiscoveryProfileViews.AsNoTracking()
+                    .Where(x => x.ViewerUserId == me).Select(x => x.ProfileUserId);
+                var viewedCount = await viewedIds.CountAsync(cancellationToken);
+                if (viewedCount >= 2)
+                    query = query.Where(x => viewedIds.Contains(x.UserId));
+                else
+                {
+                    page = 1;
+                    pageSize = Math.Min(pageSize, 2 - viewedCount);
+                }
+            }
             if (mine?.DiscoveryScope == DiscoveryScope.Country && mine.CountryCode is not null)
                 query = query.Where(x => x.CountryCode == mine.CountryCode);
             else if (mine?.DiscoveryScope == DiscoveryScope.Continent && mine.ContinentCode is not null)
@@ -210,6 +228,21 @@ internal static class ProfileEndpoints
             .ThenByDescending(x => x.IsVerified)
             .ThenByDescending(x => x.CreatedAt)
             .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        if (currentUserId.HasValue)
+        {
+            var viewerHasRequiredPhotos = await db.Profiles.AsNoTracking().AnyAsync(
+                x => x.UserId == currentUserId.Value && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos,
+                cancellationToken);
+            if (!viewerHasRequiredPhotos)
+            {
+                var alreadyViewed = await db.DiscoveryProfileViews.Where(x => x.ViewerUserId == currentUserId.Value)
+                    .Select(x => x.ProfileUserId).ToListAsync(cancellationToken);
+                foreach (var profile in pagedProfiles.Items.Where(x => !alreadyViewed.Contains(x.UserId)))
+                    db.DiscoveryProfileViews.Add(new DiscoveryProfileView(currentUserId.Value, profile.UserId));
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
         var recommendedUserIds = await recommendedIds
             .Where(userId => pagedProfiles.Items.Select(profile => profile.UserId).Contains(userId))
             .ToListAsync(cancellationToken);
@@ -251,6 +284,28 @@ internal static class ProfileEndpoints
         var visitorUserId = context.User.GetUserId();
         if (visitorUserId != userId)
         {
+            if (profile.PhotoUrls.Length < UserProfile.MinimumRequiredPhotos)
+                return EndpointHelpers.NotFound(context, "Profile was not found.");
+
+            var visitorHasRequiredPhotos = await db.Profiles.AsNoTracking().AnyAsync(
+                x => x.UserId == visitorUserId && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos,
+                cancellationToken);
+            if (!visitorHasRequiredPhotos)
+            {
+                var existingView = await db.DiscoveryProfileViews.AnyAsync(
+                    x => x.ViewerUserId == visitorUserId && x.ProfileUserId == userId, cancellationToken);
+                if (!existingView)
+                {
+                    var views = await db.DiscoveryProfileViews.CountAsync(
+                        x => x.ViewerUserId == visitorUserId, cancellationToken);
+                    if (views >= 2)
+                        return EndpointHelpers.Forbidden(context,
+                            "Upload at least two matching photos of yourself to view more profiles.");
+                    db.DiscoveryProfileViews.Add(new DiscoveryProfileView(visitorUserId, userId));
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+            }
+
             try
             {
                 await RecordProfileVisitAsync(userId, visitorUserId, profile, account.Email, db, notifications,
@@ -350,7 +405,8 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> GetMine(HttpContext context, MirageDbContext db,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, NotificationService notifications,
+        IConfiguration configuration, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
@@ -366,6 +422,23 @@ internal static class ProfileEndpoints
             .Select(x => new { x.Id, x.IsApproved })
             .SingleOrDefaultAsync(cancellationToken);
         var badge = await db.GetOrgBadgeAsync(userId, cancellationToken);
+        var hasRequiredPhotos = profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos;
+        if (!hasRequiredPhotos)
+        {
+            var reminderCutoff = DateTimeOffset.UtcNow.AddHours(-24);
+            var recentlyReminded = await db.Notifications.AsNoTracking().AnyAsync(x => x.UserId == userId
+                && x.Type == NotificationType.ProfilePhotosRequired && x.CreatedAt >= reminderCutoff,
+                cancellationToken);
+            if (!recentlyReminded)
+                await notifications.NotifyAsync(userId, NotificationType.ProfilePhotosRequired,
+                    "Add two photos to unlock Mirage",
+                    "Upload at least two clear photos of yourself. Until then, your profile is hidden and you can view only two profiles.",
+                    cancellationToken: cancellationToken,
+                    actionUrl: $"{configuration["FrontendUrl"] ?? "https://themiragehub.com"}/profile/edit",
+                    actionLabel: "Upload photos");
+        }
+        var viewedCount = hasRequiredPhotos ? 0 : await db.DiscoveryProfileViews.AsNoTracking()
+            .CountAsync(x => x.ViewerUserId == userId, cancellationToken);
         var response = profile.ToResponse(recommended, email, badge) with
         {
             Roles = roles,
@@ -373,7 +446,9 @@ internal static class ProfileEndpoints
             HasApprovedMentorProfile = mentor?.IsApproved == true,
             IsChurchAdmin = roles.Contains(MirageRoles.ChurchAdmin) || roles.Contains(MirageRoles.PlatformAdmin),
             IsCounsellor = roles.Contains(MirageRoles.Counsellor),
-            EmailConfirmed = user?.EmailConfirmed
+            EmailConfirmed = user?.EmailConfirmed,
+            HasRequiredProfilePhotos = hasRequiredPhotos,
+            DiscoveryProfilesRemaining = hasRequiredPhotos ? int.MaxValue : Math.Max(0, 2 - viewedCount)
         };
         return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }
@@ -393,6 +468,17 @@ internal static class ProfileEndpoints
         {
             return EndpointHelpers.ValidationProblem(context,
                 ("avatarUrl", "We couldn't detect a real, human face in this photo. Please upload a clear photo of your face."));
+        }
+        if (!string.IsNullOrWhiteSpace(request.AvatarUrl) && request.AvatarUrl != profile.AvatarUrl
+            && profile.PhotoUrls.Length > 0)
+        {
+            var comparison = await imageValidation.AreSamePersonAsync(profile.PhotoUrls[0], request.AvatarUrl,
+                cancellationToken);
+            if (comparison != FaceComparisonResult.SamePerson)
+                return comparison == FaceComparisonResult.Unavailable
+                    ? EndpointHelpers.Conflict(context, "Photo identity verification is temporarily unavailable. Please try again.")
+                    : EndpointHelpers.ValidationProblem(context,
+                        ("avatarUrl", "Your profile photo must show the same person as your existing photos."));
         }
 
         profile.Update(request.DisplayName, request.City, request.Country, request.Denomination,
@@ -466,6 +552,24 @@ internal static class ProfileEndpoints
             if (!await imageValidation.IsValidHumanPhotoAsync(url, cancellationToken))
                 return EndpointHelpers.ValidationProblem(context,
                     ("photoUrls", "One of your photos doesn't show a real, human face. Please upload clear photos of yourself."));
+        }
+
+        var cleanedUrls = request.PhotoUrls.Select(x => x.Trim()).Where(x => x.Length > 0)
+            .Distinct(StringComparer.Ordinal).ToArray();
+        if (cleanedUrls.Length >= UserProfile.MinimumRequiredPhotos)
+        {
+            var photosToCompare = cleanedUrls.Skip(1).ToList();
+            if (!string.IsNullOrWhiteSpace(profile.AvatarUrl)) photosToCompare.Add(profile.AvatarUrl);
+            foreach (var photo in photosToCompare)
+            {
+                var comparison = await imageValidation.AreSamePersonAsync(cleanedUrls[0], photo, cancellationToken);
+                if (comparison == FaceComparisonResult.Unavailable)
+                    return EndpointHelpers.Conflict(context,
+                        "Photo identity verification is temporarily unavailable. Please try again.");
+                if (comparison == FaceComparisonResult.DifferentPerson)
+                    return EndpointHelpers.ValidationProblem(context,
+                        ("photoUrls", "Every profile photo must clearly show the same person, with exactly one face in each photo."));
+            }
         }
 
         try { profile.SetPhotos(request.PhotoUrls); }

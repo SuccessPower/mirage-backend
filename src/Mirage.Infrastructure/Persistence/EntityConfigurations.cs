@@ -472,6 +472,18 @@ public sealed class ProfileVisitConfiguration : IEntityTypeConfiguration<Profile
     }
 }
 
+public sealed class DiscoveryProfileViewConfiguration : IEntityTypeConfiguration<DiscoveryProfileView>
+{
+    public void Configure(EntityTypeBuilder<DiscoveryProfileView> b)
+    {
+        b.ToTable("discovery_profile_views");
+        b.HasIndex(x => new { x.ViewerUserId, x.ProfileUserId }).IsUnique();
+        b.HasIndex(x => new { x.ViewerUserId, x.CreatedAt });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ViewerUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ProfileUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CounsellingMessageConfiguration : IEntityTypeConfiguration<CounsellingMessage>
 {
     public void Configure(EntityTypeBuilder<CounsellingMessage> b)
