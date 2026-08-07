@@ -134,7 +134,8 @@ public enum NotificationType
     CommunityMemberRemoved = 35,
     CompanionPromptDue = 36,
     CompanionPartnerInvite = 37,
-    CompanionPartnerApproved = 38
+    CompanionPartnerApproved = 38,
+    ProfilePhotosRequired = 39
 }
 
 public enum CelebrationType

@@ -1425,6 +1425,36 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("date_request_comments", "mirage");
                 });
 
+            modelBuilder.Entity("Mirage.Domain.Entities.DiscoveryProfileView", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProfileUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ViewerUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileUserId");
+
+                    b.HasIndex("ViewerUserId", "CreatedAt");
+
+                    b.HasIndex("ViewerUserId", "ProfileUserId")
+                        .IsUnique();
+
+                    b.ToTable("discovery_profile_views", "mirage");
+                });
+
             modelBuilder.Entity("Mirage.Domain.Entities.EventTicket", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3499,6 +3529,21 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasOne("Mirage.Domain.Entities.DateRequest", null)
                         .WithMany()
                         .HasForeignKey("DateRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Mirage.Domain.Entities.DiscoveryProfileView", b =>
+                {
+                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ProfileUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ViewerUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

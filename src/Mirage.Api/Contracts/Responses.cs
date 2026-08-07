@@ -69,7 +69,10 @@ public sealed record ProfileResponse(
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
     string[]? PreferredCountryCodes = null,
     DateOnly? WeddingAnniversaryDate = null,
-    bool CelebrationOptOut = false);
+    bool CelebrationOptOut = false,
+    bool HasRequiredProfilePhotos = false,
+    int RequiredProfilePhotoCount = 2,
+    int DiscoveryProfilesRemaining = 0);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,

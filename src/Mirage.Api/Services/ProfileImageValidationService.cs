@@ -9,6 +9,23 @@ namespace Mirage.Api.Services;
 public sealed class ProfileImageValidationService(
     HttpClient http, IFaceDetectionService faceDetection, ILogger<ProfileImageValidationService> logger)
 {
+    public async Task<FaceComparisonResult> AreSamePersonAsync(string firstImageUrl, string secondImageUrl,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var first = http.GetByteArrayAsync(WithAutoRotation(firstImageUrl), cancellationToken);
+            var second = http.GetByteArrayAsync(WithAutoRotation(secondImageUrl), cancellationToken);
+            await Task.WhenAll(first, second);
+            return await faceDetection.IsSamePersonAsync(await first, await second, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Could not download profile photos for face comparison.");
+            return FaceComparisonResult.Unavailable;
+        }
+    }
+
     public async Task<bool> IsValidHumanPhotoAsync(string imageUrl, CancellationToken cancellationToken)
     {
         try

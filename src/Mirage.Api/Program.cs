@@ -112,6 +112,8 @@ builder.Services.AddScoped<CelebrationPostService>();
 builder.Services.AddHostedService<CelebrationPostWorker>();
 builder.Services.AddScoped<CompanionReminderService>();
 builder.Services.AddHostedService<CompanionReminderWorker>();
+builder.Services.AddScoped<ProfilePhotoReminderService>();
+builder.Services.AddHostedService<ProfilePhotoReminderWorker>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
