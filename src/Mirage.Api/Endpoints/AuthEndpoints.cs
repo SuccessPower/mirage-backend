@@ -129,12 +129,13 @@ internal static class AuthEndpoints
                 db.Profiles.Add(newProfile);
                 db.RefreshTokens.Add(refreshToken);
                 if (churchSelection.OrganisationId.HasValue)
-                    db.OrganisationMembers.Add(new OrganisationMember(
-                        churchSelection.OrganisationId.Value, user.Id, churchSelection.BranchId));
+                    await OrganisationMembershipService.AddMemberAsync(db, churchSelection.OrganisationId.Value,
+                        user.Id, churchSelection.BranchId, newProfile, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
 
                 // Joining a church's community is immediate — it isn't gated on the ChurchAdmin
-                // approving the OrganisationMember row above, which stays Pending for that review.
+                // approving the OrganisationMember row above (which only stays Pending when the
+                // org requires approval or is itself still under review).
                 if (churchSelection.OrganisationId.HasValue)
                 {
                     await ChurchCommunityService.JoinChurchCommunityAsync(db, churchSelection.OrganisationId.Value,
