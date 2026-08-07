@@ -101,6 +101,8 @@ builder.Services.AddMemoryCache();
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<NotificationService>();
+// Singleton: connection state has to outlive the per-connection hub instances that mutate it.
+builder.Services.AddSingleton<PresenceTracker>();
 builder.Services.AddScoped<JitsiService>();
 builder.Services.AddScoped<WelcomeEmailBackfillService>();
 builder.Services.AddHostedService<WelcomeEmailBackfillWorker>();

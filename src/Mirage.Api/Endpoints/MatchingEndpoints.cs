@@ -37,7 +37,7 @@ internal static class MatchingEndpoints
 
     private static async Task<IResult> Like(LikeProfileRequest request, HttpContext context,
         IMirageDbContext db, NotificationService notifications, UserManager<ApplicationUser> userManager,
-        CancellationToken cancellationToken)
+        IConfiguration configuration, CancellationToken cancellationToken)
     {
         var sourceUserId = context.User.GetUserId();
         if (sourceUserId == request.TargetUserId)
@@ -131,7 +131,7 @@ internal static class MatchingEndpoints
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
                 "New chat request", $"{sourceName} liked your profile and wants to start chatting.",
-                match.Id, "Match", cancellationToken);
+                match.Id, "Match", cancellationToken, InboxUrl(configuration), "Review request");
         }
         else if (match.Status == MatchStatus.Closed)
         {
@@ -143,7 +143,7 @@ internal static class MatchingEndpoints
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(request.TargetUserId, NotificationType.ChatRequestReceived,
                 "New chat request", $"{sourceName} wants to reconnect and start chatting again.",
-                match.Id, "Match", cancellationToken);
+                match.Id, "Match", cancellationToken, InboxUrl(configuration), "Review request");
         }
         else if (match.Status == MatchStatus.PendingRequest && match.ChatRequestedByUserId != sourceUserId)
         {
@@ -189,24 +189,24 @@ internal static class MatchingEndpoints
     }
 
     private static async Task<IResult> GetMatches(HttpContext context, IMirageDbContext db,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, PresenceTracker presence, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var matches = await db.Matches.AsNoTracking()
             .Where(x => x.User1Id == userId || x.User2Id == userId)
             .OrderByDescending(x => x.MatchedAt).ToListAsync(cancellationToken);
-        var response = await ToMatchResponsesAsync(matches, userId, db, userManager, cancellationToken);
+        var response = await ToMatchResponsesAsync(matches, userId, db, userManager, presence, cancellationToken);
         return ApiResults.Ok(context, response, "Matches retrieved successfully.");
     }
 
     private static async Task<IResult> GetMatch(Guid id, HttpContext context, IMirageDbContext db,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, PresenceTracker presence, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var match = await db.Matches.AsNoTracking().SingleOrDefaultAsync(
             x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
-        var response = (await ToMatchResponsesAsync([match], userId, db, userManager, cancellationToken)).SingleOrDefault();
+        var response = (await ToMatchResponsesAsync([match], userId, db, userManager, presence, cancellationToken)).SingleOrDefault();
         return response is null
             ? EndpointHelpers.NotFound(context, "Match was not found.")
             : ApiResults.Ok(context, response, "Match retrieved successfully.");
@@ -215,17 +215,21 @@ internal static class MatchingEndpoints
     // Matches carry only the two user ids — enrich with the other party's display name/avatar
     // so the client doesn't have to fan out N extra profile lookups per match list render.
     private static async Task<List<MatchResponse>> ToMatchResponsesAsync(List<Match> matches, Guid userId,
-        IMirageDbContext db, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        IMirageDbContext db, UserManager<ApplicationUser> userManager, PresenceTracker presence,
+        CancellationToken cancellationToken)
     {
         var otherIds = matches.Select(m => m.User1Id == userId ? m.User2Id : m.User1Id).Distinct().ToList();
         var approvedSpouseIds = await db.Couples.AsNoTracking()
             .Where(c => c.Status == CoupleStatus.Approved && (c.User1Id == userId || c.User2Id == userId))
             .Select(c => c.User1Id == userId ? c.User2Id : c.User1Id)
             .ToListAsync(cancellationToken);
-        var activeIds = await userManager.Users.AsNoTracking()
+        // LastSeenAt rides along with the active check so a match list can render "online" or
+        // "last seen …" without a second round trip per row.
+        var activeUsers = await userManager.Users.AsNoTracking()
             .Where(u => otherIds.Contains(u.Id) && u.IsActive)
-            .Select(u => u.Id)
-            .ToListAsync(cancellationToken);
+            .Select(u => new { u.Id, u.LastSeenAt })
+            .ToDictionaryAsync(u => u.Id, u => u.LastSeenAt, cancellationToken);
+        var activeIds = activeUsers.Keys.ToList();
         // Married-married Friendship matches (see MatchingEndpoints.Like) legitimately pair two
         // married non-spouses, so the married-profile guard below must not hide those from a
         // married viewer — only from an unmarried one (who should never have such a match anyway).
@@ -246,9 +250,11 @@ internal static class MatchingEndpoints
             profiles.TryGetValue(otherId, out var profile);
             if (profile is null) return null;
             var badge = badges.GetValueOrDefault(otherId);
+            var isOnline = presence.IsOnline(otherId);
             return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
                 profile?.IsVerified ?? false, profile?.RelationshipStatus, m.Status, m.ChatRequestedByUserId,
-                m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName, m.ClosedByUserId);
+                m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName, m.ClosedByUserId,
+                isOnline, isOnline ? null : activeUsers.GetValueOrDefault(otherId));
         }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
@@ -293,7 +299,8 @@ internal static class MatchingEndpoints
     // Either party can send the first chat request; the other party then approves
     // (opens the thread) or declines by closing the match via the existing Close endpoint.
     private static async Task<IResult> RequestChat(Guid id, HttpContext context, IMirageDbContext db,
-        NotificationService notifications, UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        NotificationService notifications, UserManager<ApplicationUser> userManager, IConfiguration configuration,
+        CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var emailForbidden = await EndpointHelpers.RequireEmailConfirmedAsync(context, userId, userManager,
@@ -335,7 +342,8 @@ internal static class MatchingEndpoints
         var requesterName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
         await notifications.NotifyAsync(otherUserId, NotificationType.ChatRequestReceived, "New chat request",
-            $"{requesterName} wants to start chatting with you.", match.Id, "Match", cancellationToken);
+            $"{requesterName} wants to start chatting with you.", match.Id, "Match", cancellationToken,
+            InboxUrl(configuration), "Review request");
 
         return ApiResults.Ok(context, new { match.Id, match.Status, match.ChatRequestedByUserId },
             "Chat request sent successfully.");
@@ -527,4 +535,9 @@ internal static class MatchingEndpoints
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { marked = unread.Count }, "Messages marked as read.");
     }
+
+    // Chat requests are accepted or declined from the inbox, so that is where a notification
+    // email should land — not on the requester's profile.
+    private static string InboxUrl(IConfiguration configuration) =>
+        $"{(configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/')}/inbox";
 }
