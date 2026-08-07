@@ -105,7 +105,8 @@ public static class EmailTemplates
         [NotificationType.GatheringInviteDeclined] = ("Gathering invite", Amber),
         [NotificationType.ProfileVerified] = ("Verification", Teal),
         [NotificationType.DateOfBirthInvalid] = ("Profile", Amber),
-        [NotificationType.ProfilePhotosRequired] = ("Profile photos required", Amber)
+        [NotificationType.ProfilePhotosRequired] = ("Profile photos required", Amber),
+        [NotificationType.ProfilePhotosComplete] = ("Profile photos approved", Teal)
     };
 
     public static bool HasTemplate(NotificationType type) => TypeLabels.ContainsKey(type);
