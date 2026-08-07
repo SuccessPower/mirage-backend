@@ -434,7 +434,7 @@ internal static class ProfileEndpoints
                     "Add two photos to unlock Mirage",
                     "Upload at least two clear photos of yourself. Until then, your profile is hidden and you can view only two profiles.",
                     cancellationToken: cancellationToken,
-                    actionUrl: $"{configuration["FrontendUrl"] ?? "https://themiragehub.com"}/profile/edit",
+                    actionUrl: $"{FrontendBaseUrl(configuration)}/profile/edit",
                     actionLabel: "Upload photos");
         }
         var viewedCount = hasRequiredPhotos ? 0 : await db.DiscoveryProfileViews.AsNoTracking()
@@ -452,6 +452,12 @@ internal static class ProfileEndpoints
         };
         return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }
+
+    // "Frontend:BaseUrl" is the key that's actually set in appsettings and that the email layer
+    // itself reads; the flat "FrontendUrl" some call sites used isn't configured anywhere, so those
+    // links always silently fell through to the hardcoded default.
+    private static string FrontendBaseUrl(IConfiguration configuration) =>
+        configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com";
 
     // Turns a comparison outcome into the response the member actually reads. Everything that isn't
     // SamePerson used to collapse into "these are different people", which is both wrong and
@@ -565,10 +571,13 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> UpdateMyPhotos(SetProfilePhotosRequest request, HttpContext context,
-        IMirageDbContext db, ProfileImageValidationService imageValidation, CancellationToken cancellationToken)
+        IMirageDbContext db, ProfileImageValidationService imageValidation, NotificationService notifications,
+        IConfiguration configuration, CancellationToken cancellationToken)
     {
-        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
+        var userId = context.User.GetUserId();
+        var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
+        var hadRequiredPhotos = profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos;
 
         var newUrls = request.PhotoUrls.Except(profile.PhotoUrls).ToArray();
         foreach (var url in newUrls)
@@ -596,6 +605,24 @@ internal static class ProfileEndpoints
         try { profile.SetPhotos(request.PhotoUrls); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         await db.SaveChangesAsync(cancellationToken);
+
+        // Crossing the photo threshold is the moment the account stops being restricted, so it's
+        // worth telling people out-of-band rather than leaving them to notice. Only on the crossing,
+        // and only once ever: someone who swaps a photo, or drops to one and back, has already had
+        // this news and doesn't need it again.
+        if (!hadRequiredPhotos && profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos)
+        {
+            var alreadyCongratulated = await db.Notifications.AsNoTracking().AnyAsync(
+                x => x.UserId == userId && x.Type == NotificationType.ProfilePhotosComplete, cancellationToken);
+            if (!alreadyCongratulated)
+                await notifications.NotifyAsync(userId, NotificationType.ProfilePhotosComplete,
+                    "Your photos are approved — you're fully unlocked",
+                    "Your photos passed our checks, so your profile is now visible to everyone on Mirage and you can browse as many profiles as you like. No more preview limit.",
+                    cancellationToken: cancellationToken,
+                    actionUrl: $"{FrontendBaseUrl(configuration)}/hub",
+                    actionLabel: "Start exploring");
+        }
+
         return ApiResults.Ok(context, new { profile.UserId, profile.PhotoUrls }, "Profile photos updated successfully.");
     }
 

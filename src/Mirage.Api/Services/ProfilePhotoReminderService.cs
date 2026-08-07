@@ -22,7 +22,9 @@ public sealed class ProfilePhotoReminderService(MirageDbContext db, Notification
             .Take(batchSize)
             .ToListAsync(cancellationToken);
 
-        var frontendUrl = configuration["FrontendUrl"] ?? "https://themiragehub.com";
+        // "Frontend:BaseUrl" is the configured key; the flat "FrontendUrl" this used isn't set
+        // anywhere, so every reminder link fell through to the hardcoded default.
+        var frontendUrl = configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com";
         foreach (var userId in candidates)
             await notifications.NotifyAsync(userId, NotificationType.ProfilePhotosRequired,
                 "Add two photos to unlock Mirage",
