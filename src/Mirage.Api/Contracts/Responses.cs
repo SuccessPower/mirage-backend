@@ -533,7 +533,10 @@ public sealed record MatchResponse(
     DateTimeOffset? LastActivityAt,
     string? OtherOrgBadgeUrl = null,
     string? OtherOrgName = null,
-    Guid? ClosedByUserId = null);
+    Guid? ClosedByUserId = null,
+    // Presence is in-memory and per-process; OtherLastSeenAt is only meaningful while offline.
+    bool OtherIsOnline = false,
+    DateTimeOffset? OtherLastSeenAt = null);
 
 // "Mixed" collapses Male-Female and Female-Male since actor/target order carries no meaning
 // for a gender-pair breakdown; "Unknown" covers events where either party's Sex was unset.

@@ -12,10 +12,16 @@ namespace Mirage.Api.Services;
 public sealed class NotificationService(IMirageDbContext db, IHubContext<NotificationHub> hub,
     IEmailService email, UserManager<ApplicationUser> userManager)
 {
-    // High-signal events worth an email; noisy/high-frequency ones (likes, mentions, chat/session
-    // messages) stay in-app only so users aren't spammed.
+    // High-signal events worth an email; noisy/high-frequency ones (likes, mentions, mentor and
+    // counselling session chatter) stay in-app only so users aren't spammed.
+    //
+    // NewMessage is on this list but is not high-frequency in practice: ChatHub only raises it
+    // when the recipient is offline and has no unread message from that sender waiting, so a
+    // whole conversation produces at most one email until it is read.
     private static readonly HashSet<NotificationType> EmailableTypes =
     [
+        NotificationType.NewMessage,
+        NotificationType.ChatRequestReceived,
         NotificationType.GatheringInviteReceived,
         NotificationType.GatheringInviteAccepted,
         NotificationType.MembershipApproved,

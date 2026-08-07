@@ -9,6 +9,10 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? WelcomeEmailSentAt { get; set; }
+
+    // Stamped when the user's last realtime connection drops, so chat peers can show
+    // "last seen 10:42" once they go offline. Null means never connected since the feature shipped.
+    public DateTimeOffset? LastSeenAt { get; set; }
 }
 
 public static class MirageRoles

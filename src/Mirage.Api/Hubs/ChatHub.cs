@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Mirage.Api.Services;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Persistence;
@@ -9,13 +10,18 @@ using Mirage.Infrastructure.Persistence;
 namespace Mirage.Api.Hubs;
 
 [Authorize]
-public sealed class ChatHub(MirageDbContext db) : Hub
+public sealed class ChatHub(
+    MirageDbContext db,
+    PresenceTracker presence,
+    NotificationService notifications,
+    IConfiguration configuration) : Hub
 {
     // Called when a client connects — join all active match groups immediately
     // so messages arrive regardless of which conversation the client has open.
     public override async Task OnConnectedAsync()
     {
         var userId = GetUserId();
+        var cameOnline = presence.Connect(userId, Context.ConnectionId);
         var matchIds = await db.Matches.AsNoTracking()
             .Where(x => (x.User1Id == userId || x.User2Id == userId) && x.Status == MatchStatus.Active)
             .Select(x => x.Id)
@@ -61,7 +67,73 @@ public sealed class ChatHub(MirageDbContext db) : Hub
         foreach (var friendshipId in friendshipIds)
             await Groups.AddToGroupAsync(Context.ConnectionId, CoupleFriendGroup(friendshipId));
 
+        if (cameOnline) await BroadcastPresenceAsync(userId, matchIds, isOnline: true, lastSeenAt: null);
+
+        // The peer may have come online while this client was away; SignalR replays nothing,
+        // so send the caller a one-off snapshot of who is currently online.
+        await SendPresenceSnapshotAsync(userId);
+
         await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userId = GetUserId();
+        if (presence.Disconnect(userId, Context.ConnectionId))
+        {
+            var lastSeenAt = DateTimeOffset.UtcNow;
+            await db.Users.Where(x => x.Id == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastSeenAt, lastSeenAt));
+
+            var matchIds = await db.Matches.AsNoTracking()
+                .Where(x => (x.User1Id == userId || x.User2Id == userId) && x.Status == MatchStatus.Active)
+                .Select(x => x.Id)
+                .ToListAsync();
+            await BroadcastPresenceAsync(userId, matchIds, isOnline: false, lastSeenAt);
+        }
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
+    // Client → Hub: re-request presence for the caller's peers (used when a tab wakes up).
+    public Task RequestPresence() => SendPresenceSnapshotAsync(GetUserId());
+
+    private async Task SendPresenceSnapshotAsync(Guid userId)
+    {
+        var peers = await db.Matches.AsNoTracking()
+            .Where(x => (x.User1Id == userId || x.User2Id == userId) && x.Status == MatchStatus.Active)
+            .Select(x => new { MatchId = x.Id, OtherUserId = x.User1Id == userId ? x.User2Id : x.User1Id })
+            .ToListAsync();
+        if (peers.Count == 0) return;
+
+        var peerIds = peers.Select(x => x.OtherUserId).Distinct().ToList();
+        var lastSeen = await db.Users.AsNoTracking()
+            .Where(x => peerIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.LastSeenAt })
+            .ToDictionaryAsync(x => x.Id, x => x.LastSeenAt);
+
+        await Clients.Caller.SendAsync("PresenceSnapshot", peers.Select(peer => new
+        {
+            peer.MatchId,
+            UserId = peer.OtherUserId,
+            IsOnline = presence.IsOnline(peer.OtherUserId),
+            LastSeenAt = lastSeen.GetValueOrDefault(peer.OtherUserId)
+        }));
+    }
+
+    // Presence is only shared with people the user is already in an active match with — it is
+    // never broadcast platform-wide.
+    private async Task BroadcastPresenceAsync(Guid userId, IReadOnlyCollection<Guid> matchIds,
+        bool isOnline, DateTimeOffset? lastSeenAt)
+    {
+        foreach (var matchId in matchIds)
+            await Clients.OthersInGroup(MatchGroup(matchId)).SendAsync("PresenceChanged", new
+            {
+                MatchId = matchId,
+                UserId = userId,
+                IsOnline = isOnline,
+                LastSeenAt = lastSeenAt
+            });
     }
 
     // Client → Hub: join a couple-friendship group created after this connection was opened
@@ -145,6 +217,11 @@ public sealed class ChatHub(MirageDbContext db) : Hub
 
         if (match is null) return;
 
+        // Read before the insert: an existing unread from this sender means the recipient has
+        // already been told about this conversation and does not need telling again.
+        var hadUnread = await db.Messages.AsNoTracking()
+            .AnyAsync(x => x.MatchId == matchId && x.SenderId == userId && !x.IsRead);
+
         var message = new Message(matchId, userId, content, type, attachmentUrl);
         db.Messages.Add(message);
         await db.SaveChangesAsync();
@@ -162,6 +239,30 @@ public sealed class ChatHub(MirageDbContext db) : Hub
             SentAt = message.CreatedAt,
             message.IsRead
         });
+
+        var recipientId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        await NotifyRecipientOfMessageAsync(recipientId, userId, matchId, content, type, hadUnread);
+    }
+
+    // A message only earns a notification (and an email) when the recipient is not connected and
+    // has no unread message from this sender already waiting. That pair of conditions is what
+    // keeps a back-and-forth conversation from turning into a stream of alerts.
+    private async Task NotifyRecipientOfMessageAsync(Guid recipientId, Guid senderId, Guid matchId,
+        string content, MessageType type, bool hadUnread)
+    {
+        if (hadUnread || presence.IsOnline(recipientId)) return;
+
+        var senderName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == senderId).Select(x => x.DisplayName).SingleOrDefaultAsync() ?? "Someone";
+
+        var preview = type == MessageType.Image
+            ? "Sent you a photo."
+            : content.Length > 140 ? $"{content[..140]}…" : content;
+
+        var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
+        await notifications.NotifyAsync(recipientId, NotificationType.NewMessage,
+            $"New message from {senderName}", preview, matchId, "Match", CancellationToken.None,
+            $"{frontendUrl}/matches/{matchId}/chat", "Open chat");
     }
 
     // Client → Hub: send a message to a mentor's broadcast group (mentor + accepted mentees)
