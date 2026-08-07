@@ -2,6 +2,12 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Contracts;
 
+public sealed record LandingPageStatsResponse(
+    int Profiles,
+    int OpenDates,
+    int Counsellors,
+    int Organisations);
+
 public sealed record GlobalSearchItemResponse(
     string Type, Guid Id, string Title, string Subtitle, string? ImageUrl, string Route);
 
