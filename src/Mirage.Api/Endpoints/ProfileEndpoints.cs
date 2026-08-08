@@ -431,8 +431,7 @@ internal static class ProfileEndpoints
                 cancellationToken);
             if (!recentlyReminded)
                 await notifications.NotifyAsync(userId, NotificationType.ProfilePhotosRequired,
-                    "Add two photos to unlock Mirage",
-                    "Upload at least two clear photos of yourself. Until then, your profile is hidden and you can view only two profiles.",
+                    ProfilePhotoMessages.ReminderTitle, ProfilePhotoMessages.ReminderBody,
                     cancellationToken: cancellationToken,
                     actionUrl: $"{FrontendBaseUrl(configuration)}/profile/edit",
                     actionLabel: "Upload photos");
@@ -616,8 +615,7 @@ internal static class ProfileEndpoints
                 x => x.UserId == userId && x.Type == NotificationType.ProfilePhotosComplete, cancellationToken);
             if (!alreadyCongratulated)
                 await notifications.NotifyAsync(userId, NotificationType.ProfilePhotosComplete,
-                    "Your photos are approved — you're fully unlocked",
-                    "Your photos passed our checks, so your profile is now visible to everyone on Mirage and you can browse as many profiles as you like. No more preview limit.",
+                    ProfilePhotoMessages.CompleteTitle, ProfilePhotoMessages.CompleteBody,
                     cancellationToken: cancellationToken,
                     actionUrl: $"{FrontendBaseUrl(configuration)}/hub",
                     actionLabel: "Start exploring");

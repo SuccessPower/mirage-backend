@@ -27,8 +27,7 @@ public sealed class ProfilePhotoReminderService(MirageDbContext db, Notification
         var frontendUrl = configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com";
         foreach (var userId in candidates)
             await notifications.NotifyAsync(userId, NotificationType.ProfilePhotosRequired,
-                "Add two photos to unlock Mirage",
-                "Upload at least two clear photos of yourself. Until then, your profile is hidden and you can view only two profiles.",
+                ProfilePhotoMessages.ReminderTitle, ProfilePhotoMessages.ReminderBody,
                 cancellationToken: cancellationToken, actionUrl: $"{frontendUrl}/profile/edit",
                 actionLabel: "Upload photos");
     }

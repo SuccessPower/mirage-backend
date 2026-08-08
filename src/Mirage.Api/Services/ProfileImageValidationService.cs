@@ -7,11 +7,23 @@ namespace Mirage.Api.Services;
 // allowed onto a profile. This has to happen server-side — the browser uploads straight to
 // Cloudinary, so a client-side-only check could simply be skipped by calling the API directly.
 public sealed class ProfileImageValidationService(
-    HttpClient http, IFaceDetectionService faceDetection, ILogger<ProfileImageValidationService> logger)
+    HttpClient http, IFaceDetectionService faceDetection, IConfiguration configuration,
+    ILogger<ProfileImageValidationService> logger)
 {
+    // Identity matching is off unless a deployment opts in. In production it was rejecting genuine
+    // photos of the right person, and a member who can't get past it has no way to finish their
+    // profile at all — a false reject costs far more than a missed impostor. The cheap "is this a
+    // human face" gate is unaffected and still runs. Set PhotoValidation:RequireSamePerson=true to
+    // exercise it in test until it's proven out.
+    private bool RequireSamePerson => configuration.GetValue("PhotoValidation:RequireSamePerson", false);
+
     public async Task<FaceComparisonResult> AreSamePersonAsync(string firstImageUrl, string secondImageUrl,
         CancellationToken cancellationToken)
     {
+        // Short-circuit before the downloads — when the check is off there's nothing to compare and
+        // no reason to pull two full images per photo saved.
+        if (!RequireSamePerson) return FaceComparisonResult.SamePerson;
+
         try
         {
             var first = http.GetByteArrayAsync(WithAutoRotation(firstImageUrl), cancellationToken);
