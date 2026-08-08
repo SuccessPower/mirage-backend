@@ -291,7 +291,9 @@ builder.Services.AddRateLimiter(options =>
             }));
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            context.User.FindFirst("sub")?.Value
+                ?? context.Connection.RemoteIpAddress?.ToString()
+                ?? "anonymous",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 120,
@@ -402,11 +404,14 @@ if (!app.Environment.IsDevelopment())
 
 if (!app.Environment.IsDevelopment())
 {
-    app.UseHttpsRedirection();
+app.UseHttpsRedirection();
 }
 app.UseCors("MirageFrontend");
-app.UseRateLimiter();
 app.UseAuthentication();
+// The global and encryption-specific limiters partition authenticated traffic by
+// the JWT subject. Authentication must run first; otherwise every request behind
+// the same NAT/proxy is incorrectly charged to one shared IP bucket.
+app.UseRateLimiter();
 app.UseMiddleware<ProfileCompletionMiddleware>();
 app.UseAuthorization();
 
