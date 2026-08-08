@@ -47,4 +47,10 @@ public interface IEmailService
     // birthday or wedding anniversary falls on today's date.
     Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,
         string storyUrl, CancellationToken cancellationToken = default);
+
+    // The "we've missed you" nudge for dormant accounts (see ReEngagementService). `highlights`
+    // is the caller-composed tour of the app, since it varies by relationship status.
+    Task<bool> SendReEngagementEmailAsync(string toEmail, string displayName, string title, string intro,
+        string appUrl, IReadOnlyList<(string Heading, string Blurb, string Url)> highlights,
+        CancellationToken cancellationToken = default);
 }

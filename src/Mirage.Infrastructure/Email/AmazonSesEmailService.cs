@@ -104,6 +104,12 @@ public sealed class AmazonSesEmailService : IEmailService
         return SendAsync(toEmail, subject, EmailTemplates.Celebration(type, displayName, storyUrl), cancellationToken);
     }
 
+    public Task<bool> SendReEngagementEmailAsync(string toEmail, string displayName, string title, string intro,
+        string appUrl, IReadOnlyList<(string Heading, string Blurb, string Url)> highlights,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, title, EmailTemplates.ReEngagement(displayName, title, intro, appUrl, highlights),
+            cancellationToken);
+
     private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
         string? replyTo = null)
     {

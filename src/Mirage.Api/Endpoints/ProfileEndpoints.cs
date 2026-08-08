@@ -78,7 +78,7 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> Discover(HttpContext context, MirageDbContext db,
-        SectionCategory? section, string? city,
+        IConfiguration configuration, SectionCategory? section, string? city,
         string? denomination, int? minAge, int? maxAge, string? search, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
@@ -96,9 +96,11 @@ internal static class ProfileEndpoints
         query = query.Where(x => x.IsProfileComplete);
 
         // AvatarUrl can only ever be set to a URL that already passed face-detection
-        // (UpdateMine), so this alone keeps caricatures/blank photos out of Discovery.
-        query = query.Where(x => x.AvatarUrl != null && x.AvatarUrl != ""
-            && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos);
+        // (UpdateMine), so an avatar alone keeps caricatures/blank photos out of Discovery.
+        // Members who joined before the two-photo rule keep their visibility on that basis while
+        // they are nudged to add the rest; everyone since needs the full set.
+        var photoCutoff = ProfilePhotoVisibility.Cutoff(configuration);
+        query = query.Where(ProfilePhotoVisibility.IsVisible(photoCutoff));
 
         var currentUserId = context.User.TryGetUserId();
         string? myCity = null;
@@ -135,10 +137,13 @@ internal static class ProfileEndpoints
             mySex = mine?.Sex;
             viewerIsMarried = mine?.RelationshipStatus == RelationshipStatus.Married;
 
-            var viewerHasRequiredPhotos = await db.Profiles.AsNoTracking()
-                .AnyAsync(x => x.UserId == me && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos,
-                    cancellationToken);
-            if (!viewerHasRequiredPhotos)
+            // Grandfathered members browse unthrottled too — the 2-profile budget is meant to push
+            // new joiners to upload, not to lock out people who predate the rule.
+            var viewerIsUnthrottled = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == me)
+                .AnyAsync(x => x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
+                    || x.CreatedAt < photoCutoff, cancellationToken);
+            if (!viewerIsUnthrottled)
             {
                 var viewedIds = db.DiscoveryProfileViews.AsNoTracking()
                     .Where(x => x.ViewerUserId == me).Select(x => x.ProfileUserId);
@@ -231,10 +236,11 @@ internal static class ProfileEndpoints
 
         if (currentUserId.HasValue)
         {
-            var viewerHasRequiredPhotos = await db.Profiles.AsNoTracking().AnyAsync(
-                x => x.UserId == currentUserId.Value && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos,
-                cancellationToken);
-            if (!viewerHasRequiredPhotos)
+            var viewerIsUnthrottled = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == currentUserId.Value)
+                .AnyAsync(x => x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
+                    || x.CreatedAt < photoCutoff, cancellationToken);
+            if (!viewerIsUnthrottled)
             {
                 var alreadyViewed = await db.DiscoveryProfileViews.Where(x => x.ViewerUserId == currentUserId.Value)
                     .Select(x => x.ProfileUserId).ToListAsync(cancellationToken);
@@ -284,13 +290,15 @@ internal static class ProfileEndpoints
         var visitorUserId = context.User.GetUserId();
         if (visitorUserId != userId)
         {
-            if (profile.PhotoUrls.Length < UserProfile.MinimumRequiredPhotos)
+            var photoCutoff = ProfilePhotoVisibility.Cutoff(configuration);
+            if (!ProfilePhotoVisibility.IsVisible(profile, photoCutoff))
                 return EndpointHelpers.NotFound(context, "Profile was not found.");
 
-            var visitorHasRequiredPhotos = await db.Profiles.AsNoTracking().AnyAsync(
-                x => x.UserId == visitorUserId && x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos,
-                cancellationToken);
-            if (!visitorHasRequiredPhotos)
+            var visitorIsUnthrottled = await db.Profiles.AsNoTracking()
+                .Where(x => x.UserId == visitorUserId)
+                .AnyAsync(x => x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
+                    || x.CreatedAt < photoCutoff, cancellationToken);
+            if (!visitorIsUnthrottled)
             {
                 var existingView = await db.DiscoveryProfileViews.AnyAsync(
                     x => x.ViewerUserId == visitorUserId && x.ProfileUserId == userId, cancellationToken);
@@ -436,7 +444,11 @@ internal static class ProfileEndpoints
                     actionUrl: $"{FrontendBaseUrl(configuration)}/profile/edit",
                     actionLabel: "Upload photos");
         }
-        var viewedCount = hasRequiredPhotos ? 0 : await db.DiscoveryProfileViews.AsNoTracking()
+        // HasRequiredProfilePhotos stays false for grandfathered members so the client keeps showing
+        // the "add two photos" prompt — they are visible and unthrottled, but still being asked.
+        var isUnthrottled = ProfilePhotoVisibility.IsUnthrottledViewer(profile,
+            ProfilePhotoVisibility.Cutoff(configuration));
+        var viewedCount = isUnthrottled ? 0 : await db.DiscoveryProfileViews.AsNoTracking()
             .CountAsync(x => x.ViewerUserId == userId, cancellationToken);
         var response = profile.ToResponse(recommended, email, badge) with
         {
@@ -447,7 +459,9 @@ internal static class ProfileEndpoints
             IsCounsellor = roles.Contains(MirageRoles.Counsellor),
             EmailConfirmed = user?.EmailConfirmed,
             HasRequiredProfilePhotos = hasRequiredPhotos,
-            DiscoveryProfilesRemaining = hasRequiredPhotos ? int.MaxValue : Math.Max(0, 2 - viewedCount)
+            DiscoveryProfilesRemaining = isUnthrottled ? int.MaxValue : Math.Max(0, 2 - viewedCount),
+            IsProfilePhotoRequirementGrandfathered = !hasRequiredPhotos && profile.CreatedAt <
+                ProfilePhotoVisibility.Cutoff(configuration)
         };
         return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }

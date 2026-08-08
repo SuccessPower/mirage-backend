@@ -239,6 +239,40 @@ public static class EmailTemplates
             }, cta);
     }
 
+    /// <summary>
+    /// The "we've missed you" email. <paramref name="highlights"/> is the tour of the app we want
+    /// them to take — each entry becomes a linked row. Married members get the love-story prompt,
+    /// which is why the caller composes the list rather than this method hardcoding it.
+    /// </summary>
+    public static string ReEngagement(string displayName, string title, string intro, string appUrl,
+        IReadOnlyList<(string Heading, string Blurb, string Url)> highlights)
+    {
+        var rows = string.Concat(highlights.Select(HighlightRow));
+        var body = rows + TemplateEngine.PrimaryButton(appUrl, "Open Mirage", Teal);
+        return TemplateEngine.RenderPage("re-engagement", intro,
+            new Dictionary<string, string>
+            {
+                [DisplayNameToken] = displayName,
+                ["TITLE"] = title,
+                ["INTRO"] = intro
+            }, body);
+    }
+
+    // Inline styles only, and tables rather than flex — Outlook and Gmail still drop most of
+    // modern CSS, and these rows have to survive both.
+    private static string HighlightRow((string Heading, string Blurb, string Url) item) => $"""
+        <tr><td style="padding:0 48px 12px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8F7FC;border:1px solid #EDEAF5;border-radius:14px;">
+            <tr><td style="padding:16px 18px;">
+              <a href="{WebUtility.HtmlEncode(item.Url)}" style="text-decoration:none;">
+                <span style="display:block;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:#1B1730;letter-spacing:-0.2px;margin-bottom:4px;">{WebUtility.HtmlEncode(item.Heading)}</span>
+                <span style="display:block;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13.5px;color:#6B6480;line-height:1.6;">{WebUtility.HtmlEncode(item.Blurb)}</span>
+              </a>
+            </td></tr>
+          </table>
+        </td></tr>
+        """;
+
     private static string Tint(string color) => color switch
     {
         Purple => "rgba(108,78,242,0.14)",

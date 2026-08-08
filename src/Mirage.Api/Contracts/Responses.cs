@@ -72,7 +72,8 @@ public sealed record ProfileResponse(
     bool CelebrationOptOut = false,
     bool HasRequiredProfilePhotos = false,
     int RequiredProfilePhotoCount = 2,
-    int DiscoveryProfilesRemaining = 0);
+    int DiscoveryProfilesRemaining = 0,
+    bool IsProfilePhotoRequirementGrandfathered = false);
 
 public sealed record OrganisationMemberResponse(
     Guid Id,

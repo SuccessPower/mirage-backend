@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Persistence;
@@ -16,7 +17,7 @@ internal static class SearchEndpoints
     }
 
     private static async Task<IResult> Search(string? q, HttpContext context, MirageDbContext db,
-        int limit = 5, CancellationToken cancellationToken = default)
+        IConfiguration configuration, int limit = 5, CancellationToken cancellationToken = default)
     {
         var query = q?.Trim();
         if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
@@ -32,6 +33,9 @@ internal static class SearchEndpoints
             .Where(profile => profile.IsProfileComplete
                 && EF.Functions.ILike(profile.DisplayName, pattern))
             .Where(profile => db.Users.Any(user => user.Id == profile.UserId && user.IsActive))
+            // Search used the same visibility rule as Discovery, or it would surface profiles whose
+            // deep link then 404s at GetById.
+            .Where(ProfilePhotoVisibility.IsVisible(ProfilePhotoVisibility.Cutoff(configuration)))
             .OrderBy(profile => profile.DisplayName)
             .Take(limit)
             .Select(profile => new GlobalSearchItemResponse("Profile", profile.UserId, profile.DisplayName,
