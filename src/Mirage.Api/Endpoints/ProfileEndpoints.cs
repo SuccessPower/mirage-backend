@@ -459,7 +459,9 @@ internal static class ProfileEndpoints
             IsCounsellor = roles.Contains(MirageRoles.Counsellor),
             EmailConfirmed = user?.EmailConfirmed,
             HasRequiredProfilePhotos = hasRequiredPhotos,
-            DiscoveryProfilesRemaining = isUnthrottled ? int.MaxValue : Math.Max(0, 2 - viewedCount)
+            DiscoveryProfilesRemaining = isUnthrottled ? int.MaxValue : Math.Max(0, 2 - viewedCount),
+            IsProfilePhotoRequirementGrandfathered = !hasRequiredPhotos && profile.CreatedAt <
+                ProfilePhotoVisibility.Cutoff(configuration)
         };
         return ApiResults.Ok(context, response, "Profile retrieved successfully.");
     }
