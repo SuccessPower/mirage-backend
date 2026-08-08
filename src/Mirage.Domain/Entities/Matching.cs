@@ -33,6 +33,8 @@ public sealed class Match : Entity
     public MatchStatus Status { get; private set; } = MatchStatus.PendingRequest;
     public Guid? ChatRequestedByUserId { get; private set; }
     public Guid? ClosedByUserId { get; private set; }
+    public Guid? BlockedByUserId { get; private set; }
+    public MatchStatus? StatusBeforeBlock { get; private set; }
     public DateTimeOffset MatchedAt { get; private set; }
     public DateTimeOffset? LastActivityAt { get; private set; }
 
@@ -87,9 +89,29 @@ public sealed class Match : Entity
         Touch();
     }
 
-    public void Block()
+    public void Block(Guid blockedByUserId)
     {
+        if (Status == MatchStatus.Blocked) return;
+        StatusBeforeBlock = Status;
+        BlockedByUserId = blockedByUserId;
         Status = MatchStatus.Blocked;
+        LastActivityAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
+
+    public void Unblock(Guid userId)
+    {
+        if (Status != MatchStatus.Blocked)
+            throw new InvalidOperationException("Only a blocked match can be unblocked.");
+        // Legacy blocked rows predate blocker attribution. Allow either participant to recover
+        // those rows, but require the original blocker for every newly blocked match.
+        if (BlockedByUserId.HasValue && BlockedByUserId != userId)
+            throw new InvalidOperationException("Only the person who blocked this match can unblock it.");
+        Status = StatusBeforeBlock is MatchStatus.Active or MatchStatus.PendingRequest or MatchStatus.Closed
+            ? StatusBeforeBlock.Value
+            : MatchStatus.PendingRequest;
+        BlockedByUserId = null;
+        StatusBeforeBlock = null;
         LastActivityAt = DateTimeOffset.UtcNow;
         Touch();
     }

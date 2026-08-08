@@ -23,6 +23,7 @@ internal static class MatchingEndpoints
         group.MapGet("/matches/{id:guid}", GetMatch);
         group.MapDelete("/matches/{id:guid}", CloseMatch);
         group.MapPost("/matches/{id:guid}/block", BlockMatch);
+        group.MapPost("/matches/{id:guid}/unblock", UnblockMatch);
         group.MapPost("/matches/{id:guid}/chat-request", RequestChat);
         group.MapPost("/matches/{id:guid}/chat-request/approve", ApproveChatRequest);
 
@@ -255,7 +256,7 @@ internal static class MatchingEndpoints
             return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
                 profile?.IsVerified ?? false, profile?.RelationshipStatus, m.Status, m.ChatRequestedByUserId,
                 m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName, m.ClosedByUserId,
-                isOnline, isOnline ? null : activeUsers.GetValueOrDefault(otherId));
+                isOnline, isOnline ? null : activeUsers.GetValueOrDefault(otherId), m.BlockedByUserId);
         }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
@@ -431,12 +432,27 @@ internal static class MatchingEndpoints
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
         if (match.Status == MatchStatus.Blocked)
             return EndpointHelpers.Conflict(context, "Match is already blocked.");
-        match.Block();
+        match.Block(userId);
         var blockedOtherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
         await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ConversationBlocked,
             userId, blockedOtherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { match.Id, match.Status }, "Match blocked successfully.");
+        return ApiResults.Ok(context, new { match.Id, match.Status, match.BlockedByUserId },
+            "Match blocked successfully.");
+    }
+
+    private static async Task<IResult> UnblockMatch(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+        try { match.Unblock(userId); }
+        catch (InvalidOperationException exception) { return EndpointHelpers.Conflict(context, exception.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { match.Id, match.Status, match.ChatRequestedByUserId },
+            "Match unblocked successfully.");
     }
 
     // The client's unread badge is otherwise fed only by live SignalR pushes, so it reset to

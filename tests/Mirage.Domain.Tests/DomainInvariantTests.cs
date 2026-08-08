@@ -152,9 +152,35 @@ public sealed class DomainInvariantTests
     public void Blocked_match_cannot_be_reopened_for_couple_chat()
     {
         var match = new Match(Guid.NewGuid(), Guid.NewGuid());
-        match.Block();
+        match.Block(Guid.NewGuid());
 
         Assert.Throws<InvalidOperationException>(match.OpenForCouple);
+        Assert.Equal(MatchStatus.Blocked, match.Status);
+    }
+
+    [Fact]
+    public void Blocker_can_unblock_and_restore_the_previous_match_status()
+    {
+        var blockerId = Guid.NewGuid();
+        var match = new Match(blockerId, Guid.NewGuid());
+        match.OpenForCouple();
+        match.Block(blockerId);
+
+        match.Unblock(blockerId);
+
+        Assert.Equal(MatchStatus.Active, match.Status);
+        Assert.Null(match.BlockedByUserId);
+        Assert.Null(match.StatusBeforeBlock);
+    }
+
+    [Fact]
+    public void Other_participant_cannot_unblock_a_match()
+    {
+        var blockerId = Guid.NewGuid();
+        var match = new Match(blockerId, Guid.NewGuid());
+        match.Block(blockerId);
+
+        Assert.Throws<InvalidOperationException>(() => match.Unblock(Guid.NewGuid()));
         Assert.Equal(MatchStatus.Blocked, match.Status);
     }
 
