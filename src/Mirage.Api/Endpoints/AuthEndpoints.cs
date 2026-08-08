@@ -30,6 +30,7 @@ internal static class AuthEndpoints
         group.MapPost("/register/counsellor/independent", RegisterIndependentCounsellor);
         group.MapPost("/register/mentor", RegisterMentor);
         group.MapPost("/login", Login);
+        group.MapPost("/verify-password", VerifyPassword).RequireAuthorization();
         group.MapPost("/google", GoogleAuth);
         group.MapPost("/refresh", Refresh);
         group.MapPost("/logout", Logout).RequireAuthorization();
@@ -730,6 +731,18 @@ internal static class AuthEndpoints
 
         return ApiResults.Ok(context, new { revokedSessions },
             "Password changed successfully. Sign in again on all devices.");
+    }
+
+    private static async Task<IResult> VerifyPassword(VerifyPasswordRequest request, HttpContext context,
+        UserManager<ApplicationUser> userManager)
+    {
+        if (string.IsNullOrEmpty(request.Password))
+            return EndpointHelpers.ValidationProblem(context, ("password", "Account password is required."));
+        var user = await userManager.FindByIdAsync(context.User.GetUserId().ToString());
+        if (user is null) return EndpointHelpers.NotFound(context, "User account was not found.");
+        if (!await userManager.CheckPasswordAsync(user, request.Password))
+            return EndpointHelpers.ValidationProblem(context, ("password", "Account password is incorrect."));
+        return ApiResults.Ok(context, new { verified = true }, "Account password verified.");
     }
 
     private static async Task<IResult> DeactivateAccount(DeactivateAccountRequest request, HttpContext context,
