@@ -659,6 +659,8 @@ public sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         b.Property(x => x.AttachmentUrl).HasMaxLength(1000);
         b.HasOne(x => x.Match).WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne(x => x.ReplyToMessage).WithMany().HasForeignKey(x => x.ReplyToMessageId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
 

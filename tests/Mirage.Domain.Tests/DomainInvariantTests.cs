@@ -8,6 +8,16 @@ namespace Mirage.Domain.Tests;
 public sealed class DomainInvariantTests
 {
     [Fact]
+    public void Message_preserves_the_replied_to_message_reference()
+    {
+        var repliedToId = Guid.NewGuid();
+
+        var message = new Message(Guid.NewGuid(), Guid.NewGuid(), "Reply", replyToMessageId: repliedToId);
+
+        Assert.Equal(repliedToId, message.ReplyToMessageId);
+    }
+
+    [Fact]
     public void Google_profile_completion_sets_the_validated_avatar()
     {
         var profile = new UserProfile(Guid.NewGuid(), "Google User", avatarUrl: null);

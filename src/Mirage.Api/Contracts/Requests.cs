@@ -161,7 +161,8 @@ public sealed record CreateDateRequestRequest(
     int Capacity = 1,
     string? ItemsToBring = null,
     string? ImageUrl = null);
-public sealed record SendChatMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
+public sealed record SendChatMessageRequest(string Content, MessageType Type = MessageType.Text,
+    string? AttachmentUrl = null, Guid? ReplyToMessageId = null);
 public sealed record RegisterCounsellorRequest(
     string InviteToken,
     string Email,
