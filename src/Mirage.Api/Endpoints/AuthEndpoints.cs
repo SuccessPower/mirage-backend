@@ -935,6 +935,10 @@ internal static class AuthEndpoints
         MirageDbContext db, TokenService tokens, IConfiguration configuration, CancellationToken cancellationToken)
     {
         user.LastLoginAt = DateTimeOffset.UtcNow;
+        // They came back, so the "we miss you" series has done its job — clear it so a future
+        // lapse starts from the first email again rather than resuming a spent quota.
+        user.ReEngagementEmailCount = 0;
+        user.LastReEngagementEmailAt = null;
         var access = tokens.CreateAccessToken(user, roles);
         var refreshValue = tokens.CreateRefreshToken();
         var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);

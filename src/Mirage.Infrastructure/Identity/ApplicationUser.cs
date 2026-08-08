@@ -13,6 +13,12 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     // Stamped when the user's last realtime connection drops, so chat peers can show
     // "last seen 10:42" once they go offline. Null means never connected since the feature shipped.
     public DateTimeOffset? LastSeenAt { get; set; }
+
+    // Re-engagement ("we miss you") emails. The count is what stops a dormant account from being
+    // mailed forever; both are reset on the next sign-in so a user who returns and lapses again
+    // starts a fresh series. See ReEngagementService.
+    public DateTimeOffset? LastReEngagementEmailAt { get; set; }
+    public int ReEngagementEmailCount { get; set; }
 }
 
 public static class MirageRoles

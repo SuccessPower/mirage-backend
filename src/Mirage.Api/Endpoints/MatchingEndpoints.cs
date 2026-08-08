@@ -29,6 +29,7 @@ internal static class MatchingEndpoints
         group.MapGet("/conversations/slots", GetConversationSlots);
 
         // Chat — REST fallback alongside SignalR hub
+        group.MapGet("/messages/unread", GetUnreadMessageCounts);
         group.MapGet("/matches/{id:guid}/messages", GetMessages);
         group.MapPost("/matches/{id:guid}/messages", SendMessage);
         group.MapPatch("/matches/{id:guid}/messages/read", MarkRead);
@@ -436,6 +437,29 @@ internal static class MatchingEndpoints
             userId, blockedOtherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { match.Id, match.Status }, "Match blocked successfully.");
+    }
+
+    // The client's unread badge is otherwise fed only by live SignalR pushes, so it reset to
+    // zero on every reload and never accounted for messages that landed while the tab was
+    // closed. This is the equivalent of /notifications/unread-count for chat.
+    private static async Task<IResult> GetUnreadMessageCounts(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var counts = await db.Messages.AsNoTracking()
+            .Where(m => !m.IsRead && m.SenderId != userId
+                && db.Matches.Any(x => x.Id == m.MatchId
+                    && x.Status == MatchStatus.Active
+                    && (x.User1Id == userId || x.User2Id == userId)))
+            .GroupBy(m => m.MatchId)
+            .Select(g => new { MatchId = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new
+        {
+            Total = counts.Sum(x => x.Count),
+            Matches = counts
+        }, "Unread message counts retrieved successfully.");
     }
 
     // Cursor-based pagination: pass the CreatedAt of the oldest message in the current
