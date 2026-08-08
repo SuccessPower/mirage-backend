@@ -486,6 +486,11 @@ internal static class MatchingEndpoints
                 x.Content,
                 x.Type,
                 x.AttachmentUrl,
+                x.ReplyToMessageId,
+                ReplyToSenderId = x.ReplyToMessage == null ? (Guid?)null : x.ReplyToMessage.SenderId,
+                ReplyToContent = x.ReplyToMessage == null ? null : x.ReplyToMessage.Content,
+                ReplyToType = x.ReplyToMessage == null ? (MessageType?)null : x.ReplyToMessage.Type,
+                ReplyToAttachmentUrl = x.ReplyToMessage == null ? null : x.ReplyToMessage.AttachmentUrl,
                 SentAt = x.CreatedAt,
                 x.IsRead,
                 x.ReadAt
@@ -518,7 +523,18 @@ internal static class MatchingEndpoints
         if (request.Type == MessageType.Text && string.IsNullOrWhiteSpace(request.Content))
             return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
 
-        var message = new Message(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        Message? repliedTo = null;
+        if (request.ReplyToMessageId.HasValue)
+        {
+            repliedTo = await db.Messages.AsNoTracking().SingleOrDefaultAsync(
+                x => x.Id == request.ReplyToMessageId.Value && x.MatchId == id, cancellationToken);
+            if (repliedTo is null)
+                return EndpointHelpers.ValidationProblem(context,
+                    ("replyToMessageId", "The referenced message does not belong to this conversation."));
+        }
+
+        var message = new Message(id, userId, request.Content, request.Type, request.AttachmentUrl,
+            request.ReplyToMessageId);
         db.Messages.Add(message);
         await db.SaveChangesAsync(cancellationToken);
         await db.Matches.Where(x => x.Id == id)
@@ -532,6 +548,11 @@ internal static class MatchingEndpoints
             message.Content,
             message.Type,
             message.AttachmentUrl,
+            message.ReplyToMessageId,
+            ReplyToSenderId = repliedTo?.SenderId,
+            ReplyToContent = repliedTo?.Content,
+            ReplyToType = repliedTo?.Type,
+            ReplyToAttachmentUrl = repliedTo?.AttachmentUrl,
             SentAt = message.CreatedAt,
             message.IsRead
         }, cancellationToken);

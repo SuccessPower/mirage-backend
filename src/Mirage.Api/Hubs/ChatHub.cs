@@ -203,7 +203,7 @@ public sealed class ChatHub(
 
     // Client → Hub: send a message to a match
     public async Task SendMessage(Guid matchId, string content, MessageType type = MessageType.Text,
-        string? attachmentUrl = null)
+        string? attachmentUrl = null, Guid? replyToMessageId = null)
     {
         content = (content ?? string.Empty).Trim();
         if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
@@ -216,13 +216,20 @@ public sealed class ChatHub(
                 && x.Status == MatchStatus.Active);
 
         if (match is null) return;
+        Message? repliedTo = null;
+        if (replyToMessageId.HasValue)
+        {
+            repliedTo = await db.Messages.AsNoTracking().SingleOrDefaultAsync(
+                x => x.Id == replyToMessageId.Value && x.MatchId == matchId);
+            if (repliedTo is null) return;
+        }
 
         // Read before the insert: an existing unread from this sender means the recipient has
         // already been told about this conversation and does not need telling again.
         var hadUnread = await db.Messages.AsNoTracking()
             .AnyAsync(x => x.MatchId == matchId && x.SenderId == userId && !x.IsRead);
 
-        var message = new Message(matchId, userId, content, type, attachmentUrl);
+        var message = new Message(matchId, userId, content, type, attachmentUrl, replyToMessageId);
         db.Messages.Add(message);
         await db.SaveChangesAsync();
         await db.Matches.Where(x => x.Id == matchId)
@@ -236,6 +243,11 @@ public sealed class ChatHub(
             message.Content,
             message.Type,
             message.AttachmentUrl,
+            message.ReplyToMessageId,
+            ReplyToSenderId = repliedTo?.SenderId,
+            ReplyToContent = repliedTo?.Content,
+            ReplyToType = repliedTo?.Type,
+            ReplyToAttachmentUrl = repliedTo?.AttachmentUrl,
             SentAt = message.CreatedAt,
             message.IsRead
         });
