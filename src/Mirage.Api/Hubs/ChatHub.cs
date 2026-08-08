@@ -202,8 +202,19 @@ public sealed class ChatHub(
     }
 
     // Client → Hub: send a message to a match
-    public async Task SendMessage(Guid matchId, string content, MessageType type = MessageType.Text,
-        string? attachmentUrl = null, Guid? replyToMessageId = null)
+    // Keep the original four-argument hub method stable so ordinary chat continues working
+    // during staggered frontend/backend deployments. Replies use a separately named method;
+    // SignalR dispatches by method name and argument count rather than C# optional semantics.
+    public Task SendMessage(Guid matchId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null) =>
+        SendMessageCore(matchId, content, type, attachmentUrl, null);
+
+    public Task SendReply(Guid matchId, string content, MessageType type, string? attachmentUrl,
+        Guid replyToMessageId) =>
+        SendMessageCore(matchId, content, type, attachmentUrl, replyToMessageId);
+
+    private async Task SendMessageCore(Guid matchId, string content, MessageType type,
+        string? attachmentUrl, Guid? replyToMessageId)
     {
         content = (content ?? string.Empty).Trim();
         if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
