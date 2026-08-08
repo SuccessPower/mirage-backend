@@ -22,6 +22,7 @@ using Mirage.Infrastructure.Persistence;
 using Mirage.Infrastructure.Vision;
 using Amazon;
 using Amazon.SimpleEmailV2;
+using Amazon.KeyManagementService;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
@@ -121,6 +122,9 @@ builder.Services.AddHttpClient<FlutterwaveService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2>(
     _ => new AmazonSimpleEmailServiceV2Client(RegionEndpoint.GetBySystemName(sesRegion)));
+var kmsRegion = builder.Configuration["ChatEncryptionKms:Region"] ?? sesRegion;
+builder.Services.AddSingleton<IAmazonKeyManagementService>(
+    _ => new AmazonKeyManagementServiceClient(RegionEndpoint.GetBySystemName(kmsRegion)));
 builder.Services.AddScoped<IEmailTransport, ZeptoMailEmailTransport>();
 builder.Services.AddScoped<IEmailTransport, AmazonSesEmailTransport>();
 builder.Services.AddHttpClient<MailjetEmailTransport>(client =>
