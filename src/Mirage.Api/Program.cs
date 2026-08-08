@@ -290,16 +290,19 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            context.User.FindFirst("sub")?.Value
-                ?? context.Connection.RemoteIpAddress?.ToString()
-                ?? "anonymous",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 120,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
-            }));
+    {
+        var userId = context.User.FindFirst("sub")?.Value;
+        var partition = userId ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
+        return RateLimitPartition.GetFixedWindowLimiter(partition, _ => new FixedWindowRateLimiterOptions
+        {
+            // Authenticated app sessions legitimately perform parallel bootstrap, realtime,
+            // encryption and notification reads. Keep anonymous traffic conservative while
+            // preventing background reads from locking a signed-in member out of messaging.
+            PermitLimit = userId is null ? 120 : 600,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
 });
 
 builder.Services.AddCors(options =>
