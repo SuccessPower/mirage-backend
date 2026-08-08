@@ -30,6 +30,7 @@ public sealed record RegisterRequest(
     string[]? PreferredCountryCodes = null);
 
 public sealed record LoginRequest(string Email, string Password);
+public sealed record VerifyPasswordRequest(string Password);
 public sealed record ContactRequest(
     string FullName,
     string Email,
