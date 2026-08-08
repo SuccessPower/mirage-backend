@@ -23,6 +23,7 @@ internal static class MatchingEndpoints
         group.MapGet("/matches/{id:guid}", GetMatch);
         group.MapDelete("/matches/{id:guid}", CloseMatch);
         group.MapPost("/matches/{id:guid}/block", BlockMatch);
+        group.MapPost("/matches/{id:guid}/unblock", UnblockMatch);
         group.MapPost("/matches/{id:guid}/chat-request", RequestChat);
         group.MapPost("/matches/{id:guid}/chat-request/approve", ApproveChatRequest);
 
@@ -31,7 +32,9 @@ internal static class MatchingEndpoints
         // Chat — REST fallback alongside SignalR hub
         group.MapGet("/messages/unread", GetUnreadMessageCounts);
         group.MapGet("/matches/{id:guid}/messages", GetMessages);
+        group.MapGet("/matches/{id:guid}/messages/legacy", GetLegacyMessages);
         group.MapPost("/matches/{id:guid}/messages", SendMessage);
+        group.MapPatch("/matches/{id:guid}/messages/encrypt", EncryptExistingMessages);
         group.MapPatch("/matches/{id:guid}/messages/read", MarkRead);
         return api;
     }
@@ -255,7 +258,7 @@ internal static class MatchingEndpoints
             return new MatchResponse(m.Id, otherId, profile?.DisplayName ?? "Unknown", profile?.AvatarUrl,
                 profile?.IsVerified ?? false, profile?.RelationshipStatus, m.Status, m.ChatRequestedByUserId,
                 m.MatchedAt, m.LastActivityAt, badge?.LogoUrl, badge?.OrganisationName, m.ClosedByUserId,
-                isOnline, isOnline ? null : activeUsers.GetValueOrDefault(otherId));
+                isOnline, isOnline ? null : activeUsers.GetValueOrDefault(otherId), m.BlockedByUserId);
         }).Where(x => x is not null).Cast<MatchResponse>().ToList();
     }
 
@@ -431,12 +434,27 @@ internal static class MatchingEndpoints
         if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
         if (match.Status == MatchStatus.Blocked)
             return EndpointHelpers.Conflict(context, "Match is already blocked.");
-        match.Block();
+        match.Block(userId);
         var blockedOtherUserId = match.User1Id == userId ? match.User2Id : match.User1Id;
         await AnalyticsRecorder.RecordAsync(db, AnalyticsEventType.ConversationBlocked,
             userId, blockedOtherUserId, match.Id, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { match.Id, match.Status }, "Match blocked successfully.");
+        return ApiResults.Ok(context, new { match.Id, match.Status, match.BlockedByUserId },
+            "Match blocked successfully.");
+    }
+
+    private static async Task<IResult> UnblockMatch(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var match = await db.Matches.SingleOrDefaultAsync(
+            x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (match is null) return EndpointHelpers.NotFound(context, "Match was not found.");
+        try { match.Unblock(userId); }
+        catch (InvalidOperationException exception) { return EndpointHelpers.Conflict(context, exception.Message); }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { match.Id, match.Status, match.ChatRequestedByUserId },
+            "Match unblocked successfully.");
     }
 
     // The client's unread badge is otherwise fed only by live SignalR pushes, so it reset to
@@ -486,6 +504,10 @@ internal static class MatchingEndpoints
                 x.Content,
                 x.Type,
                 x.AttachmentUrl,
+                x.Ciphertext,
+                x.EncryptionNonce,
+                x.ClientMessageId,
+                x.EncryptionVersion,
                 x.ReplyToMessageId,
                 ReplyToSenderId = x.ReplyToMessage == null ? (Guid?)null : x.ReplyToMessage.SenderId,
                 ReplyToContent = x.ReplyToMessage == null ? null : x.ReplyToMessage.Content,
@@ -505,11 +527,36 @@ internal static class MatchingEndpoints
         }, "Messages retrieved successfully.");
     }
 
+    private static async Task<IResult> GetLegacyMessages(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var inMatch = await db.Matches.AsNoTracking().AnyAsync(x => x.Id == id
+            && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (!inMatch) return EndpointHelpers.Forbidden(context);
+
+        var messages = await db.Messages.AsNoTracking()
+            .Where(x => x.MatchId == id && x.EncryptionVersion == 0)
+            .OrderBy(x => x.CreatedAt)
+            .Take(100)
+            .Select(x => new
+            {
+                x.Id, x.SenderId, x.Content, x.Type, x.AttachmentUrl,
+                ReplyToSenderId = x.ReplyToMessage == null ? (Guid?)null : x.ReplyToMessage.SenderId,
+                ReplyToContent = x.ReplyToMessage == null ? null : x.ReplyToMessage.Content,
+                ReplyToType = x.ReplyToMessage == null ? (MessageType?)null : x.ReplyToMessage.Type,
+                ReplyToAttachmentUrl = x.ReplyToMessage == null ? null : x.ReplyToMessage.AttachmentUrl
+            })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, messages, "Legacy messages retrieved for encryption.");
+    }
+
     // REST fallback for sending messages (e.g. image messages after a Cloudinary upload
     // completes) — mirrors ChatHub.SendMessage and broadcasts through the same hub group
     // so connected SignalR clients still receive it in real time.
     private static async Task<IResult> SendMessage(Guid id, SendChatMessageRequest request, HttpContext context,
-        IMirageDbContext db, IHubContext<ChatHub> hub, CancellationToken cancellationToken)
+        IMirageDbContext db, IHubContext<ChatHub> hub, PresenceTracker presence,
+        NotificationService notifications, IConfiguration configuration, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var match = await db.Matches.AsNoTracking()
@@ -518,10 +565,24 @@ internal static class MatchingEndpoints
                 && x.Status == MatchStatus.Active, cancellationToken);
         if (match is null) return EndpointHelpers.Forbidden(context);
 
-        if (request.Type == MessageType.Image && string.IsNullOrWhiteSpace(request.AttachmentUrl))
-            return EndpointHelpers.ValidationProblem(context, ("attachmentUrl", "Image messages require an attachment URL."));
-        if (request.Type == MessageType.Text && string.IsNullOrWhiteSpace(request.Content))
-            return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
+        var encryptionIdentityCount = await db.ChatEncryptionIdentities.AsNoTracking().CountAsync(
+            x => x.UserId == match.User1Id || x.UserId == match.User2Id, cancellationToken);
+        if (encryptionIdentityCount != 2)
+            return EndpointHelpers.Conflict(context,
+                "Encrypted chat will be available after both members secure their messages.");
+
+        // Text and attachment metadata are intentionally inside the authenticated ciphertext.
+        var encrypted = request.EncryptionVersion == 1 && !string.IsNullOrWhiteSpace(request.Ciphertext)
+            && !string.IsNullOrWhiteSpace(request.EncryptionNonce) && !string.IsNullOrWhiteSpace(request.ClientMessageId);
+        if (!encrypted)
+            return EndpointHelpers.ValidationProblem(context,
+                ("ciphertext", "Direct chat messages must be end-to-end encrypted."));
+        if (!string.IsNullOrEmpty(request.Content) || !string.IsNullOrWhiteSpace(request.AttachmentUrl))
+            return EndpointHelpers.ValidationProblem(context,
+                ("content", "Plaintext content and attachment locations are not accepted for encrypted chat."));
+        if (!IsValidEncryptedMessage(request.Ciphertext!, request.EncryptionNonce!))
+            return EndpointHelpers.ValidationProblem(context,
+                ("ciphertext", "The encrypted message payload is malformed."));
 
         Message? repliedTo = null;
         if (request.ReplyToMessageId.HasValue)
@@ -533,8 +594,13 @@ internal static class MatchingEndpoints
                     ("replyToMessageId", "The referenced message does not belong to this conversation."));
         }
 
+        var recipientId = match.User1Id == userId ? match.User2Id : match.User1Id;
+        var hadUnread = await db.Messages.AsNoTracking().AnyAsync(
+            x => x.MatchId == id && x.SenderId == userId && !x.IsRead, cancellationToken);
         var message = new Message(id, userId, request.Content, request.Type, request.AttachmentUrl,
-            request.ReplyToMessageId);
+            request.ReplyToMessageId, encryptedPayload: true);
+        try { message.SetEncryptedContent(request.Ciphertext!, request.EncryptionNonce!, request.ClientMessageId!, request.EncryptionVersion); }
+        catch (ArgumentException exception) { return EndpointHelpers.ValidationProblem(context, ("ciphertext", exception.Message)); }
         db.Messages.Add(message);
         await db.SaveChangesAsync(cancellationToken);
         await db.Matches.Where(x => x.Id == id)
@@ -548,6 +614,10 @@ internal static class MatchingEndpoints
             message.Content,
             message.Type,
             message.AttachmentUrl,
+            message.Ciphertext,
+            message.EncryptionNonce,
+            message.ClientMessageId,
+            message.EncryptionVersion,
             message.ReplyToMessageId,
             ReplyToSenderId = repliedTo?.SenderId,
             ReplyToContent = repliedTo?.Content,
@@ -557,8 +627,46 @@ internal static class MatchingEndpoints
             message.IsRead
         }, cancellationToken);
 
+        if (!hadUnread && !presence.IsOnline(recipientId))
+        {
+            var senderName = await db.Profiles.AsNoTracking().Where(x => x.UserId == userId)
+                .Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken) ?? "Someone";
+            var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
+            await notifications.NotifyAsync(recipientId, NotificationType.NewMessage,
+                $"New message from {senderName}", "You have a new end-to-end encrypted message.",
+                id, "Match", cancellationToken, $"{frontendUrl}/matches/{id}/chat", "Open chat");
+        }
+
         return ApiResults.Created(context, $"/api/v1/matching/matches/{id}/messages", new { message.Id },
             "Message sent successfully.");
+    }
+
+    private static async Task<IResult> EncryptExistingMessages(Guid id, EncryptExistingMessagesRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (request.Messages.Length is 0 or > 100)
+            return EndpointHelpers.ValidationProblem(context, ("messages", "Provide between 1 and 100 messages."));
+        var userId = context.User.GetUserId();
+        var inMatch = await db.Matches.AsNoTracking().AnyAsync(x => x.Id == id
+            && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
+        if (!inMatch) return EndpointHelpers.Forbidden(context);
+        var ids = request.Messages.Select(x => x.MessageId).Distinct().ToArray();
+        if (ids.Length != request.Messages.Length)
+            return EndpointHelpers.ValidationProblem(context, ("messages", "Duplicate message identifiers are not allowed."));
+        var messages = await db.Messages.Where(x => x.MatchId == id && ids.Contains(x.Id)).ToListAsync(cancellationToken);
+        if (messages.Count != ids.Length) return EndpointHelpers.ValidationProblem(context, ("messages", "A message was not found in this conversation."));
+        foreach (var replacement in request.Messages)
+        {
+            var message = messages.Single(x => x.Id == replacement.MessageId);
+            if (message.IsEncrypted) continue; // resumable/idempotent migration
+            if (!IsValidEncryptedMessage(replacement.Ciphertext, replacement.EncryptionNonce))
+                return EndpointHelpers.ValidationProblem(context, ("messages", "An encrypted message payload is malformed."));
+            try { message.SetEncryptedContent(replacement.Ciphertext, replacement.EncryptionNonce,
+                replacement.ClientMessageId, replacement.EncryptionVersion); }
+            catch (ArgumentException exception) { return EndpointHelpers.ValidationProblem(context, ("messages", exception.Message)); }
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { Encrypted = messages.Count(x => x.IsEncrypted) }, "Messages encrypted successfully.");
     }
 
     private static async Task<IResult> MarkRead(Guid id, HttpContext context, IMirageDbContext db,
@@ -585,4 +693,15 @@ internal static class MatchingEndpoints
     // email should land — not on the requester's profile.
     private static string InboxUrl(IConfiguration configuration) =>
         $"{(configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/')}/inbox";
+
+    private static bool IsValidEncryptedMessage(string ciphertext, string nonce)
+    {
+        Span<byte> nonceBytes = stackalloc byte[12];
+        if (!Convert.TryFromBase64String(nonce, nonceBytes, out var nonceLength) || nonceLength != 12) return false;
+        var maxCiphertextLength = (ciphertext.Length * 3 / 4) + 4;
+        if (maxCiphertextLength < 16 || maxCiphertextLength > 9_000) return false;
+        var ciphertextBytes = new byte[maxCiphertextLength];
+        return Convert.TryFromBase64String(ciphertext, ciphertextBytes, out var ciphertextLength)
+            && ciphertextLength >= 16;
+    }
 }

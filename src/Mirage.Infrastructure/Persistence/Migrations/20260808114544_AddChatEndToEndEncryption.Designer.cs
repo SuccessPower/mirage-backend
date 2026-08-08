@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260808114544_AddChatEndToEndEncryption")]
+    partial class AddChatEndToEndEncryption
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -932,52 +935,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("content_reports", "mirage");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellingKeyEnvelope", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Ciphertext")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Nonce")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid>("RecipientUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SenderUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("SessionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("RecipientUserId");
-
-                    b.HasIndex("SenderUserId");
-
-                    b.HasIndex("SessionId", "RecipientUserId")
-                        .IsUnique();
-
-                    b.ToTable("counselling_key_envelopes", "mirage");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellingMeeting", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1030,14 +987,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<string>("AttachmentUrl")
                         .HasColumnType("text");
 
-                    b.Property<string>("Ciphertext")
-                        .HasMaxLength(12000)
-                        .HasColumnType("character varying(12000)");
-
-                    b.Property<string>("ClientMessageId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -1045,13 +994,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EncryptionNonce")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<int>("EncryptionVersion")
-                        .HasColumnType("integer");
 
                     b.Property<Guid>("SenderId")
                         .HasColumnType("uuid");
@@ -1070,10 +1012,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasIndex("SenderId");
 
                     b.HasIndex("SessionId");
-
-                    b.HasIndex("SessionId", "ClientMessageId")
-                        .IsUnique()
-                        .HasFilter("\"ClientMessageId\" IS NOT NULL");
 
                     b.ToTable("counselling_messages", "mirage");
                 });
@@ -3550,27 +3488,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("ReportedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellingKeyEnvelope", b =>
-                {
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("RecipientUserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("SenderUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Domain.Entities.CounsellingSession", null)
-                        .WithMany()
-                        .HasForeignKey("SessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

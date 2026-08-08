@@ -485,7 +485,11 @@ public sealed record CounsellingMessageResponse(
     string Content,
     MessageType Type,
     string? AttachmentUrl,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? Ciphertext = null,
+    string? EncryptionNonce = null,
+    string? ClientMessageId = null,
+    int EncryptionVersion = 0);
 
 public sealed record CounsellingMeetingResponse(
     Guid Id,
@@ -540,7 +544,8 @@ public sealed record MatchResponse(
     Guid? ClosedByUserId = null,
     // Presence is in-memory and per-process; OtherLastSeenAt is only meaningful while offline.
     bool OtherIsOnline = false,
-    DateTimeOffset? OtherLastSeenAt = null);
+    DateTimeOffset? OtherLastSeenAt = null,
+    Guid? BlockedByUserId = null);
 
 // "Mixed" collapses Male-Female and Female-Male since actor/target order carries no meaning
 // for a gender-pair breakdown; "Unknown" covers events where either party's Sex was unset.

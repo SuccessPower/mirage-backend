@@ -31,6 +31,9 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<DateFeedback> DateFeedbacks => Set<DateFeedback>();
     public DbSet<ContentReport> ContentReports => Set<ContentReport>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<ChatEncryptionIdentity> ChatEncryptionIdentities => Set<ChatEncryptionIdentity>();
+    public DbSet<ChatDeviceLink> ChatDeviceLinks => Set<ChatDeviceLink>();
+    public DbSet<CounsellingKeyEnvelope> CounsellingKeyEnvelopes => Set<CounsellingKeyEnvelope>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<OrganisationBranch> OrganisationBranches => Set<OrganisationBranch>();
     public DbSet<OrganisationMember> OrganisationMembers => Set<OrganisationMember>();

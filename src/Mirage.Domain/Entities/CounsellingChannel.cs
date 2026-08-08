@@ -10,11 +10,12 @@ public sealed class CounsellingMessage : Entity
 {
     private CounsellingMessage() { }
 
-    public CounsellingMessage(Guid sessionId, Guid senderId, string content, MessageType type, string? attachmentUrl)
+    public CounsellingMessage(Guid sessionId, Guid senderId, string content, MessageType type, string? attachmentUrl,
+        bool encryptedPayload = false)
     {
         SessionId = sessionId;
         SenderId = senderId;
-        Content = content.Trim();
+        Content = (content ?? string.Empty).Trim();
         Type = type;
         AttachmentUrl = attachmentUrl?.Trim();
     }
@@ -24,6 +25,30 @@ public sealed class CounsellingMessage : Entity
     public string Content { get; private set; } = string.Empty;
     public MessageType Type { get; private set; } = MessageType.Text;
     public string? AttachmentUrl { get; private set; }
+    public string? Ciphertext { get; private set; }
+    public string? EncryptionNonce { get; private set; }
+    public string? ClientMessageId { get; private set; }
+    public int EncryptionVersion { get; private set; }
+    public bool IsEncrypted => EncryptionVersion > 0;
+
+    public void SetEncryptedContent(string ciphertext, string nonce, string clientMessageId, int version = 1)
+    {
+        if (version != 1) throw new ArgumentOutOfRangeException(nameof(version));
+        Ciphertext = Required(ciphertext, 12_000, nameof(ciphertext));
+        EncryptionNonce = Required(nonce, 100, nameof(nonce));
+        ClientMessageId = Required(clientMessageId, 100, nameof(clientMessageId));
+        EncryptionVersion = version;
+        Content = string.Empty;
+        AttachmentUrl = null;
+        Touch();
+    }
+
+    private static string Required(string value, int maxLength, string name)
+    {
+        value = value?.Trim() ?? string.Empty;
+        if (value.Length is 0 || value.Length > maxLength) throw new ArgumentException("Invalid encrypted message payload.", name);
+        return value;
+    }
 }
 
 public sealed class CounsellingMeeting : Entity

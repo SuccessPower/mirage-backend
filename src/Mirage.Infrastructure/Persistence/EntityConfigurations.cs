@@ -491,8 +491,27 @@ public sealed class CounsellingMessageConfiguration : IEntityTypeConfiguration<C
         b.ToTable("counselling_messages");
         b.HasIndex(x => x.SessionId);
         b.Property(x => x.Content).HasMaxLength(2000);
+        b.Property(x => x.Ciphertext).HasMaxLength(12_000);
+        b.Property(x => x.EncryptionNonce).HasMaxLength(100);
+        b.Property(x => x.ClientMessageId).HasMaxLength(100);
+        b.HasIndex(x => new { x.SessionId, x.ClientMessageId }).IsUnique()
+            .HasFilter("\"ClientMessageId\" IS NOT NULL");
         b.HasOne<CounsellingSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CounsellingKeyEnvelopeConfiguration : IEntityTypeConfiguration<CounsellingKeyEnvelope>
+{
+    public void Configure(EntityTypeBuilder<CounsellingKeyEnvelope> b)
+    {
+        b.ToTable("counselling_key_envelopes");
+        b.Property(x => x.Ciphertext).HasMaxLength(1000);
+        b.Property(x => x.Nonce).HasMaxLength(100);
+        b.HasIndex(x => new { x.SessionId, x.RecipientUserId }).IsUnique();
+        b.HasOne<CounsellingSession>().WithMany().HasForeignKey(x => x.SessionId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 
@@ -657,10 +676,44 @@ public sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         b.HasIndex(x => new { x.MatchId, x.IsRead }).HasFilter("\"IsRead\" = false");
         b.Property(x => x.Content).HasMaxLength(2000);
         b.Property(x => x.AttachmentUrl).HasMaxLength(1000);
+        b.Property(x => x.Ciphertext).HasMaxLength(12000);
+        b.Property(x => x.EncryptionNonce).HasMaxLength(100);
+        b.Property(x => x.ClientMessageId).HasMaxLength(100);
+        b.HasIndex(x => new { x.MatchId, x.ClientMessageId }).IsUnique()
+            .HasFilter("\"ClientMessageId\" IS NOT NULL");
         b.HasOne(x => x.Match).WithMany().HasForeignKey(x => x.MatchId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne(x => x.ReplyToMessage).WithMany().HasForeignKey(x => x.ReplyToMessageId)
             .OnDelete(DeleteBehavior.SetNull);
+    }
+}
+
+public sealed class ChatEncryptionIdentityConfiguration : IEntityTypeConfiguration<ChatEncryptionIdentity>
+{
+    public void Configure(EntityTypeBuilder<ChatEncryptionIdentity> b)
+    {
+        b.ToTable("chat_encryption_identities");
+        b.HasIndex(x => x.UserId).IsUnique();
+        b.Property(x => x.PublicKeyJwk).HasMaxLength(4000);
+        b.Property(x => x.EncryptedPrivateKey).HasMaxLength(8000);
+        b.Property(x => x.PrivateKeyNonce).HasMaxLength(100);
+        b.Property(x => x.RecoverySalt).HasMaxLength(100);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class ChatDeviceLinkConfiguration : IEntityTypeConfiguration<ChatDeviceLink>
+{
+    public void Configure(EntityTypeBuilder<ChatDeviceLink> b)
+    {
+        b.ToTable("chat_device_links");
+        b.HasIndex(x => new { x.UserId, x.ExpiresAt });
+        b.HasIndex(x => x.CodeHash).IsUnique();
+        b.Property(x => x.CodeHash).HasMaxLength(64);
+        b.Property(x => x.RequesterPublicKeyJwk).HasMaxLength(4000);
+        b.Property(x => x.EncryptedPayload).HasMaxLength(8000);
+        b.Property(x => x.PayloadNonce).HasMaxLength(100);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
 
