@@ -50,6 +50,10 @@ internal static class CounsellingEndpoints
         // Private channel: messages + follow-up meetings between counsellor and client
         sessions.MapGet("/{id:guid}/messages", ListMessages);
         sessions.MapPost("/{id:guid}/messages", SendMessage);
+        sessions.MapGet("/{id:guid}/encryption", GetEncryptionState);
+        sessions.MapPost("/{id:guid}/encryption/envelopes", SaveKeyEnvelopes);
+        sessions.MapGet("/{id:guid}/messages/legacy", ListLegacyMessages);
+        sessions.MapPatch("/{id:guid}/messages/encrypt", EncryptExistingMessages);
         sessions.MapGet("/{id:guid}/meetings", ListMeetings);
         sessions.MapPost("/{id:guid}/meetings", ScheduleMeeting);
         sessions.MapGet("/{id:guid}/video-token", GetVideoToken);
@@ -74,7 +78,8 @@ internal static class CounsellingEndpoints
             .Where(x => x.SessionId == id)
             .OrderBy(x => x.CreatedAt)
             .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new CounsellingMessageResponse(
-                m.Id, m.SessionId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
+                m.Id, m.SessionId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt,
+                m.Ciphertext, m.EncryptionNonce, m.ClientMessageId, m.EncryptionVersion))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, messages, "Messages retrieved successfully.");
     }
@@ -84,10 +89,22 @@ internal static class CounsellingEndpoints
     {
         var userId = context.User.GetUserId();
         if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
-        if (string.IsNullOrWhiteSpace(request.Content))
-            return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
+        var parties = await GetSessionPartyIdsAsync(id, db, cancellationToken);
+        var securedParties = await db.ChatEncryptionIdentities.AsNoTracking()
+            .CountAsync(x => parties.Contains(x.UserId), cancellationToken);
+        var envelopeCount = await db.CounsellingKeyEnvelopes.AsNoTracking()
+            .CountAsync(x => x.SessionId == id && parties.Contains(x.RecipientUserId), cancellationToken);
+        if (securedParties != parties.Count || envelopeCount != parties.Count)
+            return EndpointHelpers.Conflict(context, "Encrypted counselling chat is waiting for every participant to secure their messages.");
+        if (!string.IsNullOrEmpty(request.Content) || !string.IsNullOrWhiteSpace(request.AttachmentUrl)
+            || request.EncryptionVersion != 1 || string.IsNullOrWhiteSpace(request.Ciphertext)
+            || string.IsNullOrWhiteSpace(request.EncryptionNonce) || string.IsNullOrWhiteSpace(request.ClientMessageId)
+            || !IsValidEncryptedPayload(request.Ciphertext, request.EncryptionNonce))
+            return EndpointHelpers.ValidationProblem(context, ("ciphertext", "Counselling messages must be end-to-end encrypted."));
 
-        var message = new CounsellingMessage(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        var message = new CounsellingMessage(id, userId, string.Empty, request.Type, null, encryptedPayload: true);
+        try { message.SetEncryptedContent(request.Ciphertext, request.EncryptionNonce, request.ClientMessageId); }
+        catch (ArgumentException exception) { return EndpointHelpers.ValidationProblem(context, ("ciphertext", exception.Message)); }
         db.CounsellingMessages.Add(message);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -102,11 +119,116 @@ internal static class CounsellingEndpoints
             message.Content,
             message.Type,
             message.AttachmentUrl,
+            message.Ciphertext,
+            message.EncryptionNonce,
+            message.ClientMessageId,
+            message.EncryptionVersion,
             SentAt = message.CreatedAt
         }, cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/sessions/{id}/messages/{message.Id}", new { message.Id },
             "Message sent successfully.");
+    }
+
+    private static async Task<IResult> GetEncryptionState(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        var parties = await GetSessionPartyIdsAsync(id, db, cancellationToken);
+        var identities = await db.ChatEncryptionIdentities.AsNoTracking().Where(x => parties.Contains(x.UserId))
+            .Select(x => new { x.UserId, x.PublicKeyJwk, x.Version }).ToListAsync(cancellationToken);
+        var envelopes = await db.CounsellingKeyEnvelopes.AsNoTracking().Where(x => x.SessionId == id)
+            .Select(x => new { x.RecipientUserId, x.SenderUserId, x.Ciphertext, x.Nonce, x.Version })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, new { Participants = parties.Select(p => new
+        {
+            UserId = p,
+            PublicKeyJwk = identities.SingleOrDefault(x => x.UserId == p)?.PublicKeyJwk
+        }), Envelopes = envelopes }, "Counselling encryption state retrieved.");
+    }
+
+    private static async Task<IResult> SaveKeyEnvelopes(Guid id, SaveCounsellingKeyEnvelopesRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        var parties = await GetSessionPartyIdsAsync(id, db, cancellationToken);
+        if (request.Envelopes.Length is 0 or > 3 || request.Envelopes.Select(x => x.RecipientUserId).Distinct().Count() != request.Envelopes.Length
+            || request.Envelopes.Any(x => !parties.Contains(x.RecipientUserId) || !IsValidKeyEnvelope(x.Ciphertext, x.Nonce)))
+            return EndpointHelpers.ValidationProblem(context, ("envelopes", "Invalid counselling key envelopes."));
+        var existingRecipients = await db.CounsellingKeyEnvelopes.AsNoTracking().Where(x => x.SessionId == id)
+            .Select(x => x.RecipientUserId).ToListAsync(cancellationToken);
+        if (request.Initialize)
+        {
+            if (existingRecipients.Count != 0 || request.Envelopes.Select(x => x.RecipientUserId).ToHashSet().SetEquals(parties) is false)
+                return EndpointHelpers.Conflict(context, "The counselling encryption key has already been initialized.");
+        }
+        else
+        {
+            if (!existingRecipients.Contains(userId) || request.Envelopes.Any(x => existingRecipients.Contains(x.RecipientUserId)))
+                return EndpointHelpers.Conflict(context, "Only a secured participant can add missing key envelopes.");
+        }
+        foreach (var envelope in request.Envelopes)
+            db.CounsellingKeyEnvelopes.Add(new CounsellingKeyEnvelope(id, envelope.RecipientUserId, userId,
+                envelope.Ciphertext, envelope.Nonce));
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException) { return EndpointHelpers.Conflict(context, "Counselling encryption changed; refresh and try again."); }
+        return ApiResults.Ok(context, new { Saved = request.Envelopes.Length }, "Counselling encryption keys saved.");
+    }
+
+    private static async Task<IResult> ListLegacyMessages(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        var messages = await db.CounsellingMessages.AsNoTracking()
+            .Where(x => x.SessionId == id && x.EncryptionVersion == 0).OrderBy(x => x.CreatedAt).Take(100)
+            .Select(x => new { x.Id, x.SenderId, x.Content, x.Type, x.AttachmentUrl }).ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, messages, "Legacy counselling messages retrieved for encryption.");
+    }
+
+    private static async Task<IResult> EncryptExistingMessages(Guid id, EncryptExistingCounsellingMessagesRequest request,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        if (request.Messages.Length is 0 or > 100 || request.Messages.Select(x => x.MessageId).Distinct().Count() != request.Messages.Length)
+            return EndpointHelpers.ValidationProblem(context, ("messages", "Provide 1 to 100 unique messages."));
+        var ids = request.Messages.Select(x => x.MessageId).ToArray();
+        var messages = await db.CounsellingMessages.Where(x => x.SessionId == id && ids.Contains(x.Id)).ToListAsync(cancellationToken);
+        if (messages.Count != ids.Length) return EndpointHelpers.ValidationProblem(context, ("messages", "A counselling message was not found."));
+        foreach (var replacement in request.Messages)
+        {
+            var message = messages.Single(x => x.Id == replacement.MessageId);
+            if (message.IsEncrypted) continue;
+            if (replacement.EncryptionVersion != 1 || !IsValidEncryptedPayload(replacement.Ciphertext, replacement.EncryptionNonce))
+                return EndpointHelpers.ValidationProblem(context, ("messages", "An encrypted counselling message is malformed."));
+            try { message.SetEncryptedContent(replacement.Ciphertext, replacement.EncryptionNonce, replacement.ClientMessageId); }
+            catch (ArgumentException exception) { return EndpointHelpers.ValidationProblem(context, ("messages", exception.Message)); }
+        }
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { Encrypted = messages.Count(x => x.IsEncrypted) }, "Counselling messages encrypted.");
+    }
+
+    private static async Task<List<Guid>> GetSessionPartyIdsAsync(Guid id, IMirageDbContext db, CancellationToken ct)
+    {
+        var session = await db.CounsellingSessions.AsNoTracking().Where(x => x.Id == id).Select(x => new
+        { x.ClientUserId, CounsellorUserId = x.Counsellor.UserId, x.PartnerUserId, x.PartnerAccepted }).SingleAsync(ct);
+        var parties = new List<Guid> { session.ClientUserId, session.CounsellorUserId };
+        if (session.PartnerAccepted && session.PartnerUserId.HasValue) parties.Add(session.PartnerUserId.Value);
+        return parties.Distinct().ToList();
+    }
+
+    private static bool IsValidKeyEnvelope(string ciphertext, string nonce) =>
+        IsValidBase64(ciphertext, 32, 128) && IsValidBase64(nonce, 12, 12);
+    private static bool IsValidEncryptedPayload(string ciphertext, string nonce) =>
+        IsValidBase64(ciphertext, 16, 9000) && IsValidBase64(nonce, 12, 12);
+    private static bool IsValidBase64(string value, int minBytes, int maxBytes)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > ((maxBytes + 2) / 3) * 4) return false;
+        var bytes = new byte[maxBytes];
+        return Convert.TryFromBase64String(value, bytes, out var count) && count >= minBytes && count <= maxBytes;
     }
 
     private static async Task<IResult> ListMeetings(Guid id, HttpContext context, IMirageDbContext db,

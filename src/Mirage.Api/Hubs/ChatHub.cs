@@ -12,9 +12,7 @@ namespace Mirage.Api.Hubs;
 [Authorize]
 public sealed class ChatHub(
     MirageDbContext db,
-    PresenceTracker presence,
-    NotificationService notifications,
-    IConfiguration configuration) : Hub
+    PresenceTracker presence) : Hub
 {
     // Called when a client connects — join all active match groups immediately
     // so messages arrive regardless of which conversation the client has open.
@@ -207,86 +205,11 @@ public sealed class ChatHub(
     // SignalR dispatches by method name and argument count rather than C# optional semantics.
     public Task SendMessage(Guid matchId, string content, MessageType type = MessageType.Text,
         string? attachmentUrl = null) =>
-        SendMessageCore(matchId, content, type, attachmentUrl, null);
+        throw new HubException("Direct messages must be sent with end-to-end encryption.");
 
     public Task SendReply(Guid matchId, string content, MessageType type, string? attachmentUrl,
         Guid replyToMessageId) =>
-        SendMessageCore(matchId, content, type, attachmentUrl, replyToMessageId);
-
-    private async Task SendMessageCore(Guid matchId, string content, MessageType type,
-        string? attachmentUrl, Guid? replyToMessageId)
-    {
-        content = (content ?? string.Empty).Trim();
-        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
-        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
-
-        var userId = GetUserId();
-        var match = await db.Matches.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == matchId
-                && (x.User1Id == userId || x.User2Id == userId)
-                && x.Status == MatchStatus.Active);
-
-        if (match is null) return;
-        Message? repliedTo = null;
-        if (replyToMessageId.HasValue)
-        {
-            repliedTo = await db.Messages.AsNoTracking().SingleOrDefaultAsync(
-                x => x.Id == replyToMessageId.Value && x.MatchId == matchId);
-            if (repliedTo is null) return;
-        }
-
-        // Read before the insert: an existing unread from this sender means the recipient has
-        // already been told about this conversation and does not need telling again.
-        var hadUnread = await db.Messages.AsNoTracking()
-            .AnyAsync(x => x.MatchId == matchId && x.SenderId == userId && !x.IsRead);
-
-        var message = new Message(matchId, userId, content, type, attachmentUrl, replyToMessageId);
-        db.Messages.Add(message);
-        await db.SaveChangesAsync();
-        await db.Matches.Where(x => x.Id == matchId)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastActivityAt, DateTimeOffset.UtcNow));
-
-        await Clients.Group(MatchGroup(matchId)).SendAsync("ReceiveMessage", new
-        {
-            message.Id,
-            message.MatchId,
-            message.SenderId,
-            message.Content,
-            message.Type,
-            message.AttachmentUrl,
-            message.ReplyToMessageId,
-            ReplyToSenderId = repliedTo?.SenderId,
-            ReplyToContent = repliedTo?.Content,
-            ReplyToType = repliedTo?.Type,
-            ReplyToAttachmentUrl = repliedTo?.AttachmentUrl,
-            SentAt = message.CreatedAt,
-            message.IsRead
-        });
-
-        var recipientId = match.User1Id == userId ? match.User2Id : match.User1Id;
-        await NotifyRecipientOfMessageAsync(recipientId, userId, matchId, content, type, hadUnread);
-    }
-
-    // A message only earns a notification (and an email) when the recipient is not connected and
-    // has no unread message from this sender already waiting. That pair of conditions is what
-    // keeps a back-and-forth conversation from turning into a stream of alerts.
-    private async Task NotifyRecipientOfMessageAsync(Guid recipientId, Guid senderId, Guid matchId,
-        string content, MessageType type, bool hadUnread)
-    {
-        if (hadUnread || presence.IsOnline(recipientId)) return;
-
-        var senderName = await db.Profiles.AsNoTracking()
-            .Where(x => x.UserId == senderId).Select(x => x.DisplayName).SingleOrDefaultAsync() ?? "Someone";
-
-        var preview = type == MessageType.Image
-            ? "Sent you a photo."
-            : content.Length > 140 ? $"{content[..140]}…" : content;
-
-        var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
-        await notifications.NotifyAsync(recipientId, NotificationType.NewMessage,
-            $"New message from {senderName}", preview, matchId, "Match", CancellationToken.None,
-            $"{frontendUrl}/matches/{matchId}/chat", "Open chat");
-    }
+        throw new HubException("Direct messages must be sent with end-to-end encryption.");
 
     // Client → Hub: send a message to a mentor's broadcast group (mentor + accepted mentees)
     public async Task SendMentorGroupMessage(Guid mentorProfileId, string content, MessageType type = MessageType.Text,
@@ -367,39 +290,9 @@ public sealed class ChatHub(
     }
 
     // Client → Hub: send a message on a counselling session's private channel
-    public async Task SendCounsellingMessage(Guid sessionId, string content, MessageType type = MessageType.Text,
-        string? attachmentUrl = null)
-    {
-        content = (content ?? string.Empty).Trim();
-        if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
-        if (type == MessageType.Image && (string.IsNullOrWhiteSpace(attachmentUrl) || content.Length > 2000)) return;
-
-        var userId = GetUserId();
-        var isParty = await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
-            && (x.ClientUserId == userId || x.Counsellor.UserId == userId
-                || (x.PartnerUserId == userId && x.PartnerAccepted))
-            && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled);
-        if (!isParty) return;
-
-        var message = new CounsellingMessage(sessionId, userId, content, type, attachmentUrl);
-        db.CounsellingMessages.Add(message);
-        await db.SaveChangesAsync();
-
-        var senderName = await db.Profiles.AsNoTracking()
-            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync();
-
-        await Clients.Group(CounsellingGroup(sessionId)).SendAsync("ReceiveCounsellingMessage", new
-        {
-            message.Id,
-            SessionId = sessionId,
-            message.SenderId,
-            SenderName = senderName,
-            message.Content,
-            message.Type,
-            message.AttachmentUrl,
-            SentAt = message.CreatedAt
-        });
-    }
+    public Task SendCounsellingMessage(Guid sessionId, string content, MessageType type = MessageType.Text,
+        string? attachmentUrl = null) =>
+        throw new HubException("Counselling messages must be sent with end-to-end encryption.");
 
     // Client → Hub: mark all messages in a match as read
     public async Task MarkRead(Guid matchId)

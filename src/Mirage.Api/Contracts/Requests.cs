@@ -162,7 +162,11 @@ public sealed record CreateDateRequestRequest(
     string? ItemsToBring = null,
     string? ImageUrl = null);
 public sealed record SendChatMessageRequest(string Content, MessageType Type = MessageType.Text,
-    string? AttachmentUrl = null, Guid? ReplyToMessageId = null);
+    string? AttachmentUrl = null, Guid? ReplyToMessageId = null, string? Ciphertext = null,
+    string? EncryptionNonce = null, string? ClientMessageId = null, int EncryptionVersion = 0);
+public sealed record EncryptExistingMessageRequest(Guid MessageId, string Ciphertext,
+    string EncryptionNonce, string ClientMessageId, int EncryptionVersion = 1);
+public sealed record EncryptExistingMessagesRequest(EncryptExistingMessageRequest[] Messages);
 public sealed record RegisterCounsellorRequest(
     string InviteToken,
     string Email,
@@ -210,7 +214,14 @@ public sealed record InviteCoupleRequest(string PartnerEmail);
 public sealed record InviteCompanionPartnerRequest(string? PartnerEmail = null, Guid? PartnerUserId = null);
 public sealed record CreateCompanionEntryRequest(Guid PromptId, string AnswerText);
 public sealed record SetCompanionCadenceRequest(CompanionCadence Cadence);
-public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
+public sealed record SendCounsellingMessageRequest(string Content, MessageType Type = MessageType.Text,
+    string? AttachmentUrl = null, string? Ciphertext = null, string? EncryptionNonce = null,
+    string? ClientMessageId = null, int EncryptionVersion = 0);
+public sealed record CounsellingKeyEnvelopeRequest(Guid RecipientUserId, string Ciphertext, string Nonce);
+public sealed record SaveCounsellingKeyEnvelopesRequest(bool Initialize, CounsellingKeyEnvelopeRequest[] Envelopes);
+public sealed record EncryptExistingCounsellingMessageRequest(Guid MessageId, string Ciphertext,
+    string EncryptionNonce, string ClientMessageId, int EncryptionVersion = 1);
+public sealed record EncryptExistingCounsellingMessagesRequest(EncryptExistingCounsellingMessageRequest[] Messages);
 public sealed record ScheduleCounsellingMeetingRequest(string Title, DateTimeOffset ScheduledAt, int? DurationMinutes);
 
 public sealed record RegisterMentorRequest(

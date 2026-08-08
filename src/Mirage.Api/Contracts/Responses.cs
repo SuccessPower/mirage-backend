@@ -485,7 +485,11 @@ public sealed record CounsellingMessageResponse(
     string Content,
     MessageType Type,
     string? AttachmentUrl,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? Ciphertext = null,
+    string? EncryptionNonce = null,
+    string? ClientMessageId = null,
+    int EncryptionVersion = 0);
 
 public sealed record CounsellingMeetingResponse(
     Guid Id,

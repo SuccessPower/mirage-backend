@@ -26,6 +26,9 @@ public interface IMirageDbContext
     DbSet<DateFeedback> DateFeedbacks { get; }
     DbSet<ContentReport> ContentReports { get; }
     DbSet<Message> Messages { get; }
+    DbSet<ChatEncryptionIdentity> ChatEncryptionIdentities { get; }
+    DbSet<ChatDeviceLink> ChatDeviceLinks { get; }
+    DbSet<CounsellingKeyEnvelope> CounsellingKeyEnvelopes { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<OrganisationBranch> OrganisationBranches { get; }
     DbSet<OrganisationMember> OrganisationMembers { get; }

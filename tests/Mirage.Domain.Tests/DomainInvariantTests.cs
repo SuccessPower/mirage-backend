@@ -8,6 +8,27 @@ namespace Mirage.Domain.Tests;
 public sealed class DomainInvariantTests
 {
     [Fact]
+    public void Encrypting_a_message_removes_all_plaintext_payload_fields()
+    {
+        var message = new Message(Guid.NewGuid(), Guid.NewGuid(), "private caption", MessageType.Image,
+            "https://storage.example/private-photo.jpg");
+
+        message.SetEncryptedContent("ciphertext-value", "nonce-value", Guid.NewGuid().ToString("N"));
+
+        Assert.True(message.IsEncrypted);
+        Assert.Empty(message.Content);
+        Assert.Null(message.AttachmentUrl);
+        Assert.Equal(1, message.EncryptionVersion);
+    }
+
+    [Fact]
+    public void Encryption_identity_rejects_weak_recovery_derivation()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ChatEncryptionIdentity(Guid.NewGuid(),
+            "public-key", "encrypted-private-key", "nonce", "salt", 100_000));
+    }
+
+    [Fact]
     public void Message_preserves_the_replied_to_message_reference()
     {
         var repliedToId = Guid.NewGuid();
