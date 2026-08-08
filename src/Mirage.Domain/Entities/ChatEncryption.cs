@@ -3,8 +3,8 @@ using Mirage.Domain.Common;
 namespace Mirage.Domain.Entities;
 
 /// <summary>
-/// Public ECDH identity plus a recovery-passphrase-encrypted backup of the private JWK.
-/// The server never receives the recovery passphrase or plaintext private key.
+/// Public ECDH identity with legacy recovery protection and an optional AWS KMS escrow backup.
+/// KMS escrow enables transparent recovery on authenticated devices without storing plaintext key material.
 /// </summary>
 public sealed class ChatEncryptionIdentity : Entity
 {
@@ -23,7 +23,14 @@ public sealed class ChatEncryptionIdentity : Entity
     public string PrivateKeyNonce { get; private set; } = string.Empty;
     public string RecoverySalt { get; private set; } = string.Empty;
     public int KdfIterations { get; private set; }
+    public string? KmsEncryptedPrivateKey { get; private set; }
     public int Version { get; private set; } = 1;
+
+    public void SetKmsEscrow(string encryptedPrivateKey)
+    {
+        KmsEncryptedPrivateKey = Required(encryptedPrivateKey, 8000, nameof(encryptedPrivateKey));
+        Touch();
+    }
 
     public void Update(string publicKeyJwk, string encryptedPrivateKey, string privateKeyNonce,
         string recoverySalt, int kdfIterations)

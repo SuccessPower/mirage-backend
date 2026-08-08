@@ -698,6 +698,7 @@ public sealed class ChatEncryptionIdentityConfiguration : IEntityTypeConfigurati
         b.Property(x => x.EncryptedPrivateKey).HasMaxLength(8000);
         b.Property(x => x.PrivateKeyNonce).HasMaxLength(100);
         b.Property(x => x.RecoverySalt).HasMaxLength(100);
+        b.Property(x => x.KmsEncryptedPrivateKey).HasMaxLength(8000);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }

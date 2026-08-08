@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Amazon.KeyManagementService;
+using Amazon.KeyManagementService.Model;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
@@ -17,6 +19,8 @@ internal static class ChatEncryptionEndpoints
         var group = api.MapGroup("/chat-encryption").WithTags("Chat encryption").RequireAuthorization();
         group.MapGet("/identity", GetIdentity);
         group.MapPut("/identity", PutIdentity);
+        group.MapPut("/identity/kms-backup", PutKmsBackup);
+        group.MapGet("/identity/kms-backup", GetKmsBackup);
         group.MapGet("/matches/{matchId:guid}/peer-key", GetPeerKey);
         group.MapPost("/device-links", CreateDeviceLink).RequireRateLimiting("device-link");
         group.MapGet("/device-links/pending", ListPendingLinks);
@@ -88,6 +92,53 @@ internal static class ChatEncryptionEndpoints
         return key is null ? Results.NotFound() : ApiResults.Ok(context, key, "Peer encryption key retrieved.");
     }
 
+    private static async Task<IResult> PutKmsBackup(KmsPrivateKeyBackupRequest request, HttpContext context,
+        IMirageDbContext db, IAmazonKeyManagementService kms, IConfiguration configuration, CancellationToken ct)
+    {
+        var keyId = configuration["ChatEncryptionKms:KeyId"];
+        if (string.IsNullOrWhiteSpace(keyId))
+            return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+                "Encrypted messaging unavailable", "Secure messaging is temporarily unavailable.");
+        if (!IsMatchingP256PrivateJwk(request.PrivateKeyJwk, request.PublicKeyJwk))
+            return EndpointHelpers.ValidationProblem(context, ("privateKeyJwk", "The encryption identity is invalid."));
+
+        var userId = context.User.GetUserId();
+        var identity = await db.ChatEncryptionIdentities.SingleOrDefaultAsync(x => x.UserId == userId, ct);
+        if (identity is null || !FixedTextEquals(identity.PublicKeyJwk, request.PublicKeyJwk))
+            return EndpointHelpers.Conflict(context, "The encryption identity does not match this account.");
+
+        var encrypted = await kms.EncryptAsync(new EncryptRequest
+        {
+            KeyId = keyId,
+            Plaintext = new MemoryStream(Encoding.UTF8.GetBytes(request.PrivateKeyJwk.Trim())),
+            EncryptionContext = new Dictionary<string, string> { ["MirageUserId"] = userId.ToString("D") }
+        }, ct);
+        identity.SetKmsEscrow(Convert.ToBase64String(encrypted.CiphertextBlob.ToArray()));
+        await db.SaveChangesAsync(ct);
+        return ApiResults.Ok(context, new { backedUp = true }, "Encryption identity protected.");
+    }
+
+    private static async Task<IResult> GetKmsBackup(HttpContext context, IMirageDbContext db,
+        IAmazonKeyManagementService kms, CancellationToken ct)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.Pragma = "no-cache";
+        var userId = context.User.GetUserId();
+        var identity = await db.ChatEncryptionIdentities.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
+        if (identity?.KmsEncryptedPrivateKey is null) return Results.NotFound();
+
+        var decrypted = await kms.DecryptAsync(new DecryptRequest
+        {
+            CiphertextBlob = new MemoryStream(Convert.FromBase64String(identity.KmsEncryptedPrivateKey)),
+            EncryptionContext = new Dictionary<string, string> { ["MirageUserId"] = userId.ToString("D") }
+        }, ct);
+        var privateKeyJwk = Encoding.UTF8.GetString(decrypted.Plaintext.ToArray());
+        if (!IsMatchingP256PrivateJwk(privateKeyJwk, identity.PublicKeyJwk))
+            return EndpointHelpers.Problem(context, StatusCodes.Status500InternalServerError,
+                "Encrypted messaging unavailable", "The protected messaging key could not be verified.");
+        return ApiResults.Ok(context, new { privateKeyJwk, identity.PublicKeyJwk }, "Encryption identity restored.");
+    }
+
     private static async Task<IResult> CreateDeviceLink(CreateDeviceLinkRequest request, HttpContext context,
         IMirageDbContext db, CancellationToken ct)
     {
@@ -148,7 +199,8 @@ internal static class ChatEncryptionEndpoints
     }
 
     private static object IdentityResponse(ChatEncryptionIdentity x) => new
-    { x.PublicKeyJwk, x.EncryptedPrivateKey, x.PrivateKeyNonce, x.RecoverySalt, x.KdfIterations, x.Version };
+    { x.PublicKeyJwk, x.EncryptedPrivateKey, x.PrivateKeyNonce, x.RecoverySalt, x.KdfIterations,
+        KmsBackedUp = x.KmsEncryptedPrivateKey is not null, x.Version };
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim().ToUpperInvariant())));
     private static bool IsBase64(string value)
     {
@@ -171,9 +223,35 @@ internal static class ChatEncryptionEndpoints
         }
         catch (JsonException) { return false; }
     }
+
+    private static bool FixedTextEquals(string left, string right) => CryptographicOperations.FixedTimeEquals(
+        SHA256.HashData(Encoding.UTF8.GetBytes(left.Trim())), SHA256.HashData(Encoding.UTF8.GetBytes(right.Trim())));
+
+    private static bool IsMatchingP256PrivateJwk(string privateJwk, string publicJwk)
+    {
+        try
+        {
+            using var privateDocument = JsonDocument.Parse(privateJwk);
+            using var publicDocument = JsonDocument.Parse(publicJwk);
+            var privateRoot = privateDocument.RootElement;
+            var publicRoot = publicDocument.RootElement;
+            return privateRoot.GetProperty("kty").GetString() == "EC"
+                && privateRoot.GetProperty("crv").GetString() == "P-256"
+                && !string.IsNullOrWhiteSpace(privateRoot.GetProperty("d").GetString())
+                && privateRoot.GetProperty("x").GetString() == publicRoot.GetProperty("x").GetString()
+                && privateRoot.GetProperty("y").GetString() == publicRoot.GetProperty("y").GetString()
+                && IsP256PublicJwk(publicJwk);
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException
+            or InvalidOperationException or ArgumentException)
+        {
+            return false;
+        }
+    }
 }
 
 public sealed record UpsertEncryptionIdentity(string PublicKeyJwk, string EncryptedPrivateKey,
     string PrivateKeyNonce, string RecoverySalt, int KdfIterations);
 public sealed record CreateDeviceLinkRequest(string RequesterPublicKeyJwk);
 public sealed record CompleteDeviceLinkRequest(string Code, string EncryptedPayload, string PayloadNonce);
+public sealed record KmsPrivateKeyBackupRequest(string PrivateKeyJwk, string PublicKeyJwk);
