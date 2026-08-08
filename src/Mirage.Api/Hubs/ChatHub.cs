@@ -162,6 +162,17 @@ public sealed class ChatHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(matchId));
     }
 
+    public async Task JoinCounsellingSession(Guid sessionId)
+    {
+        var userId = GetUserId();
+        var isParticipant = await db.CounsellingSessions.AsNoTracking().AnyAsync(x => x.Id == sessionId
+            && (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                || (x.PartnerUserId == userId && x.PartnerAccepted))
+            && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled);
+        if (!isParticipant) return;
+        await Groups.AddToGroupAsync(Context.ConnectionId, CounsellingGroup(sessionId));
+    }
+
     // Client → Hub: send a message to a couple-friendship thread (friend + both partners)
     public async Task SendCoupleFriendMessage(Guid friendshipId, string content, MessageType type = MessageType.Text,
         string? attachmentUrl = null)

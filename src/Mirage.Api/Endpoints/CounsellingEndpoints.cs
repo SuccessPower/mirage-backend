@@ -154,7 +154,11 @@ internal static class CounsellingEndpoints
         var userId = context.User.GetUserId();
         if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
         var parties = await GetSessionPartyIdsAsync(id, db, cancellationToken);
-        if (request.Envelopes.Length is 0 or > 3 || request.Envelopes.Select(x => x.RecipientUserId).Distinct().Count() != request.Envelopes.Length
+        var identityCount = await db.ChatEncryptionIdentities.AsNoTracking()
+            .CountAsync(x => parties.Contains(x.UserId), cancellationToken);
+        if (identityCount != parties.Count)
+            return EndpointHelpers.Conflict(context, "Every counselling participant must enable encrypted messages first.");
+        if (request.Envelopes is null || request.Envelopes.Length is 0 or > 3 || request.Envelopes.Select(x => x.RecipientUserId).Distinct().Count() != request.Envelopes.Length
             || request.Envelopes.Any(x => !parties.Contains(x.RecipientUserId) || !IsValidKeyEnvelope(x.Ciphertext, x.Nonce)))
             return EndpointHelpers.ValidationProblem(context, ("envelopes", "Invalid counselling key envelopes."));
         var existingRecipients = await db.CounsellingKeyEnvelopes.AsNoTracking().Where(x => x.SessionId == id)
@@ -193,7 +197,12 @@ internal static class CounsellingEndpoints
     {
         var userId = context.User.GetUserId();
         if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
-        if (request.Messages.Length is 0 or > 100 || request.Messages.Select(x => x.MessageId).Distinct().Count() != request.Messages.Length)
+        var parties = await GetSessionPartyIdsAsync(id, db, cancellationToken);
+        var envelopeCount = await db.CounsellingKeyEnvelopes.AsNoTracking()
+            .CountAsync(x => x.SessionId == id && parties.Contains(x.RecipientUserId), cancellationToken);
+        if (envelopeCount != parties.Count)
+            return EndpointHelpers.Conflict(context, "Counselling encryption is not ready for migration.");
+        if (request.Messages is null || request.Messages.Length is 0 or > 100 || request.Messages.Select(x => x.MessageId).Distinct().Count() != request.Messages.Length)
             return EndpointHelpers.ValidationProblem(context, ("messages", "Provide 1 to 100 unique messages."));
         var ids = request.Messages.Select(x => x.MessageId).ToArray();
         var messages = await db.CounsellingMessages.Where(x => x.SessionId == id && ids.Contains(x.Id)).ToListAsync(cancellationToken);

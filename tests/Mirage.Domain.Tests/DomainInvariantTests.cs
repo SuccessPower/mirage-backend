@@ -29,6 +29,19 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
+    public void Encrypting_a_counselling_message_removes_plaintext_and_attachment_location()
+    {
+        var message = new CounsellingMessage(Guid.NewGuid(), Guid.NewGuid(), "confidential notes",
+            MessageType.Image, "https://storage.example/counselling-photo.jpg");
+
+        message.SetEncryptedContent("ciphertext-value", "nonce-value", Guid.NewGuid().ToString("N"));
+
+        Assert.True(message.IsEncrypted);
+        Assert.Empty(message.Content);
+        Assert.Null(message.AttachmentUrl);
+    }
+
+    [Fact]
     public void Message_preserves_the_replied_to_message_reference()
     {
         var repliedToId = Guid.NewGuid();
