@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.RateLimiting;
@@ -14,6 +15,7 @@ namespace Mirage.Api.Endpoints;
 
 internal static class ChatEncryptionEndpoints
 {
+    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> IdentityProvisioningLocks = new();
     public static RouteGroupBuilder MapChatEncryptionEndpoints(this RouteGroupBuilder api)
     {
         var group = api.MapGroup("/chat-encryption").WithTags("Chat encryption").RequireAuthorization();
@@ -80,7 +82,7 @@ internal static class ChatEncryptionEndpoints
     }
 
     private static async Task<IResult> GetPeerKey(Guid matchId, HttpContext context, IMirageDbContext db,
-        CancellationToken ct)
+        IAmazonKeyManagementService kms, IConfiguration configuration, CancellationToken ct)
     {
         var userId = context.User.GetUserId();
         var match = await db.Matches.AsNoTracking().SingleOrDefaultAsync(x => x.Id == matchId
@@ -89,7 +91,15 @@ internal static class ChatEncryptionEndpoints
         var peerId = match.User1Id == userId ? match.User2Id : match.User1Id;
         var key = await db.ChatEncryptionIdentities.AsNoTracking().Where(x => x.UserId == peerId)
             .Select(x => new { x.UserId, x.PublicKeyJwk, x.Version }).SingleOrDefaultAsync(ct);
-        return key is null ? Results.NotFound() : ApiResults.Ok(context, key, "Peer encryption key retrieved.");
+        if (key is null)
+        {
+            var identity = await CreateKmsManagedIdentity(peerId, db, kms, configuration, ct);
+            if (identity is null)
+                return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+                    "Encrypted messaging unavailable", "Secure messaging is temporarily unavailable.");
+            key = new { identity.UserId, identity.PublicKeyJwk, identity.Version };
+        }
+        return ApiResults.Ok(context, key, "Peer encryption key retrieved.");
     }
 
     private static async Task<IResult> PutKmsBackup(KmsPrivateKeyBackupRequest request, HttpContext context,
@@ -119,13 +129,20 @@ internal static class ChatEncryptionEndpoints
     }
 
     private static async Task<IResult> GetKmsBackup(HttpContext context, IMirageDbContext db,
-        IAmazonKeyManagementService kms, CancellationToken ct)
+        IAmazonKeyManagementService kms, IConfiguration configuration, CancellationToken ct)
     {
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers.Pragma = "no-cache";
         var userId = context.User.GetUserId();
-        var identity = await db.ChatEncryptionIdentities.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct);
-        if (identity?.KmsEncryptedPrivateKey is null) return Results.NotFound();
+        var identity = await db.ChatEncryptionIdentities.SingleOrDefaultAsync(x => x.UserId == userId, ct);
+        if (identity is null)
+        {
+            identity = await CreateKmsManagedIdentity(userId, db, kms, configuration, ct);
+            if (identity is null)
+                return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+                    "Encrypted messaging unavailable", "Secure messaging is temporarily unavailable.");
+        }
+        if (identity.KmsEncryptedPrivateKey is null) return Results.NotFound();
 
         var decrypted = await kms.DecryptAsync(new DecryptRequest
         {
@@ -248,6 +265,56 @@ internal static class ChatEncryptionEndpoints
             return false;
         }
     }
+
+    private static async Task<ChatEncryptionIdentity?> CreateKmsManagedIdentity(Guid userId,
+        IMirageDbContext db, IAmazonKeyManagementService kms, IConfiguration configuration, CancellationToken ct)
+    {
+        var keyId = configuration["ChatEncryptionKms:KeyId"];
+        if (string.IsNullOrWhiteSpace(keyId)) return null;
+
+        var provisioningLock = IdentityProvisioningLocks.GetOrAdd(userId, static _ => new SemaphoreSlim(1, 1));
+        await provisioningLock.WaitAsync(ct);
+        try
+        {
+            var existing = await db.ChatEncryptionIdentities.SingleOrDefaultAsync(x => x.UserId == userId, ct);
+            if (existing is not null) return existing;
+
+            using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+            var parameters = ecdh.ExportParameters(true);
+            var publicKeyJwk = JsonSerializer.Serialize(new
+            {
+                kty = "EC", crv = "P-256", x = Base64Url(parameters.Q.X!), y = Base64Url(parameters.Q.Y!), ext = true
+            });
+            var privateKeyJwk = JsonSerializer.Serialize(new
+            {
+                kty = "EC", crv = "P-256", x = Base64Url(parameters.Q.X!), y = Base64Url(parameters.Q.Y!),
+                d = Base64Url(parameters.D!), ext = true
+            });
+            var encrypted = await kms.EncryptAsync(new EncryptRequest
+            {
+                KeyId = keyId,
+                Plaintext = new MemoryStream(Encoding.UTF8.GetBytes(privateKeyJwk)),
+                EncryptionContext = new Dictionary<string, string> { ["MirageUserId"] = userId.ToString("D") }
+            }, ct);
+            var identity = new ChatEncryptionIdentity(userId,
+                publicKeyJwk,
+                Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+                Convert.ToBase64String(RandomNumberGenerator.GetBytes(12)),
+                Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
+                310_000);
+            identity.SetKmsEscrow(Convert.ToBase64String(encrypted.CiphertextBlob.ToArray()));
+            db.ChatEncryptionIdentities.Add(identity);
+            await db.SaveChangesAsync(ct);
+            return identity;
+        }
+        finally
+        {
+            provisioningLock.Release();
+        }
+    }
+
+    private static string Base64Url(byte[] value) => Convert.ToBase64String(value)
+        .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }
 
 public sealed record UpsertEncryptionIdentity(string PublicKeyJwk, string EncryptedPrivateKey,
