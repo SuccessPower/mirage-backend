@@ -18,7 +18,8 @@ public sealed class AmazonSesEmailTransport(
     {
         var request = new SendEmailRequest
         {
-            FromEmailAddress = configuration["AmazonSes:From"] ?? "Mirage <noreply@themiragehub.com>",
+            FromEmailAddress = EmailSender.WithDisplayName(
+                configuration["AmazonSes:From"] ?? "Mirage <noreply@themiragehub.com>", message.FromName),
             Destination = new Destination { ToAddresses = [message.To] },
             Content = new EmailContent
             {

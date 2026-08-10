@@ -117,7 +117,8 @@ public sealed class AmazonSesEmailService : IEmailService
         SendAsync(toEmail, subject, NewsletterEmailTemplate.Render(displayName, title, excerpt, contentHtml,
             imageUrls, newsletterUrl, unsubscribeUrl,
             string.IsNullOrWhiteSpace(authorName) ? null : new NewsletterAuthor(authorName, authorAvatarUrl),
-            NewsletterEmailTemplate.SocialLinks(_config), thumbnailUrl, _brandLogoUrl), cancellationToken);
+            NewsletterEmailTemplate.SocialLinks(_config), thumbnailUrl, _brandLogoUrl), cancellationToken,
+            fromName: NewsletterEmailTemplate.SenderName(authorName, _config));
 
     public Task<bool> SendPlatformManagerInviteAsync(string toEmail, string inviteUrl,
         CancellationToken cancellationToken = default) => SendAsync(toEmail,
@@ -127,10 +128,11 @@ public sealed class AmazonSesEmailService : IEmailService
             cancellationToken);
 
     private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
-        string? replyTo = null)
+        string? replyTo = null, string? fromName = null)
     {
         html = ApplyBranding(html);
-        var from = _config["AmazonSes:From"] ?? "Mirage <noreply@themiragehub.com>";
+        var from = EmailSender.WithDisplayName(
+            _config["AmazonSes:From"] ?? "Mirage <noreply@themiragehub.com>", fromName);
         var request = new SendEmailRequest
         {
             FromEmailAddress = from,

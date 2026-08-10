@@ -32,6 +32,10 @@ public static class NewsletterEmailTemplate
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
     private const string DefaultSupportEmail = "support@themiragehub.com";
 
+    /// <summary>Marks a template that already carries its own complete footer, so the shared branding pass does
+    /// not append a second one underneath it.</summary>
+    public const string SelfBrandedMarker = "<!--mirage:self-branded-->";
+
     // Old-style faces first, each with a broad fallback. Email clients cannot be relied on to load a webfont, so
     // the letter's character has to survive on faces that ship with the OS.
     private const string Letter = "'Baskerville','Libre Baskerville','Hoefler Text','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif";
@@ -122,6 +126,18 @@ public static class NewsletterEmailTemplate
             This invitation expires in seven days. Sign in with this email address to accept it.
           </td></tr>
         """, socials, null, logoUrl);
+
+    /// <summary>"Ada from The Mirage Hub" — the author's first name in front of the brand, so a newsletter looks
+    /// like it came from a person. Falls back to the brand alone when there is no author to name.</summary>
+    public static string? SenderName(string? authorName, IConfiguration configuration)
+    {
+        var brand = configuration["Brand:SenderSuffix"]?.Trim() is { Length: > 0 } configured
+            ? configured
+            : "The Mirage Hub";
+        var firstName = (authorName ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+        return string.IsNullOrWhiteSpace(firstName) ? brand : $"{firstName} from {brand}";
+    }
 
     public static string LogoUrl(IConfiguration configuration) =>
         configuration["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configured ? configured : DefaultLogoUrl;
@@ -274,6 +290,7 @@ public static class NewsletterEmailTemplate
           </div>
         """;
         return $"""
+      {SelfBrandedMarker}
       <!doctype html>
       <html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
       <head>
