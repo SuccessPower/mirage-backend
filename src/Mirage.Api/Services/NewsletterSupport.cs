@@ -1,7 +1,9 @@
 using System.Linq.Expressions;
 using System.Security.Cryptography;
 using System.Text;
+using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
+using Mirage.Infrastructure.Persistence;
 
 namespace Mirage.Api.Services;
 
@@ -11,6 +13,30 @@ public static class NewsletterAudience
 {
     public static readonly Expression<Func<ApplicationUser, bool>> IsSubscriber =
         x => x.IsActive && !x.IsDeleted && x.EmailConfirmed && x.IsNewsletterSubscribed && x.Email != null;
+
+    /// <summary>Narrows the subscriber base by profile attributes. A null gender and an empty status list each
+    /// mean "no narrowing", so the unfiltered audience is exactly the subscriber base. Members without a profile
+    /// drop out as soon as any filter is applied — we cannot claim they match something we do not know.</summary>
+    public static IQueryable<ApplicationUser> Filtered(MirageDbContext db, Sex? sex,
+        IReadOnlyCollection<RelationshipStatus>? statuses)
+    {
+        var query = db.Users.Where(IsSubscriber);
+        if (sex.HasValue)
+            query = query.Where(u => db.Profiles.Any(p => p.UserId == u.Id && p.Sex == sex.Value));
+        if (statuses is { Count: > 0 })
+        {
+            var wanted = statuses.Distinct().ToArray();
+            query = query.Where(u => db.Profiles.Any(p => p.UserId == u.Id
+                && p.RelationshipStatus != null && wanted.Contains(p.RelationshipStatus.Value)));
+        }
+        return query;
+    }
+
+    /// <summary>Parses the comma-separated status list used on the query string and in requests.</summary>
+    public static RelationshipStatus[] ParseStatuses(string? value) => (value ?? string.Empty)
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(x => Enum.TryParse<RelationshipStatus>(x, ignoreCase: true, out var parsed) ? parsed : (RelationshipStatus?)null)
+        .Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToArray();
 }
 
 /// <summary>One-click unsubscribe links. The token is an HMAC over the user id keyed with the JWT signing key, so

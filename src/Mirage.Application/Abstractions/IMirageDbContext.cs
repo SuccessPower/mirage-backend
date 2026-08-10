@@ -73,6 +73,7 @@ public interface IMirageDbContext
     DbSet<CelebrationWish> CelebrationWishes { get; }
     DbSet<Newsletter> Newsletters { get; }
     DbSet<NewsletterDelivery> NewsletterDeliveries { get; }
+    DbSet<NewsletterReview> NewsletterReviews { get; }
     DbSet<NewsletterLike> NewsletterLikes { get; }
     DbSet<NewsletterComment> NewsletterComments { get; }
     DbSet<NewsletterCommentLike> NewsletterCommentLikes { get; }

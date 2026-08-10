@@ -111,16 +111,18 @@ public sealed class ResilientEmailService : IEmailService
     public Task<bool> SendNewsletterAsync(string toEmail, string displayName, string subject, string title,
         string excerpt, string contentHtml, IReadOnlyList<string> imageUrls, string newsletterUrl,
         string unsubscribeUrl, string? authorName = null, string? authorAvatarUrl = null,
-        CancellationToken cancellationToken = default) =>
+        string? thumbnailUrl = null, CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, subject, NewsletterEmailTemplate.Render(displayName, title, excerpt, contentHtml,
             imageUrls, newsletterUrl, unsubscribeUrl,
             string.IsNullOrWhiteSpace(authorName) ? null : new NewsletterAuthor(authorName, authorAvatarUrl),
-            NewsletterEmailTemplate.SocialLinks(_configuration)), cancellationToken);
+            NewsletterEmailTemplate.SocialLinks(_configuration), thumbnailUrl,
+            NewsletterEmailTemplate.LogoUrl(_configuration)), cancellationToken);
 
     public Task<bool> SendPlatformManagerInviteAsync(string toEmail, string inviteUrl,
         CancellationToken cancellationToken = default) => SendAsync(toEmail, "You're invited to manage Mirage newsletters",
             NewsletterEmailTemplate.PlatformManagerInvite(inviteUrl,
-                NewsletterEmailTemplate.SocialLinks(_configuration)), cancellationToken);
+                NewsletterEmailTemplate.SocialLinks(_configuration),
+                NewsletterEmailTemplate.LogoUrl(_configuration)), cancellationToken);
 
     private async Task<bool> SendAsync(string to, string subject, string html,
         CancellationToken cancellationToken, string? replyTo = null)

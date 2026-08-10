@@ -31,7 +31,12 @@ public sealed class NewsletterDispatchService(MirageDbContext db, IEmailService 
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, NewsletterStatus.Sending), ct);
             if (claimed == 0) { await transaction.RollbackAsync(ct); continue; }
 
-            var recipients = await db.Users.Where(NewsletterAudience.IsSubscriber)
+            // Re-resolved at send time against the edition's stored filter, so late subscribers are included and
+            // anyone who unsubscribed after scheduling is not mailed.
+            var audience = await db.Newsletters.AsNoTracking().Where(x => x.Id == id)
+                .Select(x => new { x.AudienceSex, x.AudienceRelationshipStatuses }).SingleAsync(ct);
+            var recipients = await NewsletterAudience
+                .Filtered(db, audience.AudienceSex, audience.AudienceRelationshipStatuses)
                 .Select(x => new { x.Id, Email = x.Email! }).ToListAsync(ct);
             db.NewsletterDeliveries.AddRange(recipients.Select(x => new NewsletterDelivery(id, x.Id, x.Email)));
             await db.Newsletters.Where(x => x.Id == id)
@@ -78,7 +83,7 @@ public sealed class NewsletterDispatchService(MirageDbContext db, IEmailService 
                         sending.Title, sending.Excerpt, sending.ContentHtml, sending.ImageUrls,
                         $"{appUrl}/newsletters/{sending.Id}",
                         NewsletterUnsubscribe.BuildUrl(appUrl, delivery.UserId, configuration),
-                        author?.DisplayName, author?.AvatarUrl, ct);
+                        author?.DisplayName, author?.AvatarUrl, sending.ThumbnailUrl, ct);
                     if (sent) delivery.MarkSent(); else delivery.MarkFailed("All configured email providers rejected the message.");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

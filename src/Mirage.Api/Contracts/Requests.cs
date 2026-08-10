@@ -31,8 +31,11 @@ public sealed record RegisterRequest(
     bool SubscribeToNewsletter = true);
 
 public sealed record CreateNewsletterRequest(string Title, string Subject, string Excerpt, string ContentHtml,
-    string[]? ImageUrls = null);
-public sealed record ScheduleNewsletterRequest(DateTimeOffset ScheduledFor);
+    string[]? ImageUrls = null, string? ThumbnailUrl = null);
+public sealed record TestSendNewsletterRequest(string[]? Emails);
+public sealed record NewsletterReviewRequest(NewsletterReviewDecision Decision, string? Comment = null);
+public sealed record ScheduleNewsletterRequest(DateTimeOffset ScheduledFor, Sex? Sex = null,
+    string? RelationshipStatuses = null);
 public sealed record NewsletterCommentRequest(string Body, Guid? ParentCommentId = null);
 public sealed record NewsletterSubscriptionRequest(bool IsSubscribed);
 public sealed record InvitePlatformManagerRequest(string Email);
