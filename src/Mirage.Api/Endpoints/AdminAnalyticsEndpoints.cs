@@ -82,6 +82,31 @@ internal static class AdminAnalyticsEndpoints
         var tiers = Enum.GetValues<SubscriptionTier>()
             .Select(t => tierRows.SingleOrDefault(x => x.Tier == t) ?? new AdminTierSummary(t, 0, 0, 0)).ToList();
 
+        // Grouped off the user set rather than off Profiles, so members who never finished a profile are counted
+        // in the "not stated" bucket instead of disappearing from the headcount entirely.
+        var genderData = await users
+            .Select(u => new
+            {
+                Sex = db.Profiles.Where(p => p.UserId == u.Id).Select(p => p.Sex).FirstOrDefault(),
+                u.IsActive,
+                u.LastLoginAt,
+                u.CreatedAt
+            })
+            .GroupBy(x => x.Sex)
+            .Select(g => new
+            {
+                Sex = g.Key,
+                Users = g.Count(),
+                ActiveUsers = g.Count(x => x.IsActive && x.LastLoginAt >= inactivityCutoff),
+                RegistrationsInPeriod = g.Count(x => x.CreatedAt >= from && x.CreatedAt <= to)
+            })
+            .ToListAsync(cancellationToken);
+        var genderRows = genderData
+            .Select(x => new AdminGenderSummary(x.Sex, x.Users, x.ActiveUsers, x.RegistrationsInPeriod)).ToList();
+        var genders = Enum.GetValues<Sex>().Select(s => (Sex?)s).Append(null)
+            .Select(s => genderRows.SingleOrDefault(x => x.Sex == s) ?? new AdminGenderSummary(s, 0, 0, 0))
+            .ToList();
+
         var countryData = await db.Profiles.AsNoTracking()
             .Where(p => normalizedCountry == null || p.Country == normalizedCountry)
             .Join(db.Users.AsNoTracking().Where(u => !u.IsDeleted), p => p.UserId, u => u.Id,
@@ -127,7 +152,7 @@ internal static class AdminAnalyticsEndpoints
 
         return new AdminComprehensiveAnalyticsResponse(from, to, normalizedCountry, now,
             new AdminUserActivitySummary(registered, enabled, registered - enabled, active, registered - active,
-                neverLoggedIn, inactivityCutoff), tiers, countries, revenue, newRegistrations,
+                neverLoggedIn, inactivityCutoff), tiers, genders, countries, revenue, newRegistrations,
             await sessionQuery.CountAsync(cancellationToken),
             await db.Couples.CountAsync(x => x.Status == CoupleStatus.Approved, cancellationToken),
             await db.Organisations.CountAsync(x => x.Status == OrganisationStatus.Approved, cancellationToken),

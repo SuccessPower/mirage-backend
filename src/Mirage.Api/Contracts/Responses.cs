@@ -579,6 +579,10 @@ public sealed record AdminUserActivitySummary(
 
 public sealed record AdminTierSummary(SubscriptionTier Tier, int Users, int ActiveUsers, int InactiveUsers);
 
+/// <summary>Headcount by gender. <see cref="Sex"/> is null for the "not stated" bucket, which covers members who
+/// have not finished a profile as well as those who left the field blank.</summary>
+public sealed record AdminGenderSummary(Sex? Sex, int Users, int ActiveUsers, int RegistrationsInPeriod);
+
 public sealed record AdminCountrySummary(string Country, int Users, int ActiveUsers, int RegistrationsInPeriod);
 
 public sealed record AdminRevenueSummary(
@@ -598,6 +602,7 @@ public sealed record AdminComprehensiveAnalyticsResponse(
     DateTimeOffset GeneratedAt,
     AdminUserActivitySummary Users,
     IReadOnlyList<AdminTierSummary> Tiers,
+    IReadOnlyList<AdminGenderSummary> Genders,
     IReadOnlyList<AdminCountrySummary> Countries,
     IReadOnlyList<AdminRevenueSummary> Revenue,
     int NewRegistrations,
