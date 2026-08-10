@@ -72,7 +72,9 @@ internal static class AuthEndpoints
             EmailConfirmed = false,
             LockoutEnabled = true,
             SecurityStamp = Guid.NewGuid().ToString(),
-            ConcurrencyStamp = Guid.NewGuid().ToString()
+            ConcurrencyStamp = Guid.NewGuid().ToString(),
+            IsNewsletterSubscribed = request.SubscribeToNewsletter,
+            NewsletterSubscribedAt = request.SubscribeToNewsletter ? DateTimeOffset.UtcNow : null
         };
 
         var passwordValidationStarted = registrationStopwatch.Elapsed.TotalMilliseconds;

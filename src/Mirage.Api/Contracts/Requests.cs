@@ -27,7 +27,17 @@ public sealed record RegisterRequest(
     string? CountryCode = null,
     string? TimeZoneId = null,
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
-    string[]? PreferredCountryCodes = null);
+    string[]? PreferredCountryCodes = null,
+    bool SubscribeToNewsletter = true);
+
+public sealed record CreateNewsletterRequest(string Title, string Subject, string Excerpt, string ContentHtml,
+    string[]? ImageUrls = null);
+public sealed record ScheduleNewsletterRequest(DateTimeOffset ScheduledFor);
+public sealed record NewsletterCommentRequest(string Body, Guid? ParentCommentId = null);
+public sealed record NewsletterSubscriptionRequest(bool IsSubscribed);
+public sealed record InvitePlatformManagerRequest(string Email);
+public sealed record AcceptPlatformManagerInviteRequest(string Token);
+public sealed record UnsubscribeNewsletterRequest(string Token);
 
 public sealed record LoginRequest(string Email, string Password);
 public sealed record VerifyPasswordRequest(string Password);

@@ -117,6 +117,8 @@ builder.Services.AddScoped<ProfilePhotoReminderService>();
 builder.Services.AddHostedService<ProfilePhotoReminderWorker>();
 builder.Services.AddScoped<ReEngagementService>();
 builder.Services.AddHostedService<ReEngagementWorker>();
+builder.Services.AddScoped<NewsletterDispatchService>();
+builder.Services.AddHostedService<NewsletterDispatchWorker>();
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
@@ -248,6 +250,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(MiragePolicy.PlatformAdmin,
         p => p.RequireRole(MirageRoles.PlatformAdmin));
+    options.AddPolicy(MiragePolicy.NewsletterManagement,
+        p => p.RequireRole(MirageRoles.PlatformManager, MirageRoles.PlatformAdmin));
     options.AddPolicy(MiragePolicy.ChurchAdmin,
         p => p.RequireRole(MirageRoles.ChurchAdmin, MirageRoles.PlatformAdmin));
     options.AddPolicy(MiragePolicy.Counsellor,

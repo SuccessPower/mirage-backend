@@ -905,3 +905,36 @@ public sealed class CompanionSubscriptionConfiguration : IEntityTypeConfiguratio
         b.HasOne<CompanionPrompt>().WithMany().HasForeignKey(x => x.CurrentPromptId).OnDelete(DeleteBehavior.SetNull);
     }
 }
+
+public sealed class NewsletterConfiguration : IEntityTypeConfiguration<Newsletter>
+{
+    public void Configure(EntityTypeBuilder<Newsletter> b)
+    {
+        b.ToTable("newsletters");
+        b.Property(x => x.Title).HasMaxLength(200); b.Property(x => x.Subject).HasMaxLength(250);
+        b.Property(x => x.Excerpt).HasMaxLength(500); b.Property(x => x.ContentHtml).HasColumnType("text");
+        b.Property(x => x.ImageUrls).HasColumnType("text[]"); b.Property(x => x.FailureReason).HasMaxLength(1000);
+        b.HasIndex(x => new { x.Status, x.ScheduledFor });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+public sealed class NewsletterDeliveryConfiguration : IEntityTypeConfiguration<NewsletterDelivery>
+{
+    public void Configure(EntityTypeBuilder<NewsletterDelivery> b) { b.ToTable("newsletter_deliveries"); b.Property(x => x.Email).HasMaxLength(256); b.Property(x => x.Error).HasMaxLength(500); b.HasIndex(x => new { x.NewsletterId, x.UserId }).IsUnique(); b.HasIndex(x => new { x.NewsletterId, x.Status }); b.HasOne<Newsletter>().WithMany().HasForeignKey(x => x.NewsletterId).OnDelete(DeleteBehavior.Cascade); b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict); }
+}
+public sealed class NewsletterLikeConfiguration : IEntityTypeConfiguration<NewsletterLike>
+{
+    public void Configure(EntityTypeBuilder<NewsletterLike> b) { b.ToTable("newsletter_likes"); b.HasIndex(x => new { x.NewsletterId, x.UserId }).IsUnique(); b.HasOne<Newsletter>().WithMany().HasForeignKey(x => x.NewsletterId).OnDelete(DeleteBehavior.Cascade); b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); }
+}
+public sealed class NewsletterCommentConfiguration : IEntityTypeConfiguration<NewsletterComment>
+{
+    public void Configure(EntityTypeBuilder<NewsletterComment> b) { b.ToTable("newsletter_comments"); b.Property(x => x.Body).HasMaxLength(2000); b.HasIndex(x => new { x.NewsletterId, x.CreatedAt }); b.HasOne<Newsletter>().WithMany().HasForeignKey(x => x.NewsletterId).OnDelete(DeleteBehavior.Cascade); b.HasOne<NewsletterComment>().WithMany().HasForeignKey(x => x.ParentCommentId).OnDelete(DeleteBehavior.Cascade); b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict); }
+}
+public sealed class NewsletterCommentLikeConfiguration : IEntityTypeConfiguration<NewsletterCommentLike>
+{
+    public void Configure(EntityTypeBuilder<NewsletterCommentLike> b) { b.ToTable("newsletter_comment_likes"); b.HasIndex(x => new { x.CommentId, x.UserId }).IsUnique(); b.HasOne<NewsletterComment>().WithMany().HasForeignKey(x => x.CommentId).OnDelete(DeleteBehavior.Cascade); b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); }
+}
+public sealed class PlatformManagerInviteConfiguration : IEntityTypeConfiguration<PlatformManagerInvite>
+{
+    public void Configure(EntityTypeBuilder<PlatformManagerInvite> b) { b.ToTable("platform_manager_invites"); b.Property(x => x.Email).HasMaxLength(256); b.Property(x => x.TokenHash).HasMaxLength(64); b.HasIndex(x => x.TokenHash).IsUnique(); b.HasIndex(x => new { x.Email, x.AcceptedAt }); b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InvitedByUserId).OnDelete(DeleteBehavior.Restrict); }
+}

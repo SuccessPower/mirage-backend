@@ -9,6 +9,8 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? WelcomeEmailSentAt { get; set; }
+    public bool IsNewsletterSubscribed { get; set; } = true;
+    public DateTimeOffset? NewsletterSubscribedAt { get; set; } = DateTimeOffset.UtcNow;
 
     // Stamped when the user's last realtime connection drops, so chat peers can show
     // "last seen 10:42" once they go offline. Null means never connected since the feature shipped.
@@ -29,7 +31,8 @@ public static class MirageRoles
     public const string Mentor = "Mentor";
     public const string Vendor = "Vendor";
     public const string PlatformAdmin = "PlatformAdmin";
-    public static readonly string[] All = [User, ChurchAdmin, Counsellor, Mentor, Vendor, PlatformAdmin];
+    public const string PlatformManager = "PlatformManager";
+    public static readonly string[] All = [User, ChurchAdmin, Counsellor, Mentor, Vendor, PlatformAdmin, PlatformManager];
 }
 
 public static class IdentityCacheKeys

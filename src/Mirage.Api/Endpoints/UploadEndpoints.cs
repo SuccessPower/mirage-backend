@@ -65,6 +65,12 @@ internal static class UploadEndpoints
         {
             folder = $"mirage/org-logos/{userId}";
         }
+        else if (uploadContext == "newsletter")
+        {
+            if (!context.User.IsInRole("PlatformAdmin") && !context.User.IsInRole("PlatformManager"))
+                return EndpointHelpers.Forbidden(context);
+            folder = $"mirage/newsletters/{userId}";
+        }
         else
         {
             folder = $"mirage/avatars/{userId}";
