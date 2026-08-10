@@ -71,6 +71,8 @@ internal static partial class NewsletterEndpoints
         var userId = context.User.GetUserId();
         var item = await db.Newsletters.AsNoTracking().Where(x => x.Id == id && x.Status == NewsletterStatus.Sent)
             .Select(x => new { x.Id, x.Title, x.Excerpt, x.ContentHtml, x.ImageUrls, x.SentAt,
+                AuthorName = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault(),
+                AuthorAvatarUrl = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
                 LikeCount = db.NewsletterLikes.Count(l => l.NewsletterId == x.Id),
                 IsLiked = db.NewsletterLikes.Any(l => l.NewsletterId == x.Id && l.UserId == userId) }).SingleOrDefaultAsync(ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
@@ -136,7 +138,10 @@ internal static partial class NewsletterEndpoints
     {
         var item = await db.Newsletters.AsNoTracking().Where(x => x.Id == id).Select(x => new { x.Id, x.Title, x.Subject,
             x.Excerpt, x.ContentHtml, x.ImageUrls, x.Status, x.ScheduledFor, x.SentAt, x.RecipientCount, x.DeliveredCount,
-            x.FailedCount, x.FailureReason, x.CreatedAt }).SingleOrDefaultAsync(ct);
+            x.FailedCount, x.FailureReason, x.CreatedAt,
+            AuthorName = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault(),
+            AuthorAvatarUrl = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault() })
+            .SingleOrDefaultAsync(ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
         var deliveries = await db.NewsletterDeliveries.AsNoTracking().Where(x => x.NewsletterId == id)
             .GroupBy(x => x.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync(ct);
@@ -169,13 +174,19 @@ internal static partial class NewsletterEndpoints
         var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
         var name = await db.Profiles.AsNoTracking().Where(x => x.UserId == context.User.GetUserId())
             .Select(x => x.DisplayName).FirstOrDefaultAsync(ct) ?? "Friend";
+        var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == item.AuthorUserId)
+            .Select(x => new { x.DisplayName, x.AvatarUrl }).FirstOrDefaultAsync(ct);
         var html = NewsletterEmailTemplate.Render(name, item.Title, item.Excerpt, item.ContentHtml, item.ImageUrls,
-            $"{appUrl}/newsletters/{item.Id}", $"{appUrl}/newsletter-unsubscribe?token=preview");
+            $"{appUrl}/newsletters/{item.Id}", $"{appUrl}/newsletter-unsubscribe?token=preview",
+            author is null ? null : new NewsletterAuthor(author.DisplayName, author.AvatarUrl),
+            NewsletterEmailTemplate.SocialLinks(configuration));
         return Results.Content(html, "text/html; charset=utf-8");
     }
 
     private static async Task<IResult> ListManaged(HttpContext context, MirageDbContext db, int page = 1, int pageSize = 30, CancellationToken ct = default) =>
-        ApiResults.Ok(context, await db.Newsletters.AsNoTracking().OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.Title, x.Subject, x.Excerpt, x.ContentHtml, x.ImageUrls, x.Status, x.ScheduledFor, x.SentAt, x.RecipientCount, x.DeliveredCount, x.FailedCount, x.FailureReason, x.CreatedAt }).ToPagedResultAsync(page, Math.Clamp(pageSize, 1, 100), ct), "Managed newsletters retrieved.");
+        ApiResults.Ok(context, await db.Newsletters.AsNoTracking().OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.Title, x.Subject, x.Excerpt, x.ContentHtml, x.ImageUrls, x.Status, x.ScheduledFor, x.SentAt, x.RecipientCount, x.DeliveredCount, x.FailedCount, x.FailureReason, x.CreatedAt,
+            AuthorName = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault(),
+            AuthorAvatarUrl = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault() }).ToPagedResultAsync(page, Math.Clamp(pageSize, 1, 100), ct), "Managed newsletters retrieved.");
 
     private static async Task<IResult> Create(CreateNewsletterRequest request, HttpContext context, MirageDbContext db, CancellationToken ct)
     {

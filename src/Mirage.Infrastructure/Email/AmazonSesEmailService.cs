@@ -112,13 +112,17 @@ public sealed class AmazonSesEmailService : IEmailService
 
     public Task<bool> SendNewsletterAsync(string toEmail, string displayName, string subject, string title,
         string excerpt, string contentHtml, IReadOnlyList<string> imageUrls, string newsletterUrl,
-        string unsubscribeUrl, CancellationToken cancellationToken = default) =>
+        string unsubscribeUrl, string? authorName = null, string? authorAvatarUrl = null,
+        CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, subject, NewsletterEmailTemplate.Render(displayName, title, excerpt, contentHtml,
-            imageUrls, newsletterUrl, unsubscribeUrl), cancellationToken);
+            imageUrls, newsletterUrl, unsubscribeUrl,
+            string.IsNullOrWhiteSpace(authorName) ? null : new NewsletterAuthor(authorName, authorAvatarUrl),
+            NewsletterEmailTemplate.SocialLinks(_config)), cancellationToken);
 
     public Task<bool> SendPlatformManagerInviteAsync(string toEmail, string inviteUrl,
         CancellationToken cancellationToken = default) => SendAsync(toEmail,
-            "You're invited to manage Mirage newsletters", NewsletterEmailTemplate.PlatformManagerInvite(inviteUrl),
+            "You're invited to manage Mirage newsletters",
+            NewsletterEmailTemplate.PlatformManagerInvite(inviteUrl, NewsletterEmailTemplate.SocialLinks(_config)),
             cancellationToken);
 
     private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
