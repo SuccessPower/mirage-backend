@@ -78,6 +78,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CelebrationWish> CelebrationWishes => Set<CelebrationWish>();
     public DbSet<Newsletter> Newsletters => Set<Newsletter>();
     public DbSet<NewsletterDelivery> NewsletterDeliveries => Set<NewsletterDelivery>();
+    public DbSet<NewsletterReview> NewsletterReviews => Set<NewsletterReview>();
     public DbSet<NewsletterLike> NewsletterLikes => Set<NewsletterLike>();
     public DbSet<NewsletterComment> NewsletterComments => Set<NewsletterComment>();
     public DbSet<NewsletterCommentLike> NewsletterCommentLikes => Set<NewsletterCommentLike>();

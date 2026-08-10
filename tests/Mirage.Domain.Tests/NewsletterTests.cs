@@ -9,7 +9,7 @@ public sealed class NewsletterTests
     [Fact]
     public void Schedule_RecordsAudienceSnapshotAndUtcInstant()
     {
-        var newsletter = Create();
+        var newsletter = Approved();
         var scheduledFor = DateTimeOffset.UtcNow.AddHours(2);
 
         newsletter.Schedule(scheduledFor, 42);
@@ -43,7 +43,7 @@ public sealed class NewsletterTests
     [Fact]
     public void CancelledNewsletter_CanBeRescheduled()
     {
-        var newsletter = Create();
+        var newsletter = Approved();
         newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
         newsletter.Cancel();
 
@@ -56,9 +56,69 @@ public sealed class NewsletterTests
     [Fact]
     public void Schedule_RejectsInstantsInThePast()
     {
-        var newsletter = Create();
+        var newsletter = Approved();
 
         Assert.Throws<InvalidOperationException>(() => newsletter.Schedule(DateTimeOffset.UtcNow.AddMinutes(-1), 5));
+    }
+
+    [Fact]
+    public void UnreviewedNewsletter_CannotBeScheduled()
+    {
+        var newsletter = Create();
+
+        Assert.Throws<InvalidOperationException>(() => newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10));
+    }
+
+    [Fact]
+    public void ApprovedNewsletter_CanBeScheduled()
+    {
+        var newsletter = Create();
+        newsletter.SubmitForReview();
+        newsletter.MarkApproved();
+
+        newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
+
+        Assert.Equal(NewsletterStatus.Scheduled, newsletter.Status);
+    }
+
+    [Fact]
+    public void RequestingChanges_AdvancesTheRoundSoApprovalsStopCounting()
+    {
+        var newsletter = Create();
+        newsletter.SubmitForReview();
+        newsletter.MarkApproved();
+        var roundApprovalsWereGivenIn = newsletter.ReviewRound;
+
+        newsletter.RequestChanges();
+
+        Assert.Equal(NewsletterStatus.InReview, newsletter.Status);
+        Assert.NotEqual(roundApprovalsWereGivenIn, newsletter.ReviewRound);
+    }
+
+    [Fact]
+    public void EditingAnApprovedNewsletter_SendsItBackForReview()
+    {
+        var newsletter = Create();
+        newsletter.SubmitForReview();
+        newsletter.MarkApproved();
+        var approvedRound = newsletter.ReviewRound;
+
+        newsletter.Update("Changed", "Changed", "Changed", "<p>Changed</p>", []);
+
+        Assert.Equal(NewsletterStatus.InReview, newsletter.Status);
+        Assert.NotEqual(approvedRound, newsletter.ReviewRound);
+    }
+
+    [Fact]
+    public void ScheduledNewsletter_CannotBeEditedWithoutCancellingFirst()
+    {
+        var newsletter = Create();
+        newsletter.SubmitForReview();
+        newsletter.MarkApproved();
+        newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            newsletter.Update("Changed", "Changed", "Changed", "<p>Changed</p>", []));
     }
 
     [Fact]
@@ -74,4 +134,12 @@ public sealed class NewsletterTests
 
     private static Newsletter Create() => new(Guid.NewGuid(), "A title", "A subject", "An excerpt",
         "<p>A story</p>", ["https://images.example.com/cover.jpg"]);
+
+    private static Newsletter Approved()
+    {
+        var newsletter = Create();
+        newsletter.SubmitForReview();
+        newsletter.MarkApproved();
+        return newsletter;
+    }
 }

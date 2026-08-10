@@ -914,8 +914,21 @@ public sealed class NewsletterConfiguration : IEntityTypeConfiguration<Newslette
         b.Property(x => x.Title).HasMaxLength(200); b.Property(x => x.Subject).HasMaxLength(250);
         b.Property(x => x.Excerpt).HasMaxLength(500); b.Property(x => x.ContentHtml).HasColumnType("text");
         b.Property(x => x.ImageUrls).HasColumnType("text[]"); b.Property(x => x.FailureReason).HasMaxLength(1000);
+        b.Property(x => x.ThumbnailUrl).HasMaxLength(700);
+        b.Property(x => x.AudienceRelationshipStatuses).HasColumnType("integer[]");
         b.HasIndex(x => new { x.Status, x.ScheduledFor });
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+public sealed class NewsletterReviewConfiguration : IEntityTypeConfiguration<NewsletterReview>
+{
+    public void Configure(EntityTypeBuilder<NewsletterReview> b)
+    {
+        b.ToTable("newsletter_reviews");
+        b.Property(x => x.Comment).HasMaxLength(2000);
+        b.HasIndex(x => new { x.NewsletterId, x.Round });
+        b.HasOne<Newsletter>().WithMany().HasForeignKey(x => x.NewsletterId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ReviewerUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 public sealed class NewsletterDeliveryConfiguration : IEntityTypeConfiguration<NewsletterDelivery>

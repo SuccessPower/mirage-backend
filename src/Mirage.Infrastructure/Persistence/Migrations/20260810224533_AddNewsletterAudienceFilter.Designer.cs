@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260810224533_AddNewsletterAudienceFilter")]
+    partial class AddNewsletterAudienceFilter
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2149,9 +2152,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Property<int>("RecipientCount")
                         .HasColumnType("integer");
 
-                    b.Property<int>("ReviewRound")
-                        .HasColumnType("integer");
-
                     b.Property<DateTimeOffset?>("ScheduledFor")
                         .HasColumnType("timestamp with time zone");
 
@@ -2323,43 +2323,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("newsletter_likes", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.NewsletterReview", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Comment")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Decision")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("NewsletterId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ReviewerUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Round")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ReviewerUserId");
-
-                    b.HasIndex("NewsletterId", "Round");
-
-                    b.ToTable("newsletter_reviews", "mirage");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.Notification", b =>
@@ -4356,21 +4319,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.NewsletterReview", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.Newsletter", null)
-                        .WithMany()
-                        .HasForeignKey("NewsletterId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ReviewerUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
