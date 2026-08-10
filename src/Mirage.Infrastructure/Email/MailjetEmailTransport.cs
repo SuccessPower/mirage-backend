@@ -30,7 +30,8 @@ public sealed class MailjetEmailTransport(
             {
                 new
                 {
-                    From = ParseAddress(configuration["Mailjet:From"] ?? "Mirage <noreply@themiragehub.com>"),
+                    From = ParseAddress(EmailSender.WithDisplayName(
+                        configuration["Mailjet:From"] ?? "Mirage <noreply@themiragehub.com>", email.FromName)),
                     To = new[] { ParseAddress(email.To) },
                     ReplyTo = string.IsNullOrWhiteSpace(email.ReplyTo) ? null : ParseAddress(email.ReplyTo),
                     email.Subject,

@@ -71,8 +71,13 @@ public sealed class EmailFailoverTests
 
         Assert.NotNull(transport.LastMessage);
         Assert.Contains("prefers-color-scheme: dark", transport.LastMessage.Html);
-        Assert.Contains("Connect with Mirage", transport.LastMessage.Html);
+        // The shared footer: brand lockup, one round badge per configured network, and the support mailbox.
+        Assert.Contains("MIRAGE", transport.LastMessage.Html);
         Assert.Contains("https://www.instagram.com/themiragehub", transport.LastMessage.Html);
+        Assert.Contains("mailto:support@themiragehub.com", transport.LastMessage.Html);
+        // Only Instagram is configured in this fixture, so exactly two badges: that network and the mailbox.
+        Assert.Equal(2, transport.LastMessage.Html.Split("border-radius:17px").Length - 1);
+        Assert.DoesNotContain("facebook.com", transport.LastMessage.Html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -20,8 +20,8 @@ public sealed class ZeptoMailEmailTransport(
         if (!IsConfigured) return false;
 
         var message = new MimeMessage();
-        message.From.Add(MailboxAddress.Parse(
-            configuration["ZeptoMail:From"] ?? "Mirage <noreply@themiragehub.com>"));
+        message.From.Add(MailboxAddress.Parse(EmailSender.WithDisplayName(
+            configuration["ZeptoMail:From"] ?? "Mirage <noreply@themiragehub.com>", email.FromName)));
         message.To.Add(MailboxAddress.Parse(email.To));
         message.Subject = email.Subject;
         message.Body = new TextPart("html") { Text = email.Html };

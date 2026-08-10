@@ -28,9 +28,26 @@ public static class NewsletterEmailTemplate
     private const string Paper = "#fbf7ef";
     private const string PaperDeep = "#f3ebdd";
     private const string Rule = "#ddd0ba";
+
+    // "The same letter, read by lamplight." Not an inversion — a warm dark ground with the plum lifted so it
+    // still reads as an accent rather than a bruise, and cream text at a comfortable contrast rather than the
+    // pure white on black that algorithmic inversion produces.
+    private const string DarkGround = "#15110c";
+    private const string DarkCard = "#1f1a13";
+    private const string DarkFoot = "#191410";
+    private const string DarkText = "#e6dccc";
+    private const string DarkStrong = "#f6efe3";
+    private const string DarkMuted = "#a3947c";
+    private const string DarkRule = "#3b3226";
+    private const string DarkPlum = "#b49bff";
+
     private const string DefaultLogoUrl =
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
     private const string DefaultSupportEmail = "support@themiragehub.com";
+
+    /// <summary>Marks a template that already carries its own complete footer, so the shared branding pass does
+    /// not append a second one underneath it.</summary>
+    public const string SelfBrandedMarker = "<!--mirage:self-branded-->";
 
     // Old-style faces first, each with a broad fallback. Email clients cannot be relied on to load a webfont, so
     // the letter's character has to survive on faces that ship with the OS.
@@ -71,8 +88,8 @@ public static class NewsletterEmailTemplate
         // Drop cap on the salutation, the way a letter opens.
         body.Append($"""
           <tr><td class="lede" style="padding:30px 0 0;font:400 18px/1.75 {Letter};color:#4a4034">
-            <span style="float:left;font:400 58px/44px {Display};color:{Plum};padding:6px 10px 0 0">D</span>
-            <span style="letter-spacing:.03em;color:{Ink}">earest {Encode(displayName.Trim())},</span>
+            <span class="accent" style="float:left;font:400 58px/44px {Display};color:{Plum};padding:6px 10px 0 0">D</span>
+            <span class="strong" style="letter-spacing:.03em;color:{Ink}">earest {Encode(displayName.Trim())},</span>
             {Encode(excerpt)}
           </td></tr>
           <tr><td class="prose" style="padding:26px 0 0;font:400 17px/1.9 {Letter};color:#413729">{contentHtml}</td></tr>
@@ -83,7 +100,7 @@ public static class NewsletterEmailTemplate
         body.Append($"""
           {Ornament()}
           <tr><td align="center" style="padding:22px 0 6px">{Button(newsletterUrl, "Read it on Mirage")}</td></tr>
-          <tr><td align="center" style="padding:12px 0 0;font:italic 400 14px/1.6 {Letter};color:{Muted}">
+          <tr><td align="center" class="soft" style="padding:12px 0 0;font:italic 400 14px/1.6 {Letter};color:{Muted}">
             Ever yours, the Mirage Journal
           </td></tr>
         """);
@@ -108,9 +125,9 @@ public static class NewsletterEmailTemplate
             community responds.
           </td></tr>
           <tr><td style="padding:26px 0 0">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PaperDeep};border:1px solid {Rule};border-radius:6px">
-              <tr><td class="card-pad" style="padding:22px 24px;font:400 16px/1.8 {Letter};color:#4a4034">
-                <b style="color:{Ink};font-variant:small-caps;letter-spacing:.06em">What you get</b><br />
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="inset" style="background:{PaperDeep};border:1px solid {Rule};border-radius:6px">
+              <tr><td class="card-pad body-copy" style="padding:22px 24px;font:400 16px/1.8 {Letter};color:#4a4034">
+                <b class="strong" style="color:{Ink};font-variant:small-caps;letter-spacing:.06em">What you get</b><br />
                 &#8212; A rich composer with photographs and blog-style formatting<br />
                 &#8212; Scheduling that sends at the exact date and time you choose<br />
                 &#8212; Delivery reports and engagement dashboards
@@ -122,6 +139,18 @@ public static class NewsletterEmailTemplate
             This invitation expires in seven days. Sign in with this email address to accept it.
           </td></tr>
         """, socials, null, logoUrl);
+
+    /// <summary>"Ada from The Mirage Hub" — the author's first name in front of the brand, so a newsletter looks
+    /// like it came from a person. Falls back to the brand alone when there is no author to name.</summary>
+    public static string? SenderName(string? authorName, IConfiguration configuration)
+    {
+        var brand = configuration["Brand:SenderSuffix"]?.Trim() is { Length: > 0 } configured
+            ? configured
+            : "The Mirage Hub";
+        var firstName = (authorName ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+        return string.IsNullOrWhiteSpace(firstName) ? brand : $"{firstName} from {brand}";
+    }
 
     public static string LogoUrl(IConfiguration configuration) =>
         configuration["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configured ? configured : DefaultLogoUrl;
@@ -154,9 +183,9 @@ public static class NewsletterEmailTemplate
     private static string Ornament() => $"""
       <tr><td align="center" style="padding:18px 0 0">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-          <td style="width:62px;border-bottom:1px solid {Rule};font-size:0;line-height:0">&nbsp;</td>
-          <td style="padding:0 10px;font:400 13px/1 {Display};color:{Plum}">&#10087;</td>
-          <td style="width:62px;border-bottom:1px solid {Rule};font-size:0;line-height:0">&nbsp;</td>
+          <td class="rule-cell" style="width:62px;border-bottom:1px solid {Rule};font-size:0;line-height:0">&nbsp;</td>
+          <td class="accent" style="padding:0 10px;font:400 13px/1 {Display};color:{Plum}">&#10087;</td>
+          <td class="rule-cell" style="width:62px;border-bottom:1px solid {Rule};font-size:0;line-height:0">&nbsp;</td>
         </tr></table>
       </td></tr>
     """;
@@ -173,8 +202,8 @@ public static class NewsletterEmailTemplate
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
               <td width="46" valign="middle" style="width:46px">{avatar}</td>
               <td valign="middle" align="left" style="padding-left:12px">
-                <div style="font:italic 400 13px/1.3 {Letter};color:{Muted}">written by</div>
-                <div style="font:400 17px/1.35 {Display};color:{Ink};letter-spacing:.3px">{Encode(author.Name)}</div>
+                <div class="soft" style="font:italic 400 13px/1.3 {Letter};color:{Muted}">written by</div>
+                <div class="strong" style="font:400 17px/1.35 {Display};color:{Ink};letter-spacing:.3px">{Encode(author.Name)}</div>
               </td>
             </tr></table>
           </td></tr>
@@ -215,7 +244,7 @@ public static class NewsletterEmailTemplate
             cells.Append($"""
               <td style="padding:0 5px">
                 <a href="{Encode(link.Url)}" title="{Encode(link.Label)}" style="text-decoration:none">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:34px;height:34px;background:{Ink};border-radius:17px">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="badge" style="width:34px;height:34px;background:{Ink};border-radius:17px">
                     <tr><td align="center" valign="middle" height="34" style="height:34px;text-align:center">{inner}</td></tr>
                   </table>
                 </a>
@@ -263,33 +292,62 @@ public static class NewsletterEmailTemplate
         """.Replace("@ink@", Ink).Replace("@plum@", Plum).Replace("@rule@", Rule)
            .Replace("@letter@", Letter).Replace("@display@", Display);
 
+    /// <summary>Honoured by Apple Mail, Outlook for Mac/iOS and other clients that pass through
+    /// prefers-color-scheme. Clients that force-invert instead (Gmail's mobile apps) ignore it, but start from a
+    /// dark design and so have far less to mangle. Every declaration is !important because the elements it
+    /// targets carry inline styles.</summary>
+    private static readonly string DarkStyles = """
+          @media (prefers-color-scheme: dark){
+            .paper{background:@ground@ !important}
+            .frame{background:@card@ !important;border-color:@drule@ !important}
+            .foot{background:@foot@ !important;border-top-color:@drule@ !important}
+            .inset{background:@foot@ !important;border-color:@drule@ !important}
+            .lede,.prose,.body-copy{color:@text@ !important}
+            .display,.strong{color:@strong@ !important}
+            .soft{color:@muted@ !important}
+            .accent,.eyebrow{color:@dplum@ !important}
+            .rule-cell{border-bottom-color:@drule@ !important}
+            .badge{background:@drule@ !important}
+            .prose h2,.prose h3{color:@strong@ !important}
+            .prose a{color:@dplum@ !important}
+            .prose blockquote{color:@text@ !important;border-left-color:@dplum@ !important}
+            .prose hr{border-top-color:@drule@ !important}
+            .cta{background:@dplum@ !important;color:#1b1408 !important}
+            a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !important}
+          }
+        """.Replace("@ground@", DarkGround).Replace("@card@", DarkCard).Replace("@foot@", DarkFoot)
+           .Replace("@text@", DarkText).Replace("@strong@", DarkStrong).Replace("@muted@", DarkMuted)
+           .Replace("@drule@", DarkRule).Replace("@dplum@", DarkPlum);
+
     private static string Shell(string preheader, string bodyRows,
         IReadOnlyList<NewsletterSocialLink>? socials = null, string? unsubscribeUrl = null, string? logoUrl = null)
     {
         var logo = IsHttpsUrl(logoUrl ?? string.Empty) ? logoUrl! : DefaultLogoUrl;
         var footerNote = unsubscribeUrl is null ? string.Empty : $"""
-          <div style="padding-top:12px">You are receiving this because you subscribed to the Mirage Journal.<br />
+          <div class="soft" style="padding-top:12px">You are receiving this because you subscribed to the Mirage Journal.<br />
             <a href="{Encode(unsubscribeUrl)}" style="color:{Plum};text-decoration:underline">Unsubscribe</a> &#183;
             <a href="{Encode(unsubscribeUrl)}" style="color:{Muted};text-decoration:underline">Manage preferences</a>
           </div>
         """;
         return $"""
+      {SelfBrandedMarker}
       <!doctype html>
       <html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <meta name="x-apple-disable-message-reformatting" />
-        <meta name="color-scheme" content="light" />
-        <meta name="supported-color-schemes" content="light" />
+        <meta name="color-scheme" content="light dark" />
+        <meta name="supported-color-schemes" content="light dark" />
         <!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
         <style>
         {HeadStyles}
+        {DarkStyles}
         </style>
       </head>
-      <body style="margin:0;padding:0;background:{PaperDeep}">
+      <body class="paper" style="margin:0;padding:0;background:{PaperDeep}">
         <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;height:0;width:0">{Encode(preheader)}</div>
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PaperDeep}">
+        <table role="presentation" class="paper" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PaperDeep}">
           <tr><td class="shell" align="center" style="padding:34px 12px">
             <table role="presentation" class="frame" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;background:{Paper};border:1px solid {Rule};border-radius:8px;overflow:hidden">
               <tr><td class="bar" style="background:{Ink};padding:22px 44px">
@@ -316,7 +374,7 @@ public static class NewsletterEmailTemplate
                   <td valign="middle" style="font:700 13px/1 Georgia,serif;color:{Ink};letter-spacing:.2em">MIRAGE</td>
                 </tr></table>
                 {SocialRow(socials ?? [])}
-                <div style="font:italic 400 13px/1.7 {Letter};color:{Muted}">A faith-integrated home for relationships worth building.</div>
+                <div class="soft" style="font:italic 400 13px/1.7 {Letter};color:{Muted}">A faith-integrated home for relationships worth building.</div>
                 {footerNote}
               </td></tr>
             </table>

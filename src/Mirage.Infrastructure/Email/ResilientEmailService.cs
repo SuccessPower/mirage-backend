@@ -116,7 +116,8 @@ public sealed class ResilientEmailService : IEmailService
             imageUrls, newsletterUrl, unsubscribeUrl,
             string.IsNullOrWhiteSpace(authorName) ? null : new NewsletterAuthor(authorName, authorAvatarUrl),
             NewsletterEmailTemplate.SocialLinks(_configuration), thumbnailUrl,
-            NewsletterEmailTemplate.LogoUrl(_configuration)), cancellationToken);
+            NewsletterEmailTemplate.LogoUrl(_configuration)), cancellationToken,
+            fromName: NewsletterEmailTemplate.SenderName(authorName, _configuration));
 
     public Task<bool> SendPlatformManagerInviteAsync(string toEmail, string inviteUrl,
         CancellationToken cancellationToken = default) => SendAsync(toEmail, "You're invited to manage Mirage newsletters",
@@ -125,9 +126,9 @@ public sealed class ResilientEmailService : IEmailService
                 NewsletterEmailTemplate.LogoUrl(_configuration)), cancellationToken);
 
     private async Task<bool> SendAsync(string to, string subject, string html,
-        CancellationToken cancellationToken, string? replyTo = null)
+        CancellationToken cancellationToken, string? replyTo = null, string? fromName = null)
     {
-        var message = new EmailTransportMessage(to, subject, ApplyBranding(html), replyTo);
+        var message = new EmailTransportMessage(to, subject, ApplyBranding(html), replyTo, fromName);
         foreach (var transport in _transports)
         {
             if (!transport.IsConfigured)
@@ -190,6 +191,8 @@ public sealed class ResilientEmailService : IEmailService
             html = html.Insert(bodyTagEnd + 1, header);
         }
 
+        // Templates that ship their own footer opt out, otherwise a newsletter ends up with two of them stacked.
+        if (html.Contains(NewsletterEmailTemplate.SelfBrandedMarker, StringComparison.Ordinal)) return html;
         var bodyEnd = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         return bodyEnd < 0 ? html : html.Insert(bodyEnd, BuildSocialFooter());
     }
@@ -212,31 +215,55 @@ public sealed class ResilientEmailService : IEmailService
         return html.Insert(htmlTagEnd + 1, head);
     }
 
+    /// <summary>The footer every other Mirage email carries. Same shape as the newsletter's — logo lockup,
+    /// round badges, tagline — in the dark palette those templates use, so the whole estate reads as one sender.
+    /// Badges are lettered rather than icon images because most clients block remote images by default.</summary>
     private string BuildSocialFooter()
     {
-        var links = new[]
+        var networks = new (string Label, string Glyph, string? Url)[]
         {
-            ("Instagram", _configuration["SocialMedia:Instagram"]),
-            ("Facebook", _configuration["SocialMedia:Facebook"]),
-            ("X", _configuration["SocialMedia:X"]),
-            ("LinkedIn", _configuration["SocialMedia:LinkedIn"])
-        }.Where(x => Uri.TryCreate(x.Item2, UriKind.Absolute, out var uri) &&
-                     uri.Scheme is "https" or "http")
-         .Select(x => $"""
-             <td style="padding:4px;">
-               <a href="{WebUtility.HtmlEncode(x.Item2)}" style="display:inline-block;padding:8px 12px;border:1px solid #514763;border-radius:999px;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;font-weight:600;color:#B9A8FF;text-decoration:none;">{x.Item1}</a>
-             </td>
-             """)
-         .ToArray();
+            ("Instagram", "IG", _configuration["SocialMedia:Instagram"]),
+            ("Facebook", "f", _configuration["SocialMedia:Facebook"]),
+            ("X", "X", _configuration["SocialMedia:X"]),
+            ("LinkedIn", "in", _configuration["SocialMedia:LinkedIn"])
+        };
+        var links = networks
+            .Where(x => Uri.TryCreate(x.Url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http")
+            .Select(x => (x.Label, x.Glyph, Url: x.Url!))
+            .ToList();
 
-        if (links.Length == 0) return string.Empty;
+        var support = _configuration["SocialMedia:Email"]?.Trim() is { Length: > 0 } configuredSupport
+            ? configuredSupport
+            : "support@themiragehub.com";
+        links.Add(("Email", "@", $"mailto:{support}"));
+
+        var logoUrl = _configuration["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configuredLogo
+            ? configuredLogo
+            : DefaultBrandLogoUrl;
+
+        var badges = string.Concat(links.Select(x => $"""
+            <td style="padding:0 5px;">
+              <a href="{WebUtility.HtmlEncode(x.Url)}" title="{WebUtility.HtmlEncode(x.Label)}" style="text-decoration:none;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:34px;height:34px;background:#1E1930;border:1px solid #38304F;border-radius:17px;">
+                  <tr><td align="center" valign="middle" height="34" style="height:34px;text-align:center;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#C6B6FF;">{x.Glyph}</td></tr>
+                </table>
+              </a>
+            </td>
+            """));
+
         return $"""
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0F0C16;">
-              <tr><td align="center" style="padding:24px 12px 32px;">
-                <p style="margin:0 0 12px;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#AAA1BC;">Connect with Mirage</p>
-                <table role="presentation" cellpadding="0" cellspacing="0"><tr>
-                  {string.Concat(links)}
+              <tr><td align="center" style="padding:28px 12px 34px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 14px;"><tr>
+                  <td valign="middle" style="line-height:0;padding-right:9px;">
+                    <img src="{WebUtility.HtmlEncode(logoUrl)}" alt="Mirage" height="24" style="display:block;height:24px;width:auto;border:0;outline:none;text-decoration:none;" />
+                  </td>
+                  <td valign="middle" style="font:700 13px/1 Georgia,serif;color:#FFFFFF;letter-spacing:.2em;">MIRAGE</td>
                 </tr></table>
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;"><tr>
+                  {badges}
+                </tr></table>
+                <p style="margin:14px 0 0;font-family:Georgia,serif;font-style:italic;font-size:12px;line-height:1.7;color:#AAA1BC;">A faith-integrated home for relationships worth building.</p>
               </td></tr>
             </table>
             """;
