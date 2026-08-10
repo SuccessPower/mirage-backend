@@ -144,3 +144,6 @@ public enum CelebrationType
     Birthday = 1,
     Anniversary = 2
 }
+
+public enum NewsletterStatus { Draft = 1, Scheduled = 2, Sending = 3, Sent = 4, Cancelled = 5, Failed = 6 }
+public enum NewsletterDeliveryStatus { Pending = 1, Sent = 2, Failed = 3 }

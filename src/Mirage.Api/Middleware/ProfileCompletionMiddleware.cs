@@ -18,13 +18,18 @@ public sealed class ProfileCompletionMiddleware(RequestDelegate next)
         "/api/v1/upload/sign",
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
-        "/api/v1/auth/logout-all"
+        "/api/v1/auth/logout-all",
+        // Accepting a Platform Manager invitation is what grants the role that exempts the caller from
+        // onboarding, so the accept call itself must not be gated behind profile completion.
+        "/api/v1/newsletters/platform-manager-invites/accept",
+        "/api/v1/newsletters/unsubscribe"
     ];
 
     public async Task InvokeAsync(HttpContext context, MirageDbContext db)
     {
         if (context.User.Identity?.IsAuthenticated != true
             || context.User.IsInRole("PlatformAdmin")
+            || context.User.IsInRole("PlatformManager")
             || AllowedPaths.Any(path => context.Request.Path.Equals(path)))
         {
             await next(context);

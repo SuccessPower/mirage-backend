@@ -76,11 +76,18 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CompanionSubscription> CompanionSubscriptions => Set<CompanionSubscription>();
     public DbSet<CelebrationEntry> CelebrationEntries => Set<CelebrationEntry>();
     public DbSet<CelebrationWish> CelebrationWishes => Set<CelebrationWish>();
+    public DbSet<Newsletter> Newsletters => Set<Newsletter>();
+    public DbSet<NewsletterDelivery> NewsletterDeliveries => Set<NewsletterDelivery>();
+    public DbSet<NewsletterLike> NewsletterLikes => Set<NewsletterLike>();
+    public DbSet<NewsletterComment> NewsletterComments => Set<NewsletterComment>();
+    public DbSet<NewsletterCommentLike> NewsletterCommentLikes => Set<NewsletterCommentLike>();
+    public DbSet<PlatformManagerInvite> PlatformManagerInvites => Set<PlatformManagerInvite>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
         builder.HasDefaultSchema("mirage");
+        builder.Entity<ApplicationUser>().Property(x => x.IsNewsletterSubscribed).HasDefaultValue(true);
         builder.ApplyConfigurationsFromAssembly(typeof(MirageDbContext).Assembly);
     }
 }

@@ -1,4 +1,5 @@
 using Mirage.Api.Contracts;
+using Mirage.Domain.Enums;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -127,6 +128,21 @@ internal static class AdminAnalyticsPdf
                         HealthBar(body, tier.Tier.ToString(), tier.Users, report.Users.RegisteredUsers, Purple);
                 }));
             });
+
+            column.Item().Element(c => Panel(c, "Gender balance", "Registered members by stated gender", body =>
+            {
+                foreach (var gender in report.Genders)
+                    HealthBar(body, GenderLabel(gender.Sex), gender.Users, report.Users.RegisteredUsers,
+                        gender.Sex is null ? Muted : Purple);
+                body.Item().Table(table =>
+                {
+                    Columns(table, 1.6f, 1f, 1f, 1f);
+                    TableHeader(table, "Gender", "Members", "Active (30d)", "Registered in period");
+                    foreach (var gender in report.Genders)
+                        TableRow(table, GenderLabel(gender.Sex), gender.Users.ToString("N0"),
+                            gender.ActiveUsers.ToString("N0"), gender.RegistrationsInPeriod.ToString("N0"));
+                });
+            }));
 
             column.Item().PageBreak();
             Title(column, "02", "Financial performance", "Revenue quality, provider obligations and settlement exposure");
@@ -396,6 +412,7 @@ internal static class AdminAnalyticsPdf
             table.Cell().BorderBottom(1).BorderColor(Border).PaddingVertical(7).PaddingHorizontal(6).Text(value).FontSize(7.5f);
     }
 
+    private static string GenderLabel(Sex? sex) => sex?.ToString() ?? "Not stated";
     private static string Percent(int part, int whole) => whole == 0 ? "0%" : $"{(decimal)part / whole:P0}";
     private static string Money(decimal amount, string currency) => $"{currency} {amount:N2}";
 }

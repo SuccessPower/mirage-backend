@@ -71,5 +71,11 @@ public interface IMirageDbContext
     DbSet<CompanionSubscription> CompanionSubscriptions { get; }
     DbSet<CelebrationEntry> CelebrationEntries { get; }
     DbSet<CelebrationWish> CelebrationWishes { get; }
+    DbSet<Newsletter> Newsletters { get; }
+    DbSet<NewsletterDelivery> NewsletterDeliveries { get; }
+    DbSet<NewsletterLike> NewsletterLikes { get; }
+    DbSet<NewsletterComment> NewsletterComments { get; }
+    DbSet<NewsletterCommentLike> NewsletterCommentLikes { get; }
+    DbSet<PlatformManagerInvite> PlatformManagerInvites { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }
