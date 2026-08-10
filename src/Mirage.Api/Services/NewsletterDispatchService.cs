@@ -59,6 +59,9 @@ public sealed class NewsletterDispatchService(MirageDbContext db, IEmailService 
             if (!acquired) { await transaction.RollbackAsync(ct); return; }
 
             var sending = await db.Newsletters.SingleAsync(x => x.Id == sendingId.Value, ct);
+            // Resolved once per batch: the byline is the same for every recipient of an edition.
+            var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == sending.AuthorUserId)
+                .Select(x => new { x.DisplayName, x.AvatarUrl }).FirstOrDefaultAsync(ct);
             var pending = await db.NewsletterDeliveries
                 .Where(x => x.NewsletterId == sending.Id && x.Status == NewsletterDeliveryStatus.Pending)
                 .OrderBy(x => x.CreatedAt).Take(BatchSize).ToListAsync(ct);
@@ -74,7 +77,8 @@ public sealed class NewsletterDispatchService(MirageDbContext db, IEmailService 
                     var sent = await email.SendNewsletterAsync(delivery.Email, displayName, sending.Subject,
                         sending.Title, sending.Excerpt, sending.ContentHtml, sending.ImageUrls,
                         $"{appUrl}/newsletters/{sending.Id}",
-                        NewsletterUnsubscribe.BuildUrl(appUrl, delivery.UserId, configuration), ct);
+                        NewsletterUnsubscribe.BuildUrl(appUrl, delivery.UserId, configuration),
+                        author?.DisplayName, author?.AvatarUrl, ct);
                     if (sent) delivery.MarkSent(); else delivery.MarkFailed("All configured email providers rejected the message.");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)

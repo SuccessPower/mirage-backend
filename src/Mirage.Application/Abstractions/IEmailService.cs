@@ -56,7 +56,8 @@ public interface IEmailService
 
     Task<bool> SendNewsletterAsync(string toEmail, string displayName, string subject, string title,
         string excerpt, string contentHtml, IReadOnlyList<string> imageUrls, string newsletterUrl,
-        string unsubscribeUrl, CancellationToken cancellationToken = default);
+        string unsubscribeUrl, string? authorName = null, string? authorAvatarUrl = null,
+        CancellationToken cancellationToken = default);
 
     Task<bool> SendPlatformManagerInviteAsync(string toEmail, string inviteUrl,
         CancellationToken cancellationToken = default);
