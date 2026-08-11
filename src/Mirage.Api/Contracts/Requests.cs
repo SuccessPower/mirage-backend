@@ -39,6 +39,7 @@ public sealed record ScheduleNewsletterRequest(DateTimeOffset ScheduledFor, Sex?
 public sealed record NewsletterCommentRequest(string Body, Guid? ParentCommentId = null);
 public sealed record NewsletterSubscriptionRequest(bool IsSubscribed);
 public sealed record InvitePlatformManagerRequest(string Email);
+public sealed record GrantPlatformManagerRequest(Guid UserId);
 public sealed record AcceptPlatformManagerInviteRequest(string Token);
 public sealed record UnsubscribeNewsletterRequest(string Token);
 
