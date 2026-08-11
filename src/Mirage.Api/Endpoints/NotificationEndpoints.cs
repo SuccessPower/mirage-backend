@@ -16,7 +16,10 @@ internal static class NotificationEndpoints
         group.MapPost("/{id:guid}/read", MarkRead);
         group.MapPost("/read-all", MarkAllRead);
         group.MapPost("/device-tokens", RegisterDeviceToken);
-        group.MapDelete("/device-tokens", RevokeDeviceToken);
+        // POST, not DELETE: the token is a 512-char opaque string, so it has to travel in a body,
+        // and minimal APIs refuse to bind a body on DELETE (bodies on DELETE are also liable to be
+        // stripped by intermediary proxies).
+        group.MapPost("/device-tokens/revoke", RevokeDeviceToken);
         return api;
     }
 
@@ -48,7 +51,7 @@ internal static class NotificationEndpoints
     // Sign-out and "turn off notifications". Scoped to the caller so one user cannot silence
     // another's device by guessing a token.
     private static async Task<IResult> RevokeDeviceToken(HttpContext context, IMirageDbContext db,
-        RegisterDeviceTokenRequest request, CancellationToken cancellationToken)
+        RevokeDeviceTokenRequest request, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var token = (request.Token ?? string.Empty).Trim();
