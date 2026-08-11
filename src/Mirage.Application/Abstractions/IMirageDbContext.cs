@@ -30,6 +30,7 @@ public interface IMirageDbContext
     DbSet<ChatDeviceLink> ChatDeviceLinks { get; }
     DbSet<CounsellingKeyEnvelope> CounsellingKeyEnvelopes { get; }
     DbSet<Notification> Notifications { get; }
+    DbSet<DeviceToken> DeviceTokens { get; }
     DbSet<OrganisationBranch> OrganisationBranches { get; }
     DbSet<OrganisationMember> OrganisationMembers { get; }
     DbSet<OrganisationManager> OrganisationManagers { get; }

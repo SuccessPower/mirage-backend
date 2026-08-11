@@ -119,6 +119,10 @@ builder.Services.AddScoped<ReEngagementService>();
 builder.Services.AddHostedService<ReEngagementWorker>();
 builder.Services.AddScoped<NewsletterDispatchService>();
 builder.Services.AddHostedService<NewsletterDispatchWorker>();
+// Singleton so the service-account OAuth token is cached across pushes rather than re-minted
+// per notification; the typed HttpClient that carries it stays pooled by the factory.
+builder.Services.AddSingleton<FirebaseCredentials>();
+builder.Services.AddHttpClient<PushSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
