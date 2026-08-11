@@ -305,3 +305,4 @@ public sealed record RegisterDeviceTokenRequest(
     string Token,
     DevicePlatform Platform,
     string? DeviceName = null);
+public sealed record RevokeDeviceTokenRequest(string Token);

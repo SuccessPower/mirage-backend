@@ -13,3 +13,7 @@ appsettings.Local.json
 TestResults/
 coverage/
 /.vs
+
+# Firebase service-account keys. These are live credentials for FCM (push notifications) —
+# they belong in the Firebase__ServiceAccountJson environment variable, never in the repo.
+*firebase-adminsdk*.json

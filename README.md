@@ -144,6 +144,22 @@ For an existing Render service, configure these under **Environment**:
 | `Swagger__Enabled` | `true` |
 | `ASPNETCORE_ENVIRONMENT` | `Production` |
 | `Google__ClientId` | Google OAuth Client ID (not secret — no client secret is needed, sign-in verifies an ID token server-side) |
+| `Firebase__ServiceAccountJson` | Firebase service-account JSON, base64-encoded. Optional — push notifications are disabled while it is unset |
+
+### Push notifications
+
+Server-originated push (mobile and web) goes out through FCM's HTTP v1 API alongside the existing
+SignalR and email channels, from `NotificationService.NotifyAsync`. To enable it:
+
+1. In the Firebase console for the project, **Project settings → Service accounts → Generate new
+   private key**. This grants the Firebase Cloud Messaging API scope.
+2. Base64-encode the downloaded file and set it as `Firebase__ServiceAccountJson`:
+   `base64 -i service-account.json | tr -d '\n'`. The raw JSON also works where the hosting
+   provider preserves the newlines inside `private_key`; Render's editor does not.
+
+Clients register their FCM token with `POST /api/v1/notifications/device-tokens` and drop it on
+sign-out with `DELETE`. Tokens FCM reports as `UNREGISTERED` or malformed are revoked
+automatically, so the table is self-pruning and no scheduled cleanup is needed.
 
 `PORT` is provided automatically by Render.
 
