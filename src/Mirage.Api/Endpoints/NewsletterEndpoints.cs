@@ -56,6 +56,10 @@ internal static partial class NewsletterEndpoints
             .RequireAuthorization(MiragePolicy.PlatformAdmin);
         admin.MapPost("/invite", InviteManager);
         admin.MapGet("/invites", ListInvites);
+        admin.MapGet("/search", SearchMembers);
+        admin.MapPost("/grant", GrantManager);
+        admin.MapGet("/", ListManagers);
+        admin.MapDelete("/{userId:guid}", RevokeManager);
         newsletters.MapPost("/platform-manager-invites/accept", AcceptManagerInvite);
         return api;
     }
@@ -244,16 +248,18 @@ internal static partial class NewsletterEndpoints
         await db.SaveChangesAsync(ct); return ApiResults.Ok(context, new { item.Id }, "Newsletter saved.");
     }
 
-    private static async Task<IResult> Schedule(Guid id, ScheduleNewsletterRequest request, HttpContext context, MirageDbContext db, CancellationToken ct)
+    private static async Task<IResult> Schedule(Guid id, ScheduleNewsletterRequest request, HttpContext context,
+        MirageDbContext db, IConfiguration configuration, CancellationToken ct)
     {
         var item = await FindVisibleAsync(id, context, db, ct); if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
         // Maker-checker: the author never sends their own edition, and it needs two sign-offs on the current text.
         if (item.AuthorUserId == context.User.GetUserId())
             return EndpointHelpers.Problem(context, 403, "Author cannot schedule",
                 "An edition has to be scheduled by a reviewer other than its author.");
+        var required = RequiredApprovals(configuration);
         var approvals = await ApprovalCountAsync(db, item, ct);
-        if (approvals < RequiredApprovals)
-            return EndpointHelpers.Conflict(context, $"This edition has {approvals} of {RequiredApprovals} approvals on its current text.");
+        if (approvals < required)
+            return EndpointHelpers.Conflict(context, $"This edition has {approvals} of {required} approvals on its current text.");
         var statuses = NewsletterAudience.ParseStatuses(request.RelationshipStatuses);
         var count = await NewsletterAudience.Filtered(db, request.Sex, statuses).CountAsync(ct);
         if (count == 0) return EndpointHelpers.ValidationProblem(context, ("audience", "No subscriber matches that audience. Widen the filters before scheduling."));
@@ -273,8 +279,11 @@ internal static partial class NewsletterEndpoints
         try { item.Cancel(); } catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); } await db.SaveChangesAsync(ct); return ApiResults.Ok(context, new { item.Id }, "Newsletter cancelled.");
     }
 
-    /// <summary>Two sign-offs, neither of them the author's, and both given on the current text.</summary>
-    private const int RequiredApprovals = 2;
+    /// <summary>How many sign-offs an edition needs before it can be scheduled — none of them the author's, and
+    /// all given on the current text. One by default: the maker-checker separation is what matters, and a second
+    /// reviewer mostly adds delay. Raise <c>Newsletter:RequiredApprovals</c> for a stricter process.</summary>
+    private static int RequiredApprovals(IConfiguration configuration) =>
+        Math.Clamp(configuration.GetValue("Newsletter:RequiredApprovals", 1), 1, 5);
 
     private static IQueryable<NewsletterReview> CurrentRoundApprovals(MirageDbContext db, Newsletter item) =>
         db.NewsletterReviews.AsNoTracking().Where(x => x.NewsletterId == item.Id && x.Round == item.ReviewRound
@@ -283,13 +292,16 @@ internal static partial class NewsletterEndpoints
     private static async Task<int> ApprovalCountAsync(MirageDbContext db, Newsletter item, CancellationToken ct) =>
         await CurrentRoundApprovals(db, item).Select(x => x.ReviewerUserId).Distinct().CountAsync(ct);
 
-    private static async Task<IResult> SubmitForReview(Guid id, HttpContext context, MirageDbContext db, CancellationToken ct)
+    private static async Task<IResult> SubmitForReview(Guid id, HttpContext context, MirageDbContext db,
+        IConfiguration configuration, CancellationToken ct)
     {
         var item = await FindVisibleAsync(id, context, db, ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
         try { item.SubmitForReview(); } catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); }
         await db.SaveChangesAsync(ct);
-        return ApiResults.Ok(context, new { item.Id, item.Status }, "Submitted for review. Two other reviewers must approve it before it can be scheduled.");
+        var needed = RequiredApprovals(configuration);
+        return ApiResults.Ok(context, new { item.Id, item.Status },
+            $"Submitted for review. {needed} other reviewer{(needed == 1 ? "" : "s")} must approve it before it can be scheduled.");
     }
 
     private static async Task<IResult> WithdrawFromReview(Guid id, HttpContext context, MirageDbContext db, CancellationToken ct)
@@ -303,7 +315,8 @@ internal static partial class NewsletterEndpoints
         return ApiResults.Ok(context, new { item.Id, item.Status }, "Withdrawn from review and back in your drafts.");
     }
 
-    private static async Task<IResult> ListReviews(Guid id, HttpContext context, MirageDbContext db, CancellationToken ct)
+    private static async Task<IResult> ListReviews(Guid id, HttpContext context, MirageDbContext db,
+        IConfiguration configuration, CancellationToken ct)
     {
         var item = await FindVisibleAsync(id, context, db, ct, tracked: false);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
@@ -312,30 +325,32 @@ internal static partial class NewsletterEndpoints
                 ReviewerName = db.Profiles.Where(p => p.UserId == x.ReviewerUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Reviewer",
                 ReviewerAvatarUrl = db.Profiles.Where(p => p.UserId == x.ReviewerUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
                 IsCurrentRound = x.Round == item.ReviewRound }).ToListAsync(ct);
-        return ApiResults.Ok(context, new { Thread = thread, Approval = await ApprovalStateAsync(db, item, context, ct) }, "Review thread retrieved.");
+        return ApiResults.Ok(context, new { Thread = thread, Approval = await ApprovalStateAsync(db, item, context, configuration, ct) }, "Review thread retrieved.");
     }
 
-    private static async Task<object> ApprovalStateAsync(MirageDbContext db, Newsletter item, HttpContext context, CancellationToken ct)
+    private static async Task<object> ApprovalStateAsync(MirageDbContext db, Newsletter item, HttpContext context,
+        IConfiguration configuration, CancellationToken ct)
     {
+        var required = RequiredApprovals(configuration);
         var me = context.User.GetUserId();
         var approvals = await CurrentRoundApprovals(db, item).Select(x => x.ReviewerUserId).Distinct().ToListAsync(ct);
         var isAuthor = item.AuthorUserId == me;
         return new
         {
             item.ReviewRound,
-            Required = RequiredApprovals,
+            Required = required,
             Count = approvals.Count,
             IsAuthor = isAuthor,
             HasMyApproval = approvals.Contains(me),
             // The author is the maker; the checkers are everyone else with newsletter management.
             CanApprove = !isAuthor && item.Status == NewsletterStatus.InReview && !approvals.Contains(me),
-            CanSchedule = !isAuthor && approvals.Count >= RequiredApprovals
+            CanSchedule = !isAuthor && approvals.Count >= required
                 && item.Status is NewsletterStatus.Approved or NewsletterStatus.Cancelled
         };
     }
 
     private static async Task<IResult> AddReview(Guid id, NewsletterReviewRequest request, HttpContext context,
-        MirageDbContext db, CancellationToken ct)
+        MirageDbContext db, IConfiguration configuration, CancellationToken ct)
     {
         var item = await FindVisibleAsync(id, context, db, ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
@@ -366,19 +381,20 @@ internal static partial class NewsletterEndpoints
         }
         else if (request.Decision == NewsletterReviewDecision.Approved)
         {
+            var required = RequiredApprovals(configuration);
             var count = await ApprovalCountAsync(db, item, ct);
-            if (count >= RequiredApprovals && item.Status == NewsletterStatus.InReview)
+            if (count >= required && item.Status == NewsletterStatus.InReview)
             {
                 item.MarkApproved();
                 await db.SaveChangesAsync(ct);
-                message = "Approved. With two sign-offs this edition can now be scheduled.";
+                message = "Approved. This edition can now be scheduled.";
             }
             else
             {
-                message = $"Approved. {Math.Max(0, RequiredApprovals - count)} more approval(s) needed.";
+                message = $"Approved. {Math.Max(0, required - count)} more approval(s) needed.";
             }
         }
-        return ApiResults.Ok(context, new { item.Status, Approval = await ApprovalStateAsync(db, item, context, ct) }, message);
+        return ApiResults.Ok(context, new { item.Status, Approval = await ApprovalStateAsync(db, item, context, configuration, ct) }, message);
     }
 
     private static async Task<IResult> Delete(Guid id, HttpContext context, MirageDbContext db, CancellationToken ct)
@@ -447,6 +463,75 @@ internal static partial class NewsletterEndpoints
             return EndpointHelpers.Problem(context, StatusCodes.Status502BadGateway, "Invitation delivery failed", "No invitation was retained. Please retry when the email provider is available.");
         }
         return ApiResults.Ok(context, new { Email = normalized, ExpiresAt = expires, EmailSent = true }, "Invitation sent.");
+    }
+
+    /// <summary>Finds existing members by the name they are known by on Mirage, or by email. An invitation is only
+    /// needed for someone who is not on the platform yet — anyone already here can simply be granted the role.</summary>
+    private static async Task<IResult> SearchMembers(HttpContext context, MirageDbContext db, string? q,
+        CancellationToken ct)
+    {
+        var term = (q ?? string.Empty).Trim();
+        if (term.Length < 2) return ApiResults.Ok(context, Array.Empty<object>(), "Type at least two characters.");
+        var managerRoleIds = await db.Roles.Where(r => r.Name == MirageRoles.PlatformManager || r.Name == MirageRoles.PlatformAdmin)
+            .Select(r => r.Id).ToListAsync(ct);
+        var results = await db.Users.AsNoTracking().Where(u => u.IsActive && !u.IsDeleted)
+            .Where(u => EF.Functions.ILike(u.Email!, $"%{term}%")
+                || db.Profiles.Any(p => p.UserId == u.Id && EF.Functions.ILike(p.DisplayName, $"%{term}%")))
+            .OrderBy(u => u.Email)
+            .Take(10)
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                DisplayName = db.Profiles.Where(p => p.UserId == u.Id).Select(p => p.DisplayName).FirstOrDefault(),
+                AvatarUrl = db.Profiles.Where(p => p.UserId == u.Id).Select(p => p.AvatarUrl).FirstOrDefault(),
+                AlreadyManages = db.UserRoles.Any(ur => ur.UserId == u.Id && managerRoleIds.Contains(ur.RoleId))
+            })
+            .ToListAsync(ct);
+        return ApiResults.Ok(context, results, "Members found.");
+    }
+
+    /// <summary>Grants the role straight away to someone already on Mirage. No token, no email round trip — they
+    /// pick it up on their next sign-in, because roles are carried in the access token.</summary>
+    private static async Task<IResult> GrantManager(GrantPlatformManagerRequest request, HttpContext context,
+        MirageDbContext db, UserManager<ApplicationUser> users, CancellationToken ct)
+    {
+        var user = await users.FindByIdAsync(request.UserId.ToString());
+        if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "That member was not found.");
+        if (await users.IsInRoleAsync(user, MirageRoles.PlatformManager))
+            return EndpointHelpers.Conflict(context, $"{user.Email} is already a Platform Manager.");
+        var result = await users.AddToRoleAsync(user, MirageRoles.PlatformManager);
+        if (!result.Succeeded) return EndpointHelpers.Conflict(context, "Could not assign the Platform Manager role.");
+        var name = await db.Profiles.AsNoTracking().Where(x => x.UserId == user.Id).Select(x => x.DisplayName)
+            .FirstOrDefaultAsync(ct) ?? user.Email!;
+        return ApiResults.Ok(context, new { user.Id, user.Email, DisplayName = name },
+            $"{name} is now a Platform Manager. They will see the studio after signing in again.");
+    }
+
+    private static async Task<IResult> ListManagers(HttpContext context, MirageDbContext db, CancellationToken ct)
+    {
+        var roleId = await db.Roles.Where(r => r.Name == MirageRoles.PlatformManager).Select(r => r.Id)
+            .FirstOrDefaultAsync(ct);
+        var managers = await db.UserRoles.AsNoTracking().Where(ur => ur.RoleId == roleId)
+            .Join(db.Users.AsNoTracking().Where(u => !u.IsDeleted), ur => ur.UserId, u => u.Id, (ur, u) => u)
+            .Select(u => new
+            {
+                u.Id,
+                u.Email,
+                DisplayName = db.Profiles.Where(p => p.UserId == u.Id).Select(p => p.DisplayName).FirstOrDefault(),
+                AvatarUrl = db.Profiles.Where(p => p.UserId == u.Id).Select(p => p.AvatarUrl).FirstOrDefault()
+            }).ToListAsync(ct);
+        return ApiResults.Ok(context, managers, "Platform managers retrieved.");
+    }
+
+    private static async Task<IResult> RevokeManager(Guid userId, HttpContext context,
+        UserManager<ApplicationUser> users, CancellationToken ct)
+    {
+        var user = await users.FindByIdAsync(userId.ToString());
+        if (user is null) return EndpointHelpers.NotFound(context, "That member was not found.");
+        var result = await users.RemoveFromRoleAsync(user, MirageRoles.PlatformManager);
+        if (!result.Succeeded) return EndpointHelpers.Conflict(context, "Could not remove the Platform Manager role.");
+        return ApiResults.Ok(context, new { user.Id }, "Platform Manager access removed.");
     }
 
     private static async Task<IResult> ListInvites(HttpContext context, MirageDbContext db, CancellationToken ct) => ApiResults.Ok(context,

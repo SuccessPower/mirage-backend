@@ -29,18 +29,6 @@ public static class NewsletterEmailTemplate
     private const string PaperDeep = "#f3ebdd";
     private const string Rule = "#ddd0ba";
 
-    // "The same letter, read by lamplight." Not an inversion — a warm dark ground with the plum lifted so it
-    // still reads as an accent rather than a bruise, and cream text at a comfortable contrast rather than the
-    // pure white on black that algorithmic inversion produces.
-    private const string DarkGround = "#15110c";
-    private const string DarkCard = "#1f1a13";
-    private const string DarkFoot = "#191410";
-    private const string DarkText = "#e6dccc";
-    private const string DarkStrong = "#f6efe3";
-    private const string DarkMuted = "#a3947c";
-    private const string DarkRule = "#3b3226";
-    private const string DarkPlum = "#b49bff";
-
     private const string DefaultLogoUrl =
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
     private const string DefaultSupportEmail = "support@themiragehub.com";
@@ -292,33 +280,6 @@ public static class NewsletterEmailTemplate
         """.Replace("@ink@", Ink).Replace("@plum@", Plum).Replace("@rule@", Rule)
            .Replace("@letter@", Letter).Replace("@display@", Display);
 
-    /// <summary>Honoured by Apple Mail, Outlook for Mac/iOS and other clients that pass through
-    /// prefers-color-scheme. Clients that force-invert instead (Gmail's mobile apps) ignore it, but start from a
-    /// dark design and so have far less to mangle. Every declaration is !important because the elements it
-    /// targets carry inline styles.</summary>
-    private static readonly string DarkStyles = """
-          @media (prefers-color-scheme: dark){
-            .paper{background:@ground@ !important}
-            .frame{background:@card@ !important;border-color:@drule@ !important}
-            .foot{background:@foot@ !important;border-top-color:@drule@ !important}
-            .inset{background:@foot@ !important;border-color:@drule@ !important}
-            .lede,.prose,.body-copy{color:@text@ !important}
-            .display,.strong{color:@strong@ !important}
-            .soft{color:@muted@ !important}
-            .accent,.eyebrow{color:@dplum@ !important}
-            .rule-cell{border-bottom-color:@drule@ !important}
-            .badge{background:@drule@ !important}
-            .prose h2,.prose h3{color:@strong@ !important}
-            .prose a{color:@dplum@ !important}
-            .prose blockquote{color:@text@ !important;border-left-color:@dplum@ !important}
-            .prose hr{border-top-color:@drule@ !important}
-            .cta{background:@dplum@ !important;color:#1b1408 !important}
-            a[x-apple-data-detectors]{color:inherit !important;text-decoration:none !important}
-          }
-        """.Replace("@ground@", DarkGround).Replace("@card@", DarkCard).Replace("@foot@", DarkFoot)
-           .Replace("@text@", DarkText).Replace("@strong@", DarkStrong).Replace("@muted@", DarkMuted)
-           .Replace("@drule@", DarkRule).Replace("@dplum@", DarkPlum);
-
     private static string Shell(string preheader, string bodyRows,
         IReadOnlyList<NewsletterSocialLink>? socials = null, string? unsubscribeUrl = null, string? logoUrl = null)
     {
@@ -337,12 +298,11 @@ public static class NewsletterEmailTemplate
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <meta name="x-apple-disable-message-reformatting" />
-        <meta name="color-scheme" content="light dark" />
-        <meta name="supported-color-schemes" content="light dark" />
+        <meta name="color-scheme" content="light" />
+        <meta name="supported-color-schemes" content="light" />
         <!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml><![endif]-->
         <style>
         {HeadStyles}
-        {DarkStyles}
         </style>
       </head>
       <body class="paper" style="margin:0;padding:0;background:{PaperDeep}">
