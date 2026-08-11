@@ -808,6 +808,22 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
     }
 }
 
+public sealed class DeviceTokenConfiguration : IEntityTypeConfiguration<DeviceToken>
+{
+    public void Configure(EntityTypeBuilder<DeviceToken> b)
+    {
+        b.ToTable("device_tokens");
+        // Unique on the token alone: FCM tokens are globally unique across users, so a token
+        // arriving for a new user must move rather than duplicate.
+        b.HasIndex(x => x.Token).IsUnique();
+        b.HasIndex(x => new { x.UserId, x.RevokedAt });
+        b.Property(x => x.Token).HasMaxLength(512);
+        b.Property(x => x.DeviceName).HasMaxLength(120);
+        b.Ignore(x => x.IsActive);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CounsellorInviteConfiguration : IEntityTypeConfiguration<CounsellorInvite>
 {
     public void Configure(EntityTypeBuilder<CounsellorInvite> b)

@@ -145,6 +145,8 @@ public enum CelebrationType
     Anniversary = 2
 }
 
+public enum DevicePlatform { Android = 1, IOS = 2, Web = 3 }
+
 public enum NewsletterStatus { Draft = 1, Scheduled = 2, Sending = 3, Sent = 4, Cancelled = 5, Failed = 6, InReview = 7, Approved = 8 }
 public enum NewsletterReviewDecision { Comment = 1, Approved = 2, ChangesRequested = 3 }
 public enum NewsletterDeliveryStatus { Pending = 1, Sent = 2, Failed = 3 }

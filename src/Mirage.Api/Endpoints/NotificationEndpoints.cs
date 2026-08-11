@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
+using Mirage.Domain.Entities;
 
 namespace Mirage.Api.Endpoints;
 
@@ -14,7 +15,50 @@ internal static class NotificationEndpoints
         group.MapGet("/unread-count", UnreadCount);
         group.MapPost("/{id:guid}/read", MarkRead);
         group.MapPost("/read-all", MarkAllRead);
+        group.MapPost("/device-tokens", RegisterDeviceToken);
+        group.MapDelete("/device-tokens", RevokeDeviceToken);
         return api;
+    }
+
+    // Called after the client obtains an FCM registration token, and again on every token refresh.
+    // Idempotent by token: the same token re-registering just refreshes LastSeenAt, and a token
+    // that has moved to a different account (same device, new sign-in) is re-pointed at the
+    // current user so pushes stop following the previous one.
+    private static async Task<IResult> RegisterDeviceToken(HttpContext context, IMirageDbContext db,
+        RegisterDeviceTokenRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return EndpointHelpers.ValidationProblem(context, (nameof(request.Token), "A device token is required."));
+        if (!Enum.IsDefined(request.Platform))
+            return EndpointHelpers.ValidationProblem(context, (nameof(request.Platform), "Platform is not recognised."));
+
+        var userId = context.User.GetUserId();
+        var token = request.Token.Trim();
+        var existing = await db.DeviceTokens.SingleOrDefaultAsync(x => x.Token == token, cancellationToken);
+
+        if (existing is null)
+            db.DeviceTokens.Add(new DeviceToken(userId, token, request.Platform, request.DeviceName));
+        else
+            existing.Reclaim(userId, request.Platform, request.DeviceName);
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { registered = true }, "Device registered for push notifications.");
+    }
+
+    // Sign-out and "turn off notifications". Scoped to the caller so one user cannot silence
+    // another's device by guessing a token.
+    private static async Task<IResult> RevokeDeviceToken(HttpContext context, IMirageDbContext db,
+        RegisterDeviceTokenRequest request, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var token = (request.Token ?? string.Empty).Trim();
+        var existing = await db.DeviceTokens.SingleOrDefaultAsync(
+            x => x.Token == token && x.UserId == userId, cancellationToken);
+        if (existing is null) return ApiResults.Ok(context, new { revoked = false }, "Device token was not registered.");
+
+        existing.Revoke();
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { revoked = true }, "Device unregistered from push notifications.");
     }
 
     private static async Task<IResult> List(HttpContext context, IMirageDbContext db,

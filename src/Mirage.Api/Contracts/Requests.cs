@@ -300,3 +300,8 @@ public sealed record BookSessionRequest(
 
 public sealed record InitializePaymentRequest(PaymentProvider Provider, PaymentMethod Method);
 public sealed record ResetWelcomeEmailsRequest(string[] Emails);
+
+public sealed record RegisterDeviceTokenRequest(
+    string Token,
+    DevicePlatform Platform,
+    string? DeviceName = null);

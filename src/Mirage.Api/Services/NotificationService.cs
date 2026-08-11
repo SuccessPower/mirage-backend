@@ -10,8 +10,16 @@ using Mirage.Infrastructure.Identity;
 namespace Mirage.Api.Services;
 
 public sealed class NotificationService(IMirageDbContext db, IHubContext<NotificationHub> hub,
-    IEmailService email, UserManager<ApplicationUser> userManager)
+    IEmailService email, UserManager<ApplicationUser> userManager, PushSender push)
 {
+    // Push goes out for everything except the genuinely ambient events — a buzz for every profile
+    // view or ended conversation trains people to turn notifications off. These still land in-app.
+    private static readonly HashSet<NotificationType> PushSuppressedTypes =
+    [
+        NotificationType.ProfileVisited,
+        NotificationType.ConversationEnded
+    ];
+
     // High-signal events worth an email; noisy/high-frequency ones (likes, mentions, mentor and
     // counselling session chatter) stay in-app only so users aren't spammed.
     //
@@ -61,8 +69,43 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
             notification.CreatedAt
         }, cancellationToken);
 
+        if (!PushSuppressedTypes.Contains(type))
+            await SendPushAsync(notification, cancellationToken);
+
         if (EmailableTypes.Contains(type) && email.HasNotificationTemplate(type))
             await SendNotificationEmailAsync(userId, type, title, body, actionUrl, actionLabel, cancellationToken);
+    }
+
+    private async Task SendPushAsync(Notification notification, CancellationToken cancellationToken)
+    {
+        if (!push.IsEnabled) return;
+
+        var tokens = await db.DeviceTokens.AsNoTracking()
+            .Where(x => x.UserId == notification.UserId && x.RevokedAt == null)
+            .Select(x => x.Token)
+            .ToListAsync(cancellationToken);
+        if (tokens.Count == 0) return;
+
+        var unread = await db.Notifications
+            .CountAsync(x => x.UserId == notification.UserId && !x.IsRead, cancellationToken);
+
+        // Enum names, not numbers: the mobile and web clients switch on these strings to pick the
+        // route to deep-link into (see PushNotificationService._routeFor on Flutter).
+        var data = new Dictionary<string, string>
+        {
+            ["notificationId"] = notification.Id.ToString(),
+            ["type"] = notification.Type.ToString()
+        };
+        if (notification.ReferenceId is { } referenceId) data["referenceId"] = referenceId.ToString();
+        if (notification.ReferenceType is { } referenceType) data["referenceType"] = referenceType;
+
+        var dead = await push.SendAsync(tokens,
+            new PushPayload(notification.Title, notification.Body, data, unread), cancellationToken);
+        if (dead.Count == 0) return;
+
+        var stale = await db.DeviceTokens.Where(x => dead.Contains(x.Token)).ToListAsync(cancellationToken);
+        foreach (var token in stale) token.Revoke();
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task SendNotificationEmailAsync(Guid userId, NotificationType type, string title, string body,
