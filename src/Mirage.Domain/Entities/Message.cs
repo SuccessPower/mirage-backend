@@ -10,8 +10,10 @@ public sealed class Message : Entity
     public Message(Guid matchId, Guid senderId, string content, MessageType type = MessageType.Text,
         string? attachmentUrl = null, Guid? replyToMessageId = null, bool encryptedPayload = false)
     {
-        if (!encryptedPayload && type == MessageType.Image && string.IsNullOrWhiteSpace(attachmentUrl))
-            throw new ArgumentException("Image messages require an attachment URL.");
+        // Encrypted messages carry their attachment URL inside the ciphertext, so the cleartext
+        // column is legitimately empty for them — only unencrypted payloads can be checked here.
+        if (!encryptedPayload && RequiresAttachment(type) && string.IsNullOrWhiteSpace(attachmentUrl))
+            throw new ArgumentException($"{type} messages require an attachment URL.");
         MatchId = matchId;
         SenderId = senderId;
         Content = (content ?? string.Empty).Trim();
@@ -36,6 +38,10 @@ public sealed class Message : Entity
     public Message? ReplyToMessage { get; private set; }
 
     public bool IsEncrypted => EncryptionVersion > 0;
+
+    /// <summary>Message kinds whose meaning lives in the attachment rather than the text body.</summary>
+    public static bool RequiresAttachment(MessageType type) =>
+        type is MessageType.Image or MessageType.Voice or MessageType.Gif;
 
     public void SetEncryptedContent(string ciphertext, string nonce, string clientMessageId, int version = 1)
     {

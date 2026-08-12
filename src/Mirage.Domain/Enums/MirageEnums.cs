@@ -24,7 +24,11 @@ public enum PaymentMethod { Card = 1, BankTransfer = 2 }
 public enum PaymentStatus { Pending = 1, Successful = 2, Failed = 3 }
 public enum PayoutStatus { NotApplicable = 0, Held = 1, AwaitingApproval = 2, Processing = 3, Paid = 4, Failed = 5 }
 public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3, PendingRequest = 4 }
-public enum MessageType { Text = 1, Image = 2 }
+// Voice and Gif both carry their media in AttachmentUrl like Image does. Gif points at a
+// third-party (Tenor) CDN rather than our own Cloudinary account, so it is deliberately a
+// distinct type — the client renders it without the tap-to-zoom treatment photos get, and it
+// is the one attachment kind we never re-host.
+public enum MessageType { Text = 1, Image = 2, Voice = 3, Gif = 4 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }
 public enum LikeType { Like = 1, SuperLike = 2 }
 public enum TrustUnlockStatus { NotRequested = 1, Pending = 2, Unlocked = 3, Declined = 4 }

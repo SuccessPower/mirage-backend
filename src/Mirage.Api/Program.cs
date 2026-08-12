@@ -125,6 +125,9 @@ builder.Services.AddSingleton<FirebaseCredentials>();
 builder.Services.AddHttpClient<PushSender>(client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient<PaystackService>();
 builder.Services.AddHttpClient<FlutterwaveService>();
+// Short timeout: GIF search sits in front of a user watching a picker load, so failing fast and
+// letting them retry beats holding the request open.
+builder.Services.AddHttpClient<KlipyService>(client => client.Timeout = TimeSpan.FromSeconds(8));
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2>(
     _ => new AmazonSimpleEmailServiceV2Client(RegionEndpoint.GetBySystemName(sesRegion)));
@@ -290,6 +293,17 @@ builder.Services.AddRateLimiter(options =>
             {
                 PermitLimit = 5,
                 Window = TimeSpan.FromHours(1),
+                QueueLimit = 0
+            }));
+    // The GIF picker searches on a debounced keystroke, so this is sized for interactive typing
+    // rather than the sparing limits above — it exists to protect the Tenor quota, not the API.
+    options.AddPolicy("gifs", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.User.FindFirst("sub")?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous-gifs",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
     options.AddPolicy("device-link", context =>
