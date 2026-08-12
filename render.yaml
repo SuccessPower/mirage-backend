@@ -39,6 +39,10 @@ services:
         value: "false"
       - key: Brand__LogoUrl
         value: "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png"
+      # The mark-plus-wordmark lockup, used as the newsletter masthead. Separate from LogoUrl
+      # because that one fills square 32x32 slots, where a wide wordmark would render illegibly.
+      - key: Brand__WordmarkUrl
+        value: "https://www.themiragehub.com/brand/mirage-wordmark.png"
       # Firebase service-account JSON, base64-encoded (the raw JSON's private_key newlines do not
       # survive Render's env-var editor). Push notifications stay disabled until this is set.
       - key: Firebase__ServiceAccountJson

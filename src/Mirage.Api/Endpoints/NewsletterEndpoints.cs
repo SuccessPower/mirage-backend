@@ -204,7 +204,7 @@ internal static partial class NewsletterEndpoints
         var html = NewsletterEmailTemplate.Render(name, item.Title, item.Excerpt, item.ContentHtml, item.ImageUrls,
             $"{appUrl}/newsletters/{item.Id}", $"{appUrl}/newsletter-unsubscribe?token=preview",
             author is null ? null : new NewsletterAuthor(author.DisplayName, author.AvatarUrl),
-            NewsletterEmailTemplate.SocialLinks(configuration), item.ThumbnailUrl, NewsletterEmailTemplate.LogoUrl(configuration));
+            NewsletterEmailTemplate.SocialLinks(configuration), item.ThumbnailUrl, NewsletterEmailTemplate.MastheadUrl(configuration));
         return Results.Content(html, "text/html; charset=utf-8");
     }
 
