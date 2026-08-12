@@ -298,6 +298,12 @@ internal static class ChatEncryptionEndpoints
             {
                 existing.Rotate(material.PublicKeyJwk, RandomBase64(32), RandomBase64(12), RandomBase64(16),
                     310_000, escrow);
+                // Counselling session keys were wrapped to the superseded identity, so the member can no longer
+                // open them. Dropping the dead envelopes marks them as missing a key, which is the signal another
+                // participant's client already acts on to re-wrap the session key for them — no one has to ask.
+                var staleEnvelopes = await db.CounsellingKeyEnvelopes
+                    .Where(x => x.RecipientUserId == userId).ToListAsync(ct);
+                if (staleEnvelopes.Count != 0) db.CounsellingKeyEnvelopes.RemoveRange(staleEnvelopes);
             }
             else
             {

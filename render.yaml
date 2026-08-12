@@ -43,6 +43,11 @@ services:
       # survive Render's env-var editor). Push notifications stay disabled until this is set.
       - key: Firebase__ServiceAccountJson
         sync: false
+      # AWS KMS key that escrows each member's chat private key. Chat encryption provisions, restores and
+      # rotates identities through it, so without this (and the AWS credentials it needs) every member is
+      # locked out of encrypted messaging. Set in the dashboard alongside the AWS access key and secret.
+      - key: ChatEncryptionKms__KeyId
+        sync: false
       # Klipy API key for the chat GIF picker (Google's Tenor API shut down on 30 June 2026).
       # Until this is set, /api/v1/gifs returns 501 and the picker shows a "not available yet"
       # note — chat itself works without it.
