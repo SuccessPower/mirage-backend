@@ -583,6 +583,10 @@ internal static class MatchingEndpoints
         if (!IsValidEncryptedMessage(request.Ciphertext!, request.EncryptionNonce!))
             return EndpointHelpers.ValidationProblem(context,
                 ("ciphertext", "The encrypted message payload is malformed."));
+        // Type is the one field that stays in cleartext, so an unrecognised value would persist
+        // a message the client cannot render. Reject it rather than storing an unreadable row.
+        if (!Enum.IsDefined(request.Type))
+            return EndpointHelpers.ValidationProblem(context, ("type", "Unsupported message type."));
 
         Message? repliedTo = null;
         if (request.ReplyToMessageId.HasValue)
