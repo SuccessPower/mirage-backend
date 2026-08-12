@@ -174,9 +174,12 @@ public sealed class ResilientEmailService : IEmailService
         if (html.Contains("{{BRAND_LOGO_URL}}", StringComparison.Ordinal))
             html = html.Replace("{{BRAND_LOGO_URL}}", safeLogoUrl, StringComparison.Ordinal);
 
+        // Self-branded templates already open with their own logo lockup — injecting this one on top of it
+        // stacks two Mirage marks at the head of the message.
+        var selfBranded = html.Contains(NewsletterEmailTemplate.SelfBrandedMarker, StringComparison.Ordinal);
         var bodyStart = html.IndexOf("<body", StringComparison.OrdinalIgnoreCase);
         var bodyTagEnd = bodyStart < 0 ? -1 : html.IndexOf('>', bodyStart);
-        if (bodyTagEnd >= 0 && !html.Contains("email-wordmark", StringComparison.Ordinal))
+        if (bodyTagEnd >= 0 && !selfBranded && !html.Contains("email-wordmark", StringComparison.Ordinal))
         {
             var header = $"""
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
@@ -192,7 +195,7 @@ public sealed class ResilientEmailService : IEmailService
         }
 
         // Templates that ship their own footer opt out, otherwise a newsletter ends up with two of them stacked.
-        if (html.Contains(NewsletterEmailTemplate.SelfBrandedMarker, StringComparison.Ordinal)) return html;
+        if (selfBranded) return html;
         var bodyEnd = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
         return bodyEnd < 0 ? html : html.Insert(bodyEnd, BuildSocialFooter());
     }

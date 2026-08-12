@@ -526,8 +526,13 @@ internal static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.IdToken))
             return EndpointHelpers.ValidationProblem(context, ("idToken", "Google ID token is required."));
 
-        var clientId = configuration["Google:ClientId"];
-        if (string.IsNullOrWhiteSpace(clientId))
+        // Every platform Google issues tokens for has its own client ID, and the `aud` claim carries
+        // whichever one requested the token — so the web client ID alone would reject a perfectly
+        // valid sign-in from the iOS or Android app. All configured IDs are accepted; each is a
+        // public identifier, not a secret, and Google's signature check is what actually
+        // authenticates the token.
+        var clientIds = GoogleClientIds(configuration);
+        if (clientIds.Length == 0)
             return EndpointHelpers.Problem(context, StatusCodes.Status500InternalServerError,
                 "Google sign-in unavailable", "Google sign-in is not configured on this deployment.");
 
@@ -535,7 +540,7 @@ internal static class AuthEndpoints
         try
         {
             payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken,
-                new GoogleJsonWebSignature.ValidationSettings { Audience = [clientId] });
+                new GoogleJsonWebSignature.ValidationSettings { Audience = clientIds });
         }
         catch (InvalidJwtException)
         {
@@ -974,6 +979,34 @@ internal static class AuthEndpoints
             if (IPAddress.TryParse(candidate, out _)) return candidate;
         }
         return context.Connection.RemoteIpAddress?.ToString();
+    }
+
+    /// <summary>
+    /// Every Google client ID this deployment accepts an ID token from.
+    /// </summary>
+    /// <remarks>
+    /// Google:ClientId is the web client used by the SPA. Google:IosClientId and
+    /// Google:AndroidClientId are the native apps, which mint tokens with their own `aud` claim.
+    /// Also accepts a comma-separated Google:AdditionalClientIds for anything added later without a
+    /// code change. Order does not matter — ValidateAsync accepts a token matching any entry.
+    /// </remarks>
+    private static string[] GoogleClientIds(IConfiguration configuration)
+    {
+        var configured = new[]
+        {
+            configuration["Google:ClientId"],
+            configuration["Google:IosClientId"],
+            configuration["Google:AndroidClientId"],
+        }.AsEnumerable();
+
+        var additional = configuration["Google:AdditionalClientIds"];
+        if (!string.IsNullOrWhiteSpace(additional))
+            configured = configured.Concat(additional.Split(',', StringSplitOptions.RemoveEmptyEntries));
+
+        return [.. configured
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!.Trim())
+            .Distinct(StringComparer.Ordinal)];
     }
 
     private static (string Field, string Error)[] Validate(RegisterRequest request)

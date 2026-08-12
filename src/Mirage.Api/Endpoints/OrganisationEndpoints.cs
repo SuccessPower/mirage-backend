@@ -449,8 +449,19 @@ internal static class OrganisationEndpoints
         if (!await db.OrganisationBranches.AnyAsync(x => x.Id == request.BranchId && x.OrganisationId == id, cancellationToken))
             return EndpointHelpers.ValidationProblem(context, ("branchId", "Branch does not belong to this organisation."));
 
-        var member = new OrganisationMember(id, userId, request.BranchId, request.Description);
-        db.OrganisationMembers.Add(member);
+        // (organisation_id, user_id) is unique, so someone who was removed or rejected here before
+        // has to have their existing row revived — inserting a second one throws at the database.
+        OrganisationMember member;
+        if (existing is not null)
+        {
+            existing.Reapply(request.BranchId);
+            member = existing;
+        }
+        else
+        {
+            member = new OrganisationMember(id, userId, request.BranchId, request.Description);
+            db.OrganisationMembers.Add(member);
+        }
 
         var justVerified = false;
         if (!org.RequireApproval)

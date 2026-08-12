@@ -128,13 +128,14 @@ public static class NewsletterEmailTemplate
           </td></tr>
         """, socials, null, logoUrl);
 
-    /// <summary>"Ada from The Mirage Hub" — the author's first name in front of the brand, so a newsletter looks
-    /// like it came from a person. Falls back to the brand alone when there is no author to name.</summary>
+    /// <summary>"Ada from The Mirage Journal" — the author's first name in front of the publication, so a
+    /// newsletter looks like it came from a person. Falls back to the publication alone when there is no author
+    /// to name. Named for the Journal rather than the Hub: this is only ever the From name on an edition.</summary>
     public static string? SenderName(string? authorName, IConfiguration configuration)
     {
         var brand = configuration["Brand:SenderSuffix"]?.Trim() is { Length: > 0 } configured
             ? configured
-            : "The Mirage Hub";
+            : "The Mirage Journal";
         var firstName = (authorName ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .FirstOrDefault();
         return string.IsNullOrWhiteSpace(firstName) ? brand : $"{firstName} from {brand}";
@@ -310,18 +311,10 @@ public static class NewsletterEmailTemplate
         <table role="presentation" class="paper" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PaperDeep}">
           <tr><td class="shell" align="center" style="padding:34px 12px">
             <table role="presentation" class="frame" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;background:{Paper};border:1px solid {Rule};border-radius:8px;overflow:hidden">
-              <tr><td class="bar" style="background:{Ink};padding:22px 44px">
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-                  <td align="left">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-                      <td valign="middle" style="line-height:0;padding-right:10px">
-                        <img class="logo" src="{Encode(logo)}" alt="Mirage" height="28" style="display:block;height:28px;width:auto;border:0;outline:none;text-decoration:none" />
-                      </td>
-                      <td valign="middle" style="font:700 17px/1 Georgia,serif;color:#ffffff;letter-spacing:.22em">MIRAGE</td>
-                    </tr></table>
-                  </td>
-                  <td align="right" class="tagline" style="font:400 10px/1 {Utility};letter-spacing:.3em;text-transform:uppercase;color:#c3b3f0">Faith &#183; Love &#183; Becoming</td>
-                </tr></table>
+              <!-- The tagline alone, centred. The mark and wordmark that used to sit on the left of this
+                   bar repeated the lockup the footer already carries, so the brand appeared twice. -->
+              <tr><td class="bar" align="center" style="background:{Ink};padding:22px 44px">
+                <div class="tagline" style="font:400 10px/1 {Utility};letter-spacing:.3em;text-transform:uppercase;color:#c3b3f0">Faith &#183; Love &#183; Becoming</div>
               </td></tr>
               <tr><td class="pad" style="padding:46px 44px 48px">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{bodyRows}</table>

@@ -144,7 +144,9 @@ internal static class CounsellingEndpoints
         return ApiResults.Ok(context, new { Participants = parties.Select(p => new
         {
             UserId = p,
-            PublicKeyJwk = identities.SingleOrDefault(x => x.UserId == p)?.PublicKeyJwk
+            PublicKeyJwk = identities.SingleOrDefault(x => x.UserId == p)?.PublicKeyJwk,
+            // Lets clients tell a legitimate key rotation apart from a key substitution they should refuse.
+            KeyVersion = identities.SingleOrDefault(x => x.UserId == p)?.Version
         }), Envelopes = envelopes }, "Counselling encryption state retrieved.");
     }
 

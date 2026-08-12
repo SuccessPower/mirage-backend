@@ -93,7 +93,7 @@ internal static class ChatEncryptionEndpoints
             .Select(x => new { x.UserId, x.PublicKeyJwk, x.Version }).SingleOrDefaultAsync(ct);
         if (key is null)
         {
-            var identity = await CreateKmsManagedIdentity(peerId, db, kms, configuration, ct);
+            var identity = await EnsureEscrowedIdentity(peerId, db, kms, configuration, ct, rotateUnrecoverable: false);
             if (identity is null)
                 return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
                     "Encrypted messaging unavailable", "Secure messaging is temporarily unavailable.");
@@ -134,15 +134,12 @@ internal static class ChatEncryptionEndpoints
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers.Pragma = "no-cache";
         var userId = context.User.GetUserId();
-        var identity = await db.ChatEncryptionIdentities.SingleOrDefaultAsync(x => x.UserId == userId, ct);
-        if (identity is null)
-        {
-            identity = await CreateKmsManagedIdentity(userId, db, kms, configuration, ct);
-            if (identity is null)
-                return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
-                    "Encrypted messaging unavailable", "Secure messaging is temporarily unavailable.");
-        }
-        if (identity.KmsEncryptedPrivateKey is null) return Results.NotFound();
+        // Provisions on first use and rotates identities left unrecoverable by the pre-escrow design, so a
+        // signed-in member always gets a usable key back instead of a 404 that strands them at a passphrase prompt.
+        var identity = await EnsureEscrowedIdentity(userId, db, kms, configuration, ct);
+        if (identity?.KmsEncryptedPrivateKey is null)
+            return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+                "Encrypted messaging unavailable", "Secure messaging is temporarily unavailable.");
 
         var decrypted = await kms.DecryptAsync(new DecryptRequest
         {
@@ -153,7 +150,8 @@ internal static class ChatEncryptionEndpoints
         if (!IsMatchingP256PrivateJwk(privateKeyJwk, identity.PublicKeyJwk))
             return EndpointHelpers.Problem(context, StatusCodes.Status500InternalServerError,
                 "Encrypted messaging unavailable", "The protected messaging key could not be verified.");
-        return ApiResults.Ok(context, new { privateKeyJwk, identity.PublicKeyJwk }, "Encryption identity restored.");
+        return ApiResults.Ok(context, new { privateKeyJwk, identity.PublicKeyJwk, identity.Version },
+            "Encryption identity restored.");
     }
 
     private static async Task<IResult> CreateDeviceLink(CreateDeviceLinkRequest request, HttpContext context,
@@ -266,8 +264,15 @@ internal static class ChatEncryptionEndpoints
         }
     }
 
-    private static async Task<ChatEncryptionIdentity?> CreateKmsManagedIdentity(Guid userId,
-        IMirageDbContext db, IAmazonKeyManagementService kms, IConfiguration configuration, CancellationToken ct)
+    /// <summary>
+    /// Returns an identity the server can hand back to any authenticated device: creating one when the member
+    /// has none, and rotating one whose only copy of the private key is sealed behind a passphrase we cannot
+    /// recover. <paramref name="rotateUnrecoverable"/> is false for peer lookups — replacing someone else's key
+    /// as a side effect of their partner opening a chat would discard their history without them present.
+    /// </summary>
+    private static async Task<ChatEncryptionIdentity?> EnsureEscrowedIdentity(Guid userId,
+        IMirageDbContext db, IAmazonKeyManagementService kms, IConfiguration configuration,
+        CancellationToken ct, bool rotateUnrecoverable = true)
     {
         var keyId = configuration["ChatEncryptionKms:KeyId"];
         if (string.IsNullOrWhiteSpace(keyId)) return null;
@@ -277,40 +282,64 @@ internal static class ChatEncryptionEndpoints
         try
         {
             var existing = await db.ChatEncryptionIdentities.SingleOrDefaultAsync(x => x.UserId == userId, ct);
-            if (existing is not null) return existing;
+            if (existing is not null && (existing.KmsEncryptedPrivateKey is not null || !rotateUnrecoverable))
+                return existing;
 
-            using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-            var parameters = ecdh.ExportParameters(true);
-            var publicKeyJwk = JsonSerializer.Serialize(new
-            {
-                kty = "EC", crv = "P-256", x = Base64Url(parameters.Q.X!), y = Base64Url(parameters.Q.Y!), ext = true
-            });
-            var privateKeyJwk = JsonSerializer.Serialize(new
-            {
-                kty = "EC", crv = "P-256", x = Base64Url(parameters.Q.X!), y = Base64Url(parameters.Q.Y!),
-                d = Base64Url(parameters.D!), ext = true
-            });
+            var material = GenerateEscrowedKeyMaterial();
             var encrypted = await kms.EncryptAsync(new EncryptRequest
             {
                 KeyId = keyId,
-                Plaintext = new MemoryStream(Encoding.UTF8.GetBytes(privateKeyJwk)),
+                Plaintext = new MemoryStream(Encoding.UTF8.GetBytes(material.PrivateKeyJwk)),
                 EncryptionContext = new Dictionary<string, string> { ["MirageUserId"] = userId.ToString("D") }
             }, ct);
-            var identity = new ChatEncryptionIdentity(userId,
-                publicKeyJwk,
-                Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
-                Convert.ToBase64String(RandomNumberGenerator.GetBytes(12)),
-                Convert.ToBase64String(RandomNumberGenerator.GetBytes(16)),
-                310_000);
-            identity.SetKmsEscrow(Convert.ToBase64String(encrypted.CiphertextBlob.ToArray()));
-            db.ChatEncryptionIdentities.Add(identity);
+            var escrow = Convert.ToBase64String(encrypted.CiphertextBlob.ToArray());
+
+            if (existing is not null)
+            {
+                existing.Rotate(material.PublicKeyJwk, RandomBase64(32), RandomBase64(12), RandomBase64(16),
+                    310_000, escrow);
+                // Counselling session keys were wrapped to the superseded identity, so the member can no longer
+                // open them. Dropping the dead envelopes marks them as missing a key, which is the signal another
+                // participant's client already acts on to re-wrap the session key for them — no one has to ask.
+                var staleEnvelopes = await db.CounsellingKeyEnvelopes
+                    .Where(x => x.RecipientUserId == userId).ToListAsync(ct);
+                if (staleEnvelopes.Count != 0) db.CounsellingKeyEnvelopes.RemoveRange(staleEnvelopes);
+            }
+            else
+            {
+                existing = new ChatEncryptionIdentity(userId, material.PublicKeyJwk,
+                    RandomBase64(32), RandomBase64(12), RandomBase64(16), 310_000);
+                existing.SetKmsEscrow(escrow);
+                db.ChatEncryptionIdentities.Add(existing);
+            }
             await db.SaveChangesAsync(ct);
-            return identity;
+            return existing;
         }
         finally
         {
             provisioningLock.Release();
         }
+    }
+
+    // The recovery fields are filled with random bytes rather than left empty: escrowed identities have no
+    // passphrase, and random material keeps the legacy unlock path failing closed instead of decrypting junk.
+    private static string RandomBase64(int byteCount) =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(byteCount));
+
+    private static (string PublicKeyJwk, string PrivateKeyJwk) GenerateEscrowedKeyMaterial()
+    {
+        using var ecdh = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var parameters = ecdh.ExportParameters(true);
+        var publicKeyJwk = JsonSerializer.Serialize(new
+        {
+            kty = "EC", crv = "P-256", x = Base64Url(parameters.Q.X!), y = Base64Url(parameters.Q.Y!), ext = true
+        });
+        var privateKeyJwk = JsonSerializer.Serialize(new
+        {
+            kty = "EC", crv = "P-256", x = Base64Url(parameters.Q.X!), y = Base64Url(parameters.Q.Y!),
+            d = Base64Url(parameters.D!), ext = true
+        });
+        return (publicKeyJwk, privateKeyJwk);
     }
 
     private static string Base64Url(byte[] value) => Convert.ToBase64String(value)
