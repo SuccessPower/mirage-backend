@@ -427,11 +427,22 @@ internal static partial class NewsletterEndpoints
         var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
         var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == item.AuthorUserId)
             .Select(x => new { x.DisplayName, x.AvatarUrl }).FirstOrDefaultAsync(ct);
+        // Reviewers are usually real members, so the rehearsal should greet them by name exactly as the real
+        // send does. Matched on NormalizedEmail (uppercase, as Identity stores it) against the lowercased input.
+        var normalized = recipients.Select(x => x.ToUpperInvariant()).ToArray();
+        var names = await db.Users.AsNoTracking()
+            .Where(x => x.NormalizedEmail != null && normalized.Contains(x.NormalizedEmail))
+            .Join(db.Profiles.AsNoTracking(), u => u.Id, p => p.UserId,
+                (u, p) => new { u.NormalizedEmail, p.DisplayName })
+            .ToDictionaryAsync(x => x.NormalizedEmail!, x => x.DisplayName, ct);
         var sent = new List<string>();
         var failed = new List<string>();
         foreach (var recipient in recipients)
         {
-            var delivered = await email.SendNewsletterAsync(recipient, "there", $"[TEST] {item.Subject}", item.Title,
+            var displayName = names.GetValueOrDefault(recipient.ToUpperInvariant()) is { Length: > 0 } known
+                ? known
+                : "Friend";
+            var delivered = await email.SendNewsletterAsync(recipient, displayName, $"[TEST] {item.Subject}", item.Title,
                 item.Excerpt, item.ContentHtml, item.ImageUrls, $"{appUrl}/newsletters/{item.Id}",
                 $"{appUrl}/newsletter-unsubscribe?token=test", author?.DisplayName, author?.AvatarUrl,
                 item.ThumbnailUrl, ct);

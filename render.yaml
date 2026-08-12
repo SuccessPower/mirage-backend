@@ -31,6 +31,10 @@ services:
         value: "true"
       - key: Google__ClientId
         value: "924927421966-qcqec2u9kpeggje18p29d08u7ohb69fd.apps.googleusercontent.com"
+      # Native apps mint ID tokens with their own `aud`, so each platform's client ID must be
+      # accepted too or a valid app sign-in is rejected. Public identifiers, not secrets.
+      - key: Google__IosClientId
+        value: "924927421966-tv3vpqmmvgmj0e95auqh6jhbvo8bbd77.apps.googleusercontent.com"
       - key: PhotoValidation__RequireSamePerson
         value: "false"
       - key: Brand__LogoUrl

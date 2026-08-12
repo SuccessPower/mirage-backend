@@ -7,7 +7,7 @@ public sealed record EmailTransportMessage(
     string Subject,
     string Html,
     string? ReplyTo = null,
-    /// <summary>Overrides only the display name on the From header — "Ada from The Mirage Hub" — while the address
+    /// <summary>Overrides only the display name on the From header — "Ada from The Mirage Journal" — while the address
     /// itself stays the configured, domain-verified mailbox. Changing the address would break DKIM/SPF alignment
     /// and land the send in spam.</summary>
     string? FromName = null);

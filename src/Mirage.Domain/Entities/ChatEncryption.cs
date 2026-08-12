@@ -32,6 +32,20 @@ public sealed class ChatEncryptionIdentity : Entity
         Touch();
     }
 
+    /// <summary>
+    /// Replaces an identity the server cannot recover (passphrase-protected, never escrowed) with fresh
+    /// escrowed key material. Messages encrypted to the superseded key stay unreadable — they already were,
+    /// since only the forgotten passphrase could unlock them — but the account regains working encryption
+    /// without asking the member for anything. The version bump tells peers the key change is legitimate.
+    /// </summary>
+    public void Rotate(string publicKeyJwk, string encryptedPrivateKey, string privateKeyNonce,
+        string recoverySalt, int kdfIterations, string kmsEncryptedPrivateKey)
+    {
+        Update(publicKeyJwk, encryptedPrivateKey, privateKeyNonce, recoverySalt, kdfIterations);
+        SetKmsEscrow(kmsEncryptedPrivateKey);
+        Version++;
+    }
+
     public void Update(string publicKeyJwk, string encryptedPrivateKey, string privateKeyNonce,
         string recoverySalt, int kdfIterations)
     {
