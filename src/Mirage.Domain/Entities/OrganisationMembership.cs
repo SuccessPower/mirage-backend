@@ -93,6 +93,21 @@ public sealed class OrganisationMember : Entity
         if (counsellorUserId is not null) AssignedCounsellorUserId = counsellorUserId;
         Touch();
     }
+
+    /// <summary>
+    /// Puts a previously removed or rejected member back into review for the same organisation.
+    /// </summary>
+    /// <remarks>
+    /// (organisation_id, user_id) is unique, so rejoining a church someone was once removed from
+    /// has to revive the existing row — inserting a second one throws at the database.
+    /// </remarks>
+    public void Reapply(Guid? branchId)
+    {
+        Status = OrganisationMemberStatus.Pending;
+        BranchId = branchId;
+        ReviewedAt = null;
+        Touch();
+    }
 }
 
 public sealed class OrgEvent : Entity

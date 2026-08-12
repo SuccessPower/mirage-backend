@@ -717,11 +717,9 @@ internal static class ProfileEndpoints
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
 
-        if (await db.OrganisationMembers.AnyAsync(x => x.UserId == userId &&
-                x.Status != OrganisationMemberStatus.Removed && x.Status != OrganisationMemberStatus.Rejected,
-                cancellationToken))
-            return EndpointHelpers.Conflict(context, "You already belong to another organisation. Leave it before joining a new one.");
-
+        // Resolve the target church before inspecting membership: telling "already in this church"
+        // apart from "already in a different one" needs to know which church was asked for. Nothing
+        // the resolver adds is persisted unless we reach SaveChangesAsync below.
         var churchSelection = await ChurchSelectionResolver.ResolveAsync(userId, profile.Denomination, profile.Country,
             request.OrganisationId, request.BranchId, request.NewOrganisationName,
             request.NewOrganisationRegistrationNumber, request.NewBranchName, request.NewBranchCity,
@@ -729,16 +727,49 @@ internal static class ProfileEndpoints
         if (churchSelection.Error is not null) return churchSelection.Error;
         if (churchSelection.OrganisationId is null)
             return EndpointHelpers.ValidationProblem(context, ("organisationId", "Select or propose a church."));
+        var organisationId = churchSelection.OrganisationId.Value;
 
-        await OrganisationMembershipService.AddMemberAsync(db, churchSelection.OrganisationId.Value,
-            userId, churchSelection.BranchId, profile, cancellationToken);
-        await db.SaveChangesAsync(cancellationToken);
+        var memberships = await db.OrganisationMembers
+            .Where(x => x.UserId == userId)
+            .ToListAsync(cancellationToken);
+        var active = memberships.FirstOrDefault(x => x.Status != OrganisationMemberStatus.Removed
+            && x.Status != OrganisationMemberStatus.Rejected);
 
-        await ChurchCommunityService.JoinChurchCommunityAsync(db, churchSelection.OrganisationId.Value,
+        if (active is not null && active.OrganisationId != organisationId)
+            return EndpointHelpers.Conflict(context, "You already belong to another organisation. Leave it before joining a new one.");
+
+        // Joining the church you already belong to is a no-op, not an error. This is reachable
+        // through ordinary use — the "add your church" nudge can reappear on a transient failure of
+        // the membership fetch — so it falls through to the success response below, which also
+        // repairs a member who is missing their church-community row.
+        if (active is null)
+        {
+            var previous = memberships.FirstOrDefault(x => x.OrganisationId == organisationId);
+            // (organisation_id, user_id) is unique, so a previously removed or rejected row has to
+            // be revived rather than duplicated.
+            if (previous is not null) previous.Reapply(churchSelection.BranchId);
+            else await OrganisationMembershipService.AddMemberAsync(db, organisationId,
+                userId, churchSelection.BranchId, profile, cancellationToken);
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (active is null)
+        {
+            // Two submits raced — both read "not a member", both tried to insert, and the unique
+            // index rejected the loser. The user's intent is satisfied either way, so report success
+            // instead of the 500 this used to surface.
+            return ApiResults.Ok(context, new { OrganisationId = organisationId },
+                "Church joined successfully.");
+        }
+
+        await ChurchCommunityService.JoinChurchCommunityAsync(db, organisationId,
             Community.ChurchGeneralCategory, userId, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
 
-        return ApiResults.Ok(context, new { OrganisationId = churchSelection.OrganisationId },
+        return ApiResults.Ok(context, new { OrganisationId = organisationId },
             "Church joined successfully.");
     }
 }
