@@ -31,6 +31,10 @@ public static class NewsletterEmailTemplate
 
     private const string DefaultLogoUrl =
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
+
+    /// <summary>The mark-and-wordmark lockup that heads a newsletter. Kept apart from
+    /// <see cref="DefaultLogoUrl"/>, which is the square mark used in 32x32 slots elsewhere.</summary>
+    private const string DefaultWordmarkUrl = "https://www.themiragehub.com/brand/mirage-wordmark.png";
     private const string DefaultSupportEmail = "support@themiragehub.com";
 
     /// <summary>Marks a template that already carries its own complete footer, so the shared branding pass does
@@ -141,8 +145,11 @@ public static class NewsletterEmailTemplate
         return string.IsNullOrWhiteSpace(firstName) ? brand : $"{firstName} from {brand}";
     }
 
-    public static string LogoUrl(IConfiguration configuration) =>
-        configuration["Brand:LogoUrl"]?.Trim() is { Length: > 0 } configured ? configured : DefaultLogoUrl;
+    /// <summary>The lockup a newsletter is headed and signed with. Reads Brand:WordmarkUrl rather than
+    /// Brand:LogoUrl: the latter is the square mark, which the transactional layout drops into 32x32
+    /// slots beside the word "Mirage" — a place this wide lockup cannot go.</summary>
+    public static string MastheadUrl(IConfiguration configuration) =>
+        configuration["Brand:WordmarkUrl"]?.Trim() is { Length: > 0 } configured ? configured : DefaultWordmarkUrl;
 
     /// <summary>Reads the shared SocialMedia block and appends the support mailbox. Each network may also carry an
     /// icon URL under <c>SocialMedia:Icons:{Name}</c>; without one the link renders as a lettered badge, which
@@ -275,7 +282,8 @@ public static class NewsletterEmailTemplate
             .prose blockquote{font-size:18px !important;margin:24px 8px !important}
             .cta{display:block !important;padding:17px 18px !important;text-align:center !important}
             .col{display:block !important;width:100% !important;padding:0 0 12px !important}
-            .logo{height:26px !important}
+            .masthead{height:28px !important}
+            .logo{height:20px !important}
             .tagline{font-size:9px !important;letter-spacing:.22em !important}
           }
         """.Replace("@ink@", Ink).Replace("@plum@", Plum).Replace("@rule@", Rule)
@@ -311,21 +319,18 @@ public static class NewsletterEmailTemplate
         <table role="presentation" class="paper" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{PaperDeep}">
           <tr><td class="shell" align="center" style="padding:34px 12px">
             <table role="presentation" class="frame" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;max-width:640px;background:{Paper};border:1px solid {Rule};border-radius:8px;overflow:hidden">
-              <!-- The tagline alone, centred. The mark and wordmark that used to sit on the left of this
-                   bar repeated the lockup the footer already carries, so the brand appeared twice. -->
-              <tr><td class="bar" align="center" style="background:{Ink};padding:22px 44px">
-                <div class="tagline" style="font:400 10px/1 {Utility};letter-spacing:.3em;text-transform:uppercase;color:#c3b3f0">Faith &#183; Love &#183; Becoming</div>
+              <!-- Masthead: the lockup on its own, with the tagline beneath. The image already carries the
+                   word "Mirage", so no wordmark is set next to it. On paper rather than the ink bar this
+                   used to be, because the lockup is dark and would disappear into it. -->
+              <tr><td class="bar" align="center" style="background:{PaperDeep};border-bottom:1px solid {Rule};padding:26px 44px 20px">
+                <img class="masthead" src="{Encode(logo)}" alt="Mirage" height="34" style="display:block;margin:0 auto;height:34px;width:auto;border:0;outline:none;text-decoration:none" />
+                <div class="tagline" style="padding-top:12px;font:400 10px/1 {Utility};letter-spacing:.3em;text-transform:uppercase;color:{Plum}">Faith &#183; Love &#183; Becoming</div>
               </td></tr>
               <tr><td class="pad" style="padding:46px 44px 48px">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{bodyRows}</table>
               </td></tr>
               <tr><td class="foot" style="background:{PaperDeep};border-top:1px solid {Rule};padding:30px 44px;font:400 12px/1.75 {Utility};color:{Muted}" align="center">
-                <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 16px"><tr>
-                  <td valign="middle" style="line-height:0;padding-right:9px">
-                    <img class="logo" src="{Encode(logo)}" alt="Mirage" height="24" style="display:block;height:24px;width:auto;border:0;outline:none;text-decoration:none" />
-                  </td>
-                  <td valign="middle" style="font:700 13px/1 Georgia,serif;color:{Ink};letter-spacing:.2em">MIRAGE</td>
-                </tr></table>
+                <img class="logo" src="{Encode(logo)}" alt="Mirage" height="24" style="display:block;margin:0 auto 16px;height:24px;width:auto;border:0;outline:none;text-decoration:none" />
                 {SocialRow(socials ?? [])}
                 <div class="soft" style="font:italic 400 13px/1.7 {Letter};color:{Muted}">A faith-integrated home for relationships worth building.</div>
                 {footerNote}
