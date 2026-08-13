@@ -60,7 +60,16 @@
       "Bash(docker image *)",
       "Bash(curl -s -o /private/tmp/claude-501/-Users-payazaafrica-mirage-backend/4c9c2e9e-7d61-4790-993d-d3e82698df58/scratchpad/face1.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Barack_Obama_Presidential_Portrait.jpg/440px-Barack_Obama_Presidential_Portrait.jpg\" -w \"%{http_code} %{size_download}\\\\n\")",
       "Bash(docker rmi *)",
-      "Bash(aws kms *)"
+      "Bash(aws kms *)",
+      "Bash(awk -F: '{print $2}')",
+      "Bash(awk '/modelBuilder.Entity<CommunityPost/,/^$/' src/Mirage.Infrastructure/Persistence/MirageDbContext.cs)",
+      "Bash(grep -v \"^$\")",
+      "Bash(ls ~/.nvm/versions/node 2>/dev/null | tail -3; ls /usr/local/n/versions/node 2>/dev/null | tail -3; ls -d /opt/homebrew/opt/node* 2>/dev/null | head)",
+      "Read(//usr/local/n/versions/**)",
+      "Read(//opt/homebrew/opt/**)",
+      "Bash(curl -s -o /tmp/k1.json -w \"HTTP %{http_code}\\\\n\" \"https://api.klipy.com/api/v1/DUMMYKEY123/gifs/trending?per_page=24&page=1&rating=g\" --max-time 20)",
+      "Bash(curl -s -o /tmp/k2.json -w \"HTTP %{http_code}\\\\n\" \"https://api.klipy.com/api/v1/DUMMYKEY123/gifs/trending?per_page=24&page=1\" --max-time 20)",
+      "Bash(curl -s -L -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 Chrome/120 Safari/537.36\" \"https://docs.klipy.com/gifs-api/trending\" --max-time 25 -o /tmp/kd.html -w \"HTTP %{http_code}\\\\n\")"
     ],
     "additionalDirectories": [
       "/Users/payazaafrica/mirage-backend/src/*"

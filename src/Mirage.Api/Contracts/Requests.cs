@@ -151,6 +151,11 @@ public sealed record CreateCommunityPostRequest(string? Body, string? ImageUrl =
     Guid[]? MentionedUserIds = null);
 public sealed record CreateCommunityPostCommentRequest(string Body, Guid? ParentCommentId = null,
     Guid[]? MentionedUserIds = null);
+public sealed record CreateHearthPostRequest(string? Body, IReadOnlyList<string>? ImageUrls = null,
+    PostKind Kind = PostKind.Everyday, string? Place = null, Guid? CircleId = null,
+    Guid[]? MentionedUserIds = null);
+public sealed record HearthReactionRequest(PostReactionKind Reaction = PostReactionKind.Love);
+
 public sealed record InviteToGatheringRequest(string EmailOrUsername);
 public sealed record CreateDateRequestCommentRequest(string Body);
 public sealed record UpdateCommunityPostCommentRequest(string Body);

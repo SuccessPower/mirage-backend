@@ -16,14 +16,15 @@ internal static class GifEndpoints
         return api;
     }
 
-    private static async Task<IResult> Search(HttpContext context, KlipyService klipy, string? q,
-        int limit = 24, int page = 1, CancellationToken cancellationToken = default)
+    private static async Task<IResult> Search(HttpContext context, KlipyService klipy,
+        ILoggerFactory loggers, string? q, int limit = 24, int page = 1,
+        CancellationToken cancellationToken = default)
     {
         if (!klipy.IsConfigured) return NotConfigured(context);
         // An empty query is the picker's initial state rather than a client error — serve trending
         // so the grid is never blank.
         if (string.IsNullOrWhiteSpace(q))
-            return await Trending(context, klipy, limit, page, cancellationToken);
+            return await Trending(context, klipy, loggers, limit, page, cancellationToken);
         if (q.Length > 100)
             return EndpointHelpers.ValidationProblem(context, ("q", "Search terms must be 100 characters or fewer."));
 
@@ -32,14 +33,14 @@ internal static class GifEndpoints
             var result = await klipy.SearchAsync(q.Trim(), ClampLimit(limit), ClampPage(page), cancellationToken);
             return ApiResults.Ok(context, result, "GIFs retrieved successfully.");
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception)
         {
-            return Unavailable(context);
+            return Unavailable(context, loggers, exception);
         }
     }
 
     private static async Task<IResult> Trending(HttpContext context, KlipyService klipy,
-        int limit = 24, int page = 1, CancellationToken cancellationToken = default)
+        ILoggerFactory loggers, int limit = 24, int page = 1, CancellationToken cancellationToken = default)
     {
         if (!klipy.IsConfigured) return NotConfigured(context);
         try
@@ -47,9 +48,9 @@ internal static class GifEndpoints
             var result = await klipy.TrendingAsync(ClampLimit(limit), ClampPage(page), cancellationToken);
             return ApiResults.Ok(context, result, "GIFs retrieved successfully.");
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception)
         {
-            return Unavailable(context);
+            return Unavailable(context, loggers, exception);
         }
     }
 
@@ -65,7 +66,13 @@ internal static class GifEndpoints
         EndpointHelpers.Problem(context, StatusCodes.Status501NotImplemented,
             "GIFs unavailable", "GIF search is not configured on this environment.");
 
-    private static IResult Unavailable(HttpContext context) =>
-        EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+    // Logged, not just returned: the caller only ever sees "try again", so without this the reason
+    // the provider refused us is lost entirely.
+    private static IResult Unavailable(HttpContext context, ILoggerFactory loggers,
+        HttpRequestException exception)
+    {
+        loggers.CreateLogger("Mirage.Gifs").LogError(exception, "Klipy request failed.");
+        return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
             "GIFs unavailable", "GIF search is temporarily unavailable. Please try again.");
+    }
 }

@@ -17,7 +17,11 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
     private static readonly HashSet<NotificationType> PushSuppressedTypes =
     [
         NotificationType.ProfileVisited,
-        NotificationType.ConversationEnded
+        NotificationType.ConversationEnded,
+        // A popular post can collect reactions all day; buzzing for each one is the fastest way to
+        // get notifications switched off. Mentions and comments still push — someone is talking to
+        // you, not just passing by.
+        NotificationType.PostReaction
     ];
 
     // High-signal events worth an email; noisy/high-frequency ones (likes, mentions, mentor and

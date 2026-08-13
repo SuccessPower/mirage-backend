@@ -280,7 +280,10 @@ public sealed class CommunityPostLikeConfiguration : IEntityTypeConfiguration<Co
     public void Configure(EntityTypeBuilder<CommunityPostLike> b)
     {
         b.ToTable("community_post_likes");
-        b.HasIndex(x => new { x.PostId, x.UserId }).IsUnique();
+        // Reaction is part of the key: a Hearth reader can both Love and Amen the same post, but
+        // neither of them twice. Community posts only ever write Love, so this stays a plain
+        // one-like-per-user constraint for them.
+        b.HasIndex(x => new { x.PostId, x.UserId, x.Reaction }).IsUnique();
         b.HasOne(x => x.Post).WithMany(x => x.Likes).HasForeignKey(x => x.PostId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
