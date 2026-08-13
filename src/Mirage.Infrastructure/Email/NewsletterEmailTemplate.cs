@@ -4,8 +4,8 @@ using Microsoft.Extensions.Configuration;
 
 namespace Mirage.Infrastructure.Email;
 
-/// <summary>Byline shown under the headline. <paramref name="AvatarUrl"/> falls back to a monogram tile when the
-/// author has no photograph, so the block never collapses into a broken image.</summary>
+/// <summary>Byline shown under the headline. <paramref name="AvatarUrl"/> falls back to a monogram tile when
+/// there is no image, so the block never collapses into a broken image.</summary>
 public sealed record NewsletterAuthor(string Name, string? AvatarUrl);
 
 /// <summary>A footer link. <paramref name="IconUrl"/> is optional: when a hosted icon is configured it is used,
@@ -36,6 +36,9 @@ public static class NewsletterEmailTemplate
     /// <see cref="DefaultLogoUrl"/>, which is the square mark used in 32x32 slots elsewhere.</summary>
     private const string DefaultWordmarkUrl = "https://www.themiragehub.com/brand/mirage-wordmark.png";
     private const string DefaultSupportEmail = "support@themiragehub.com";
+
+    /// <summary>Every edition goes out under one voice rather than the name of whoever drafted it.</summary>
+    private const string DefaultSender = "Lumi from Mirage";
 
     /// <summary>Marks a template that already carries its own complete footer, so the shared branding pass does
     /// not append a second one underneath it.</summary>
@@ -132,18 +135,17 @@ public static class NewsletterEmailTemplate
           </td></tr>
         """, socials, null, logoUrl);
 
-    /// <summary>"Ada from The Mirage Journal" — the author's first name in front of the publication, so a
-    /// newsletter looks like it came from a person. Falls back to the publication alone when there is no author
-    /// to name. Named for the Journal rather than the Hub: this is only ever the From name on an edition.</summary>
-    public static string? SenderName(string? authorName, IConfiguration configuration)
-    {
-        var brand = configuration["Brand:SenderSuffix"]?.Trim() is { Length: > 0 } configured
+    /// <summary>"Lumi from Mirage" — one voice for every edition, so a newsletter reads as coming from a person
+    /// without exposing which member of the editorial team wrote it. Overridable with Brand:NewsletterSender.</summary>
+    public static string SenderName(IConfiguration configuration) =>
+        configuration["Brand:NewsletterSender"]?.Trim() is { Length: > 0 } configured ? configured : DefaultSender;
+
+    /// <summary>The byline the letter is signed with: the same persona as the From name, beside the Mirage mark
+    /// (Brand:NewsletterSenderAvatarUrl overrides the image).</summary>
+    public static NewsletterAuthor Sender(IConfiguration configuration) => new(SenderName(configuration),
+        configuration["Brand:NewsletterSenderAvatarUrl"]?.Trim() is { Length: > 0 } configured
             ? configured
-            : "The Mirage Journal";
-        var firstName = (authorName ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault();
-        return string.IsNullOrWhiteSpace(firstName) ? brand : $"{firstName} from {brand}";
-    }
+            : DefaultLogoUrl);
 
     /// <summary>The lockup a newsletter is headed and signed with. Reads Brand:WordmarkUrl rather than
     /// Brand:LogoUrl: the latter is the square mark, which the transactional layout drops into 32x32
@@ -198,7 +200,6 @@ public static class NewsletterEmailTemplate
             <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
               <td width="46" valign="middle" style="width:46px">{avatar}</td>
               <td valign="middle" align="left" style="padding-left:12px">
-                <div class="soft" style="font:italic 400 13px/1.3 {Letter};color:{Muted}">written by</div>
                 <div class="strong" style="font:400 17px/1.35 {Display};color:{Ink};letter-spacing:.3px">{Encode(author.Name)}</div>
               </td>
             </tr></table>
