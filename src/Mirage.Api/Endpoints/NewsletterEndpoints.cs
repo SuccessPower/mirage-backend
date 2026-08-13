@@ -199,11 +199,9 @@ internal static partial class NewsletterEndpoints
         var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
         var name = await db.Profiles.AsNoTracking().Where(x => x.UserId == context.User.GetUserId())
             .Select(x => x.DisplayName).FirstOrDefaultAsync(ct) ?? "Friend";
-        var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == item.AuthorUserId)
-            .Select(x => new { x.DisplayName, x.AvatarUrl }).FirstOrDefaultAsync(ct);
         var html = NewsletterEmailTemplate.Render(name, item.Title, item.Excerpt, item.ContentHtml, item.ImageUrls,
             $"{appUrl}/newsletters/{item.Id}", $"{appUrl}/newsletter-unsubscribe?token=preview",
-            author is null ? null : new NewsletterAuthor(author.DisplayName, author.AvatarUrl),
+            NewsletterEmailTemplate.Sender(configuration),
             NewsletterEmailTemplate.SocialLinks(configuration), item.ThumbnailUrl, NewsletterEmailTemplate.MastheadUrl(configuration));
         return Results.Content(html, "text/html; charset=utf-8");
     }
@@ -425,8 +423,6 @@ internal static partial class NewsletterEndpoints
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
 
         var appUrl = (configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com").TrimEnd('/');
-        var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == item.AuthorUserId)
-            .Select(x => new { x.DisplayName, x.AvatarUrl }).FirstOrDefaultAsync(ct);
         // Reviewers are usually real members, so the rehearsal should greet them by name exactly as the real
         // send does. Matched on NormalizedEmail (uppercase, as Identity stores it) against the lowercased input.
         var normalized = recipients.Select(x => x.ToUpperInvariant()).ToArray();
@@ -444,8 +440,7 @@ internal static partial class NewsletterEndpoints
                 : "Friend";
             var delivered = await email.SendNewsletterAsync(recipient, displayName, $"[TEST] {item.Subject}", item.Title,
                 item.Excerpt, item.ContentHtml, item.ImageUrls, $"{appUrl}/newsletters/{item.Id}",
-                $"{appUrl}/newsletter-unsubscribe?token=test", author?.DisplayName, author?.AvatarUrl,
-                item.ThumbnailUrl, ct);
+                $"{appUrl}/newsletter-unsubscribe?token=test", item.ThumbnailUrl, ct);
             (delivered ? sent : failed).Add(recipient);
         }
         return ApiResults.Ok(context, new { Sent = sent, Failed = failed },
