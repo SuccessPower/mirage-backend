@@ -201,7 +201,6 @@ internal static partial class NewsletterEndpoints
             .Select(x => x.DisplayName).FirstOrDefaultAsync(ct) ?? "Friend";
         var html = NewsletterEmailTemplate.Render(name, item.Title, item.Excerpt, item.ContentHtml, item.ImageUrls,
             $"{appUrl}/newsletters/{item.Id}", $"{appUrl}/newsletter-unsubscribe?token=preview",
-            NewsletterEmailTemplate.Sender(configuration),
             NewsletterEmailTemplate.SocialLinks(configuration), item.ThumbnailUrl, NewsletterEmailTemplate.MastheadUrl(configuration));
         return Results.Content(html, "text/html; charset=utf-8");
     }

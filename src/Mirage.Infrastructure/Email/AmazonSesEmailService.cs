@@ -114,7 +114,7 @@ public sealed class AmazonSesEmailService : IEmailService
         string excerpt, string contentHtml, IReadOnlyList<string> imageUrls, string newsletterUrl,
         string unsubscribeUrl, string? thumbnailUrl = null, CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, subject, NewsletterEmailTemplate.Render(displayName, title, excerpt, contentHtml,
-            imageUrls, newsletterUrl, unsubscribeUrl, NewsletterEmailTemplate.Sender(_config),
+            imageUrls, newsletterUrl, unsubscribeUrl,
             NewsletterEmailTemplate.SocialLinks(_config), thumbnailUrl, _brandLogoUrl), cancellationToken,
             fromName: NewsletterEmailTemplate.SenderName(_config));
 

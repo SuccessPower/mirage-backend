@@ -112,7 +112,7 @@ public sealed class ResilientEmailService : IEmailService
         string excerpt, string contentHtml, IReadOnlyList<string> imageUrls, string newsletterUrl,
         string unsubscribeUrl, string? thumbnailUrl = null, CancellationToken cancellationToken = default) =>
         SendAsync(toEmail, subject, NewsletterEmailTemplate.Render(displayName, title, excerpt, contentHtml,
-            imageUrls, newsletterUrl, unsubscribeUrl, NewsletterEmailTemplate.Sender(_configuration),
+            imageUrls, newsletterUrl, unsubscribeUrl,
             NewsletterEmailTemplate.SocialLinks(_configuration), thumbnailUrl,
             NewsletterEmailTemplate.MastheadUrl(_configuration)), cancellationToken,
             fromName: NewsletterEmailTemplate.SenderName(_configuration));
