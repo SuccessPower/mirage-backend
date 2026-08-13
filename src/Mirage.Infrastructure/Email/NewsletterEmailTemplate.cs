@@ -4,10 +4,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace Mirage.Infrastructure.Email;
 
-/// <summary>Byline shown under the headline. <paramref name="AvatarUrl"/> falls back to a monogram tile when
-/// there is no image, so the block never collapses into a broken image.</summary>
-public sealed record NewsletterAuthor(string Name, string? AvatarUrl);
-
 /// <summary>A footer link. <paramref name="IconUrl"/> is optional: when a hosted icon is configured it is used,
 /// otherwise the link renders as a lettered badge, which no image blocker can break.</summary>
 public sealed record NewsletterSocialLink(string Label, string Url, string Glyph, string? IconUrl = null);
@@ -52,7 +48,7 @@ public static class NewsletterEmailTemplate
 
     public static string Render(string displayName, string title, string excerpt, string contentHtml,
         IReadOnlyList<string> imageUrls, string newsletterUrl, string unsubscribeUrl,
-        NewsletterAuthor? author = null, IReadOnlyList<NewsletterSocialLink>? socials = null,
+        IReadOnlyList<NewsletterSocialLink>? socials = null,
         string? thumbnailUrl = null, string? logoUrl = null)
     {
         var images = imageUrls.Where(IsHttpsUrl).Take(10).ToList();
@@ -70,8 +66,6 @@ public static class NewsletterEmailTemplate
           </td></tr>
           {Ornament()}
         """);
-
-        if (author is not null) body.Append(Byline(author));
 
         if (hero is not null)
             body.Append($"""
@@ -140,13 +134,6 @@ public static class NewsletterEmailTemplate
     public static string SenderName(IConfiguration configuration) =>
         configuration["Brand:NewsletterSender"]?.Trim() is { Length: > 0 } configured ? configured : DefaultSender;
 
-    /// <summary>The byline the letter is signed with: the same persona as the From name, beside the Mirage mark
-    /// (Brand:NewsletterSenderAvatarUrl overrides the image).</summary>
-    public static NewsletterAuthor Sender(IConfiguration configuration) => new(SenderName(configuration),
-        configuration["Brand:NewsletterSenderAvatarUrl"]?.Trim() is { Length: > 0 } configured
-            ? configured
-            : DefaultLogoUrl);
-
     /// <summary>The lockup a newsletter is headed and signed with. Reads Brand:WordmarkUrl rather than
     /// Brand:LogoUrl: the latter is the square mark, which the transactional layout drops into 32x32
     /// slots beside the word "Mirage" — a place this wide lockup cannot go.</summary>
@@ -187,25 +174,6 @@ public static class NewsletterEmailTemplate
         </tr></table>
       </td></tr>
     """;
-
-    // Avatar beside the name, as a fixed-width table cell — email clients have no reliable inline-block.
-    private static string Byline(NewsletterAuthor author)
-    {
-        var avatar = IsHttpsUrl(author.AvatarUrl ?? string.Empty)
-            ? $"""<img src="{Encode(author.AvatarUrl!)}" width="46" height="46" alt="" style="display:block;width:46px;height:46px;border:0;border-radius:23px;object-fit:cover;outline:none;text-decoration:none" />"""
-            : $"""<div style="width:46px;height:46px;border-radius:23px;background:{Plum};color:#ffffff;font:400 20px/46px {Display};text-align:center">{Encode(FirstLetter(author.Name, "M"))}</div>""";
-
-        return $"""
-          <tr><td align="center" style="padding:20px 0 0">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-              <td width="46" valign="middle" style="width:46px">{avatar}</td>
-              <td valign="middle" align="left" style="padding-left:12px">
-                <div class="strong" style="font:400 17px/1.35 {Display};color:{Ink};letter-spacing:.3px">{Encode(author.Name)}</div>
-              </td>
-            </tr></table>
-          </td></tr>
-        """;
-    }
 
     // Two-up photo mosaic that stacks to one column on narrow screens via the .col class in the head styles.
     private static string Mosaic(IReadOnlyList<string> images)
@@ -342,12 +310,6 @@ public static class NewsletterEmailTemplate
       </body>
       </html>
     """;
-    }
-
-    private static string FirstLetter(string value, string fallback)
-    {
-        var trimmed = value.Trim();
-        return trimmed.Length > 0 ? trimmed[..1].ToUpperInvariant() : fallback;
     }
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
