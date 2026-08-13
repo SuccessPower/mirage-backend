@@ -558,9 +558,11 @@ internal static class CommunityEndpoints
                 post.ImageUrl,
                 post.ImageUrl2,
                 post.ImageUrl3,
-                LikeCount = post.Likes.Count,
+                // Love only: Hearth posts can also carry Amen reactions (see HearthEndpoints), and
+                // those must not inflate the like count a community reader sees.
+                LikeCount = post.Likes.Count(like => like.Reaction == PostReactionKind.Love),
                 CommentCount = post.Comments.Count,
-                LikedByMe = post.Likes.Any(like => like.UserId == userId),
+                LikedByMe = post.Likes.Any(like => like.UserId == userId && like.Reaction == PostReactionKind.Love),
                 UpvoteCount = post.Votes.Count(v => v.Value > 0),
                 DownvoteCount = post.Votes.Count(v => v.Value < 0),
                 MyVote = post.Votes.Where(v => v.UserId == userId).Select(v => (sbyte?)v.Value).FirstOrDefault(),
@@ -669,8 +671,10 @@ internal static class CommunityEndpoints
         var isMember = await IsActiveMemberAsync(communityId.Value, userId, db, cancellationToken);
         if (!isMember) return EndpointHelpers.Forbidden(context);
 
+        // Scoped to Love: the same user may separately hold an Amen row on a Hearth post.
         var exists = await db.CommunityPostLikes
-            .AnyAsync(x => x.PostId == postId && x.UserId == userId, cancellationToken);
+            .AnyAsync(x => x.PostId == postId && x.UserId == userId &&
+                           x.Reaction == PostReactionKind.Love, cancellationToken);
         if (!exists) db.CommunityPostLikes.Add(new CommunityPostLike(postId, userId));
 
         await db.SaveChangesAsync(cancellationToken);
@@ -682,7 +686,8 @@ internal static class CommunityEndpoints
     {
         var userId = context.User.GetUserId();
         var like = await db.CommunityPostLikes
-            .SingleOrDefaultAsync(x => x.PostId == postId && x.UserId == userId, cancellationToken);
+            .SingleOrDefaultAsync(x => x.PostId == postId && x.UserId == userId &&
+                                       x.Reaction == PostReactionKind.Love, cancellationToken);
         if (like is null) return EndpointHelpers.NotFound(context, "Community post like was not found.");
 
         var communityId = await db.CommunityPosts.AsNoTracking()
@@ -876,6 +881,17 @@ internal static class CommunityEndpoints
             await notifications.NotifyAsync(mentionedUserId, NotificationType.Mention, "You were mentioned",
                 $"{author?.DisplayName ?? "Someone"} mentioned you in a comment.", comment.Id,
                 "CommunityPostComment", cancellationToken);
+        }
+
+        // The post's author hears about the reply too — unless they wrote it, or already got the
+        // louder "you were mentioned" notification for this same comment.
+        var postAuthorUserId = await db.CommunityPosts.AsNoTracking()
+            .Where(x => x.Id == postId).Select(x => x.AuthorUserId).SingleAsync(cancellationToken);
+        if (postAuthorUserId != userId && !mentionedUserIds.Contains(postAuthorUserId))
+        {
+            await notifications.NotifyAsync(postAuthorUserId, NotificationType.PostComment,
+                "New comment", $"{author?.DisplayName ?? "Someone"} commented on your post.", postId,
+                "CommunityPost", cancellationToken);
         }
 
         var authorBadge = await db.GetOrgBadgeAsync(userId, cancellationToken);

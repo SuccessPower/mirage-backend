@@ -11,6 +11,11 @@ public sealed class Community : Entity
     public const string ChurchGeneralCategory = "General";
     public const string ChurchMarriedCategory = "Married";
 
+    // Hearth is the one platform-wide community every married user belongs to, church or not —
+    // the feed married couples land on after login. There is exactly one row with this category
+    // and it is created on demand by HearthService, never by a user.
+    public const string HearthCategory = "Hearth";
+
     private Community() { }
 
     public Community(Guid createdByUserId, string name, string category, string description,
@@ -121,7 +126,8 @@ public sealed class CommunityPost : Entity
     private CommunityPost() { }
 
     public CommunityPost(Guid communityId, Guid authorUserId, string? body, string? imageUrl = null,
-        string? imageUrl2 = null, string? imageUrl3 = null, Guid[]? mentionedUserIds = null)
+        string? imageUrl2 = null, string? imageUrl3 = null, Guid[]? mentionedUserIds = null,
+        PostKind kind = PostKind.Everyday, string? place = null)
     {
         CommunityId = communityId;
         AuthorUserId = authorUserId;
@@ -130,11 +136,16 @@ public sealed class CommunityPost : Entity
         ImageUrl2 = imageUrl2?.Trim();
         ImageUrl3 = imageUrl3?.Trim();
         MentionedUserIds = mentionedUserIds ?? [];
+        Kind = kind;
+        Place = string.IsNullOrWhiteSpace(place) ? null : place.Trim();
     }
 
     public Guid CommunityId { get; private set; }
     public Guid AuthorUserId { get; private set; }
     public string Body { get; private set; } = string.Empty;
+    public PostKind Kind { get; private set; } = PostKind.Everyday;
+    // Free text the author typed, e.g. "Ikoyi, Lagos" — never geocoded, never used for matching.
+    public string? Place { get; private set; }
     // Members of this same community tagged with @ in the body — validated at the endpoint.
     public Guid[] MentionedUserIds { get; private set; } = [];
     public string? ImageUrl { get; private set; }
@@ -171,14 +182,18 @@ public sealed class CommunityPostLike : Entity
 {
     private CommunityPostLike() { }
 
-    public CommunityPostLike(Guid postId, Guid userId)
+    public CommunityPostLike(Guid postId, Guid userId, PostReactionKind reaction = PostReactionKind.Love)
     {
         PostId = postId;
         UserId = userId;
+        Reaction = reaction;
     }
 
     public Guid PostId { get; private set; }
     public Guid UserId { get; private set; }
+    // One row per (post, user, reaction) — a reader can both Love and Amen the same post. Community
+    // endpoints only ever write and count Love, so their like/unlike toggle is unchanged.
+    public PostReactionKind Reaction { get; private set; } = PostReactionKind.Love;
     public CommunityPost Post { get; private set; } = null!;
 }
 

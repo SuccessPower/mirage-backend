@@ -15,6 +15,12 @@ public enum CommunityStatus { Active = 1, Archived = 2 }
 public enum CommunityMemberRole { Owner = 1, Moderator = 2, Member = 3 }
 public enum CommunityMemberStatus { Pending = 1, Approved = 2, Rejected = 3, Removed = 4 }
 public enum CommunityVoteColor { White = 1, Amber = 2, Green = 3, Red = 4 }
+// What a post is for. Drives the Hearth feed filters and how a post is presented — a Milestone
+// reads differently from a Tuesday photo. Community posts default to Everyday.
+public enum PostKind { Everyday = 1, Milestone = 2, Prayer = 3, Question = 4 }
+// A reaction is either warmth (Love) or agreement in prayer (Amen). Community posts only ever
+// carry Love, so the existing community like/unlike endpoints stay a plain toggle.
+public enum PostReactionKind { Love = 1, Amen = 2 }
 public enum DateRequestStatus { Open = 1, Confirmed = 2, Completed = 3, Cancelled = 4, Expired = 5 }
 public enum DateAcceptanceStatus { Pending = 1, Selected = 2, Declined = 3, Withdrawn = 4 }
 public enum SessionType { Group = 1, Personal = 2, Couples = 3 }
@@ -140,7 +146,9 @@ public enum NotificationType
     CompanionPartnerInvite = 37,
     CompanionPartnerApproved = 38,
     ProfilePhotosRequired = 39,
-    ProfilePhotosComplete = 40
+    ProfilePhotosComplete = 40,
+    PostReaction = 41,
+    PostComment = 42
 }
 
 public enum CelebrationType

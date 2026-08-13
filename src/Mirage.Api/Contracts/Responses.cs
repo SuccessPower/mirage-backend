@@ -310,6 +310,55 @@ public sealed record CommunityPostCommentResponse(
 
 public sealed record CommunityCommentLocationResponse(Guid CommunityId, Guid PostId, Guid CommentId);
 
+// An author on Hearth is a couple where both spouses are on the platform, and a single person
+// where they are not — SpouseName is null in that case and clients render one avatar.
+public sealed record HearthAuthorResponse(
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    Guid? SpouseUserId,
+    string? SpouseName,
+    string? SpouseAvatarUrl,
+    string CoupleName,
+    string City,
+    int? YearsMarried,
+    string? OrgBadgeUrl = null,
+    string? OrgName = null);
+
+public sealed record HearthPostResponse(
+    Guid Id,
+    Guid CommunityId,
+    string CircleName,
+    bool IsHearthWide,
+    HearthAuthorResponse Author,
+    PostKind Kind,
+    string Body,
+    string? Place,
+    IReadOnlyList<string> ImageUrls,
+    int LoveCount,
+    int AmenCount,
+    int CommentCount,
+    bool LovedByMe,
+    bool AmenedByMe,
+    bool IsMine,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<MentionedUserResponse>? MentionedUsers = null);
+
+public sealed record HearthMeResponse(
+    HearthAuthorResponse Author,
+    bool HasSpouseOnPlatform,
+    DateOnly? WeddingAnniversaryDate,
+    int? DaysToAnniversary,
+    int PostCount,
+    int CircleCount,
+    IReadOnlyList<HearthCircleResponse> Circles);
+
+public sealed record HearthCircleResponse(Guid Id, string Name, string? AvatarUrl, int MemberCount,
+    bool IsHearthWide);
+
+public sealed record HearthMentionableResponse(Guid UserId, string DisplayName, string? AvatarUrl,
+    string CoupleName, string City);
+
 public sealed record CommunityAvatarPresetResponse(string Key, string Label, string Url);
 
 public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl, DateTimeOffset CreatedAt);
