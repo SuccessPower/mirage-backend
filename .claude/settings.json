@@ -69,7 +69,9 @@
       "Read(//opt/homebrew/opt/**)",
       "Bash(curl -s -o /tmp/k1.json -w \"HTTP %{http_code}\\\\n\" \"https://api.klipy.com/api/v1/DUMMYKEY123/gifs/trending?per_page=24&page=1&rating=g\" --max-time 20)",
       "Bash(curl -s -o /tmp/k2.json -w \"HTTP %{http_code}\\\\n\" \"https://api.klipy.com/api/v1/DUMMYKEY123/gifs/trending?per_page=24&page=1\" --max-time 20)",
-      "Bash(curl -s -L -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 Chrome/120 Safari/537.36\" \"https://docs.klipy.com/gifs-api/trending\" --max-time 25 -o /tmp/kd.html -w \"HTTP %{http_code}\\\\n\")"
+      "Bash(curl -s -L -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 Chrome/120 Safari/537.36\" \"https://docs.klipy.com/gifs-api/trending\" --max-time 25 -o /tmp/kd.html -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(ls /Applications | grep -iE \"chrome|chromium|edge|safari\" ; which chromium google-chrome 2>/dev/null; ls ~/Library/Caches/ms-playwright 2>/dev/null | head)",
+      "Read(//Applications/**)"
     ],
     "additionalDirectories": [
       "/Users/payazaafrica/mirage-backend/src/*"
