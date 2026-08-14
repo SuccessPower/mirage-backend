@@ -53,7 +53,7 @@ public sealed class Newsletter : Entity
         string? thumbnailUrl = null)
     {
         if (Status is NewsletterStatus.Sending or NewsletterStatus.Sent) throw new InvalidOperationException("A sending or sent newsletter cannot be edited.");
-        if (Status is NewsletterStatus.Scheduled) throw new InvalidOperationException("Cancel the scheduled send before editing this newsletter.");
+        if (Status is NewsletterStatus.Scheduled) throw new InvalidOperationException("A scheduled edition is locked. Cancel the schedule to bring it back to your drafts before editing.");
         // Editing something already under review restarts the review: the approvals were for the old text.
         if (Status is NewsletterStatus.InReview or NewsletterStatus.Approved)
         {
@@ -105,14 +105,39 @@ public sealed class Newsletter : Entity
         Touch();
     }
 
+    /// <summary>Places an approved edition on the calendar. This is the checker's move — the author never makes it.</summary>
     public void Schedule(DateTimeOffset when, int recipients)
     {
-        if (Status is not (NewsletterStatus.Approved or NewsletterStatus.Scheduled or NewsletterStatus.Cancelled))
+        if (Status is not (NewsletterStatus.Approved or NewsletterStatus.Cancelled))
             throw new InvalidOperationException("A newsletter must clear review before it can be scheduled.");
         if (when <= DateTimeOffset.UtcNow) throw new InvalidOperationException("Schedule time must be in the future.");
         ScheduledFor = when; RecipientCount = recipients; Status = NewsletterStatus.Scheduled; FailureReason = null; Touch();
     }
-    public void Cancel() { if (Status != NewsletterStatus.Scheduled) throw new InvalidOperationException("Only scheduled newsletters can be cancelled."); Status = NewsletterStatus.Cancelled; Touch(); }
+
+    /// <summary>Moves the send time of an edition already on the calendar. The author's move alone, and only the
+    /// clock changes: the approved words and the chosen audience are exactly what the reviewers signed off on, so
+    /// the approvals stand and nothing goes back through review.</summary>
+    public void Reschedule(DateTimeOffset when, int recipients)
+    {
+        if (Status != NewsletterStatus.Scheduled)
+            throw new InvalidOperationException("Only an edition already on the calendar can be rescheduled.");
+        if (when <= DateTimeOffset.UtcNow) throw new InvalidOperationException("Schedule time must be in the future.");
+        ScheduledFor = when; RecipientCount = recipients; Touch();
+    }
+
+    /// <summary>Takes a scheduled edition off the calendar and hands it back to the author as a draft. The review
+    /// round advances with it: whatever happens to the text next, it has to be approved again before it can be
+    /// scheduled a second time.</summary>
+    public void Cancel()
+    {
+        if (Status != NewsletterStatus.Scheduled)
+            throw new InvalidOperationException("Only scheduled newsletters can be cancelled.");
+        Status = NewsletterStatus.Draft;
+        ScheduledFor = null;
+        RecipientCount = 0;
+        ReviewRound++;
+        Touch();
+    }
     public void StartSending(int recipients) { Status = NewsletterStatus.Sending; RecipientCount = recipients; DeliveredCount = 0; FailedCount = 0; Touch(); }
     public void Complete(int sent, int failed) { DeliveredCount = sent; FailedCount = failed; SentAt = DateTimeOffset.UtcNow; Status = NewsletterStatus.Sent; Touch(); }
     public void Fail(string reason) { Status = NewsletterStatus.Failed; FailureReason = reason[..Math.Min(reason.Length, 1000)]; Touch(); }
