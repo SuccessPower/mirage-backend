@@ -41,16 +41,69 @@ public sealed class NewsletterTests
     }
 
     [Fact]
-    public void CancelledNewsletter_CanBeRescheduled()
+    public void Cancelling_ReturnsTheEditionToItsAuthorsDraftsAndVoidsApprovals()
+    {
+        var newsletter = Approved();
+        newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
+        var approvedRound = newsletter.ReviewRound;
+
+        newsletter.Cancel();
+
+        Assert.Equal(NewsletterStatus.Draft, newsletter.Status);
+        Assert.Null(newsletter.ScheduledFor);
+        Assert.NotEqual(approvedRound, newsletter.ReviewRound);
+    }
+
+    [Fact]
+    public void CancelledNewsletter_MustClearReviewAgainBeforeItCanBeScheduled()
     {
         var newsletter = Approved();
         newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
         newsletter.Cancel();
 
+        Assert.Throws<InvalidOperationException>(() => newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(3), 12));
+
+        newsletter.SubmitForReview();
+        newsletter.MarkApproved();
         newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(3), 12);
+        Assert.Equal(NewsletterStatus.Scheduled, newsletter.Status);
+    }
+
+    [Fact]
+    public void Rescheduling_MovesTheClockWithoutDisturbingTheApprovedText()
+    {
+        var newsletter = Approved();
+        newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
+        var approvedRound = newsletter.ReviewRound;
+        var later = DateTimeOffset.UtcNow.AddHours(6);
+
+        newsletter.Reschedule(later, 11);
 
         Assert.Equal(NewsletterStatus.Scheduled, newsletter.Status);
-        Assert.Equal(12, newsletter.RecipientCount);
+        Assert.Equal(later, newsletter.ScheduledFor);
+        Assert.Equal(11, newsletter.RecipientCount);
+        Assert.Equal(approvedRound, newsletter.ReviewRound);
+    }
+
+    [Fact]
+    public void Reschedule_RejectsInstantsInThePast()
+    {
+        var newsletter = Approved();
+        newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 10);
+
+        Assert.Throws<InvalidOperationException>(() => newsletter.Reschedule(DateTimeOffset.UtcNow.AddMinutes(-1), 10));
+    }
+
+    [Fact]
+    public void SentNewsletter_CannotBeRescheduledOrCancelled()
+    {
+        var newsletter = Approved();
+        newsletter.Schedule(DateTimeOffset.UtcNow.AddHours(1), 1);
+        newsletter.StartSending(1);
+        newsletter.Complete(1, 0);
+
+        Assert.Throws<InvalidOperationException>(() => newsletter.Reschedule(DateTimeOffset.UtcNow.AddHours(2), 1));
+        Assert.Throws<InvalidOperationException>(() => newsletter.Cancel());
     }
 
     [Fact]

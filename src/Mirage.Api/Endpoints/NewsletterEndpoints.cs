@@ -165,7 +165,8 @@ internal static partial class NewsletterEndpoints
             x.FailedCount, x.FailureReason, x.CreatedAt, x.AudienceSex, x.AudienceRelationshipStatuses, x.ReviewRound,
             ApprovalCount = db.NewsletterReviews.Where(r => r.NewsletterId == x.Id && r.Round == x.ReviewRound && r.Decision == NewsletterReviewDecision.Approved).Select(r => r.ReviewerUserId).Distinct().Count(),
             AuthorName = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault(),
-            AuthorAvatarUrl = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault() })
+            AuthorAvatarUrl = db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
+            IsMine = x.AuthorUserId == callerId })
             .SingleOrDefaultAsync(ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
         var deliveries = await db.NewsletterDeliveries.AsNoTracking().Where(x => x.NewsletterId == id)
@@ -230,6 +231,15 @@ internal static partial class NewsletterEndpoints
         return item.Status == NewsletterStatus.Draft && item.AuthorUserId != context.User.GetUserId() ? null : item;
     }
 
+    /// <summary>An edition is its author's work from the first keystroke to the moment it lands in an inbox.
+    /// Everyone else with newsletter management can read it, review it, and put an approved one on the calendar —
+    /// but the words, the send time, and the decision to pull it back are the author's alone. Without this,
+    /// scheduling an edition would quietly hand it to the whole team.</summary>
+    private static IResult? RequireAuthor(Newsletter item, HttpContext context, string action) =>
+        item.AuthorUserId == context.User.GetUserId()
+            ? null
+            : EndpointHelpers.Problem(context, 403, "Not the author", $"Only the author of this edition can {action}.");
+
     private static async Task<IResult> Create(CreateNewsletterRequest request, HttpContext context, MirageDbContext db, CancellationToken ct)
     {
         var error = ValidatePost(request); if (error is not null) return EndpointHelpers.ValidationProblem(context, (error.Value.Field, error.Value.Message));
@@ -241,6 +251,7 @@ internal static partial class NewsletterEndpoints
     {
         var error = ValidatePost(request); if (error is not null) return EndpointHelpers.ValidationProblem(context, (error.Value.Field, error.Value.Message));
         var item = await FindVisibleAsync(id, context, db, ct); if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
+        if (RequireAuthor(item, context, "edit it") is { } denied) return denied;
         try { item.Update(request.Title, request.Subject, request.Excerpt, SanitizeHtml(request.ContentHtml), ValidImages(request.ImageUrls), ValidImage(request.ThumbnailUrl)); } catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); }
         await db.SaveChangesAsync(ct); return ApiResults.Ok(context, new { item.Id }, "Newsletter saved.");
     }
@@ -249,6 +260,19 @@ internal static partial class NewsletterEndpoints
         MirageDbContext db, IConfiguration configuration, CancellationToken ct)
     {
         var item = await FindVisibleAsync(id, context, db, ct); if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
+
+        // An edition already on the calendar is the author's to move, and nobody else's. Only the clock changes:
+        // the text and the audience were approved as a pair, so a reschedule never touches either.
+        if (item.Status == NewsletterStatus.Scheduled)
+        {
+            if (RequireAuthor(item, context, "move its send time") is { } notAuthor) return notAuthor;
+            var audience = await NewsletterAudience.Filtered(db, item.AudienceSex, item.AudienceRelationshipStatuses).CountAsync(ct);
+            try { item.Reschedule(request.ScheduledFor.ToUniversalTime(), audience); }
+            catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); }
+            await db.SaveChangesAsync(ct);
+            return ApiResults.Ok(context, new { item.Id, item.ScheduledFor, RecipientCount = audience, item.AudienceSex, item.AudienceRelationshipStatuses }, "Send time updated.");
+        }
+
         // Maker-checker: the author never sends their own edition, and it needs two sign-offs on the current text.
         if (item.AuthorUserId == context.User.GetUserId())
             return EndpointHelpers.Problem(context, 403, "Author cannot schedule",
@@ -270,10 +294,15 @@ internal static partial class NewsletterEndpoints
         return ApiResults.Ok(context, new { item.Id, item.ScheduledFor, RecipientCount = count, item.AudienceSex, item.AudienceRelationshipStatuses }, "Newsletter scheduled.");
     }
 
+    // Pulling an edition off the calendar returns it to its author's drafts, unapproved. It is the only way back
+    // into editing once scheduled, and only the author may take it.
     private static async Task<IResult> Cancel(Guid id, HttpContext context, MirageDbContext db, CancellationToken ct)
     {
         var item = await FindVisibleAsync(id, context, db, ct); if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
-        try { item.Cancel(); } catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); } await db.SaveChangesAsync(ct); return ApiResults.Ok(context, new { item.Id }, "Newsletter cancelled.");
+        if (RequireAuthor(item, context, "cancel its scheduled send") is { } denied) return denied;
+        try { item.Cancel(); } catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); }
+        await db.SaveChangesAsync(ct);
+        return ApiResults.Ok(context, new { item.Id, item.Status }, "Schedule cancelled. The edition is back in your drafts and will need approval again before it can be scheduled.");
     }
 
     /// <summary>How many sign-offs an edition needs before it can be scheduled — none of them the author's, and
@@ -294,6 +323,7 @@ internal static partial class NewsletterEndpoints
     {
         var item = await FindVisibleAsync(id, context, db, ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
+        if (RequireAuthor(item, context, "submit it for review") is { } denied) return denied;
         try { item.SubmitForReview(); } catch (InvalidOperationException e) { return EndpointHelpers.Conflict(context, e.Message); }
         await db.SaveChangesAsync(ct);
         var needed = RequiredApprovals(configuration);
@@ -342,7 +372,14 @@ internal static partial class NewsletterEndpoints
             // The author is the maker; the checkers are everyone else with newsletter management.
             CanApprove = !isAuthor && item.Status == NewsletterStatus.InReview && !approvals.Contains(me),
             CanSchedule = !isAuthor && approvals.Count >= required
-                && item.Status is NewsletterStatus.Approved or NewsletterStatus.Cancelled
+                && item.Status is NewsletterStatus.Approved or NewsletterStatus.Cancelled,
+            // Everything below is the author's alone. A scheduled edition is frozen: the time can move and the
+            // send can be called off, but the words cannot change without going back through review.
+            CanEdit = isAuthor && item.Status is NewsletterStatus.Draft or NewsletterStatus.InReview
+                or NewsletterStatus.Approved or NewsletterStatus.Cancelled or NewsletterStatus.Failed,
+            CanReschedule = isAuthor && item.Status == NewsletterStatus.Scheduled,
+            CanCancel = isAuthor && item.Status == NewsletterStatus.Scheduled,
+            IsLocked = item.Status is NewsletterStatus.Scheduled or NewsletterStatus.Sending or NewsletterStatus.Sent
         };
     }
 
@@ -398,6 +435,7 @@ internal static partial class NewsletterEndpoints
     {
         var item = await FindVisibleAsync(id, context, db, ct);
         if (item is null) return EndpointHelpers.NotFound(context, "Newsletter was not found.");
+        if (RequireAuthor(item, context, "delete it") is { } denied) return denied;
         if (!item.CanBeDeleted) return EndpointHelpers.Conflict(context,
             "A newsletter that has been sent or is sending cannot be deleted. Cancel it first if it is still scheduled.");
         db.NewsletterDeliveries.RemoveRange(db.NewsletterDeliveries.Where(x => x.NewsletterId == id));
