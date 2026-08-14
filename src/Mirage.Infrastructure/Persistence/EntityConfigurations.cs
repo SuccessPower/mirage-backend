@@ -652,10 +652,24 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         b.Property(x => x.PayoutReference).HasMaxLength(50);
         b.Property(x => x.ProviderTransferId).HasMaxLength(200);
         b.Property(x => x.PayoutFailureReason).HasMaxLength(500);
+        b.Property(x => x.RefundProviderReference).HasMaxLength(200);
+        b.Property(x => x.RefundNote).HasMaxLength(500);
         b.HasOne(x => x.CounsellingSession).WithOne(x => x.Payment)
             .HasForeignKey<Payment>(x => x.CounsellingSessionId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PayerUserId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class PlatformPricingConfiguration : IEntityTypeConfiguration<PlatformPricing>
+{
+    public void Configure(EntityTypeBuilder<PlatformPricing> b)
+    {
+        b.ToTable("platform_pricing");
+        b.Property(x => x.Currency).HasMaxLength(3);
+        b.Property(x => x.MinSessionFee).HasPrecision(18, 2);
+        b.Property(x => x.MaxSessionFee).HasPrecision(18, 2);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UpdatedByUserId).OnDelete(DeleteBehavior.SetNull);
     }
 }
 

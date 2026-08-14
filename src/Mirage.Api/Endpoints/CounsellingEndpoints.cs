@@ -791,10 +791,21 @@ internal static class CounsellingEndpoints
     }
 
     private static async Task<IResult> UpdateMyCounsellorProfile(UpdateCounsellorProfileRequest request,
-        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+        HttpContext context, IMirageDbContext db, PricingService pricing, CancellationToken cancellationToken)
     {
         if (request.YearsExperience < 0)
             return EndpointHelpers.ValidationProblem(context, ("yearsExperience", "Years of experience must be 0 or greater."));
+
+        // Counsellors price themselves, but only inside the band admin publishes on the pricing
+        // page — a fee outside it would contradict what members and our payment processor are told.
+        if (request.PriceAmount is { } price)
+        {
+            var band = await pricing.GetAsync(cancellationToken);
+            var rejection = band.Reject(price, request.PriceCurrency ?? band.Currency);
+            if (rejection is not null)
+                return EndpointHelpers.ValidationProblem(context, ("priceAmount", rejection));
+        }
+
         var userId = context.User.GetUserId();
         var profile = await db.Counsellors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Counsellor profile was not found.");
@@ -970,20 +981,50 @@ internal static class CounsellingEndpoints
     }
 
     private static async Task<IResult> CancelSession(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        RefundService refunds, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         var session = await db.CounsellingSessions.Include(x => x.Counsellor).Include(x => x.Payment)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (session is null) return EndpointHelpers.NotFound(context, "Session was not found.");
-        if (session.ClientUserId != userId && session.Counsellor.UserId != userId)
+        var cancelledByCounsellor = session.Counsellor.UserId == userId;
+        if (session.ClientUserId != userId && !cancelledByCounsellor)
             return EndpointHelpers.Forbidden(context);
         try { session.Cancel(); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
-        session.Payment?.MarkFailed();
+
+        // A payment that never completed is simply closed off. A completed one goes through the
+        // published policy: the counsellor cancelling always refunds, the member cancelling
+        // refunds only with a day's notice.
+        var payment = session.Payment;
+        var refund = new RefundOutcome(false, 0, string.Empty);
+        if (payment is not null && payment.Status != PaymentStatus.Successful) payment.MarkFailed();
+
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(id, userId, "SessionCancelled"));
         await db.SaveChangesAsync(cancellationToken);
-        return ApiResults.Ok(context, new { session.Id, session.Status }, "Session cancelled.");
+
+        if (payment is { Status: PaymentStatus.Successful })
+        {
+            if (RefundService.PolicyAllowsRefund(cancelledByCounsellor, session.ScheduledAt))
+            {
+                var reason = cancelledByCounsellor ? RefundReason.CounsellorCancelled : RefundReason.ClientCancelled;
+                refund = await refunds.RefundAsync(payment, reason, "Session cancelled", null, cancellationToken);
+            }
+            else
+            {
+                refund = new RefundOutcome(false, 0,
+                    "Cancelled inside 24 hours of the session, so the fee is not refunded. Contact support if the circumstances were exceptional.");
+            }
+        }
+
+        return ApiResults.Ok(context, new
+        {
+            session.Id,
+            session.Status,
+            Refunded = refund.Refunded,
+            RefundedAmount = refund.Refunded ? refund.Amount : (decimal?)null,
+            RefundMessage = refund.Message.Length > 0 ? refund.Message : null,
+        }, refund.Refunded ? "Session cancelled and payment refunded." : "Session cancelled.");
     }
 
     private static async Task<IResult> AcceptPartnerInvite(Guid id, HttpContext context, IMirageDbContext db,

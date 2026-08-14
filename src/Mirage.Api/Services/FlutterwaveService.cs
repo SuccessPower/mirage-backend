@@ -41,6 +41,44 @@ public sealed class FlutterwaveService(HttpClient http, IConfiguration configura
         return new PaymentCheckoutResult(link, null, null, null, null);
     }
 
+    // Flutterwave refunds address the transaction id it assigned at charge time, not our own
+    // reference — that id only exists once the charge webhook has landed, so an unconfirmed
+    // payment has nothing to refund against and says so rather than throwing.
+    public async Task<RefundResult> RefundAsync(Payment payment, decimal amount, string? note,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(payment.ProviderTransactionId))
+            return new RefundResult(false, null, "This payment has no Flutterwave transaction to refund against.");
+
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync(
+            $"{BaseUrl}/transactions/{Uri.EscapeDataString(payment.ProviderTransactionId)}/refund",
+            new { amount, comments = note }, cancellationToken);
+
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode) return new RefundResult(false, null, ProviderMessage(raw));
+
+        using var doc = JsonDocument.Parse(raw);
+        var data = doc.RootElement.TryGetProperty("data", out var d) ? d : default;
+        var reference = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("id", out var id)
+            ? id.ToString()
+            : null;
+        return new RefundResult(true, reference, null);
+    }
+
+    private static string? ProviderMessage(string rawBody)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(rawBody);
+            return doc.RootElement.TryGetProperty("message", out var message) ? message.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<BankOption>> ListBanksAsync(CancellationToken cancellationToken)
     {
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);

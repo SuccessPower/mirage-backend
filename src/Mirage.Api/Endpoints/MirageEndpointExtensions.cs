@@ -30,6 +30,7 @@ public static class MirageEndpointExtensions
         api.MapUploadEndpoints();
         api.MapGifEndpoints();
         api.MapPaymentEndpoints();
+        api.MapPricingEndpoints();
         api.MapAdminEndpoints();
         api.MapAdminAnalyticsEndpoints();
         api.MapVendorEndpoints();

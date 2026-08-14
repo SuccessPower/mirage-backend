@@ -161,6 +161,68 @@ public sealed class DomainInvariantTests
     }
 
     [Fact]
+    public void Refunding_a_paid_session_cancels_the_counsellor_payout()
+    {
+        var payment = new Payment(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 10_000m, "ngn");
+        payment.Initialize(PaymentProvider.Paystack, PaymentMethod.Card, "payment-reference");
+        payment.MarkSuccessful("transaction-id");
+
+        payment.MarkRefunded(10_000m, RefundReason.CounsellorNoShow, "refund-id", "Did not attend", null);
+
+        Assert.Equal(PaymentStatus.Refunded, payment.Status);
+        Assert.Equal(10_000m, payment.RefundedAmount);
+        Assert.Equal(RefundReason.CounsellorNoShow, payment.RefundReason);
+        // The money is going back to the member, so the counsellor is never paid for this session.
+        Assert.Equal(PayoutStatus.Cancelled, payment.PayoutStatus);
+        Assert.False(payment.IsRefundable);
+    }
+
+    [Fact]
+    public void A_session_already_paid_out_cannot_be_refunded()
+    {
+        var payment = new Payment(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 10_000m, "ngn");
+        payment.Initialize(PaymentProvider.Paystack, PaymentMethod.Card, "payment-reference");
+        payment.MarkSuccessful("transaction-id");
+        payment.RequestPayoutApproval();
+        payment.ApprovePayout(Guid.NewGuid());
+        payment.MarkPayoutPaid("transfer-id");
+
+        Assert.False(payment.IsRefundable);
+        Assert.Throws<InvalidOperationException>(() =>
+            payment.MarkRefunded(10_000m, RefundReason.AdminDiscretion, null, null, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void Counsellor_fees_are_held_to_the_admin_set_bounds()
+    {
+        var pricing = PlatformPricing.CreateDefault();
+        pricing.Update(5_000m, 20_000m, "ngn", Guid.NewGuid());
+
+        Assert.Equal("NGN", pricing.Currency);
+        Assert.Null(pricing.Reject(12_000m, "NGN"));
+        Assert.NotNull(pricing.Reject(4_999m, "NGN"));
+        Assert.NotNull(pricing.Reject(20_001m, "NGN"));
+        Assert.NotNull(pricing.Reject(12_000m, "USD"));
+        Assert.Throws<InvalidOperationException>(() => pricing.Update(30_000m, 20_000m, "NGN", Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void Out_of_the_box_no_ceiling_is_imposed_on_counsellor_fees()
+    {
+        // A number hardcoded here would be wrong as soon as the market moved, so the default
+        // bounds are open at both ends and only an admin narrows them.
+        var pricing = PlatformPricing.CreateDefault();
+        Assert.Null(pricing.MinSessionFee);
+        Assert.Null(pricing.MaxSessionFee);
+        Assert.Null(pricing.Reject(2_000_000m, "NGN"));
+
+        // A floor alone is valid, and still leaves the top open.
+        pricing.Update(5_000m, null, "NGN", Guid.NewGuid());
+        Assert.Null(pricing.Reject(2_000_000m, "NGN"));
+        Assert.NotNull(pricing.Reject(4_000m, "NGN"));
+    }
+
+    [Fact]
     public void Match_can_be_closed()
     {
         var closerId = Guid.NewGuid();

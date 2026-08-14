@@ -29,8 +29,11 @@ public static class NewsletterEmailTemplate
         "https://res.cloudinary.com/dl2z33x6z/image/upload/v1785248851/Asset_3Mirage_obqm6m.png";
 
     /// <summary>The mark-and-wordmark lockup that heads a newsletter. Kept apart from
-    /// <see cref="DefaultLogoUrl"/>, which is the square mark used in 32x32 slots elsewhere.</summary>
-    private const string DefaultWordmarkUrl = "https://www.themiragehub.com/brand/mirage-wordmark.png";
+    /// <see cref="DefaultLogoUrl"/>, which is the square mark used in 32x32 slots elsewhere.
+    /// The bright violet cut, not the dark indigo one: mail clients in dark mode invert the paper
+    /// ground behind it, and the dark lockup vanishes into it.</summary>
+    private const string DefaultWordmarkUrl =
+        "https://res.cloudinary.com/dl2z33x6z/image/upload/v1786718782/Asset_8Mirage_zkefqb.png";
     private const string DefaultSupportEmail = "support@themiragehub.com";
 
     /// <summary>Every edition goes out under one voice rather than the name of whoever drafted it.</summary>

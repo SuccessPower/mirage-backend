@@ -84,6 +84,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<NewsletterComment> NewsletterComments => Set<NewsletterComment>();
     public DbSet<NewsletterCommentLike> NewsletterCommentLikes => Set<NewsletterCommentLike>();
     public DbSet<PlatformManagerInvite> PlatformManagerInvites => Set<PlatformManagerInvite>();
+    public DbSet<PlatformPricing> PlatformPricing => Set<PlatformPricing>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

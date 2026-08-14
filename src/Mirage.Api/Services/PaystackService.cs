@@ -71,6 +71,46 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
         return new PaymentCheckoutResult(null, Get("account_number"), Get("bank"), Get("account_name"), expiresAt);
     }
 
+    // Paystack refunds are asked for against the transaction reference we sent at checkout, and
+    // settle back to the payer's original method over the following days. The API answers
+    // immediately with a pending refund record; there is nothing to poll for our purposes, since
+    // the session is already cancelled and the member has been told the money is on its way.
+    public async Task<RefundResult> RefundAsync(Payment payment, decimal amount, string? note,
+        CancellationToken cancellationToken)
+    {
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
+        var response = await http.PostAsJsonAsync($"{BaseUrl}/refund", new
+        {
+            transaction = payment.ProviderReference,
+            amount = (long)Math.Round(amount * 100),
+            currency = payment.Currency,
+            merchant_note = note,
+        }, cancellationToken);
+
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode) return new RefundResult(false, null, ProviderMessage(raw));
+
+        using var doc = JsonDocument.Parse(raw);
+        var data = doc.RootElement.TryGetProperty("data", out var d) ? d : default;
+        var reference = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("id", out var id)
+            ? id.ToString()
+            : null;
+        return new RefundResult(true, reference, null);
+    }
+
+    private static string? ProviderMessage(string rawBody)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(rawBody);
+            return doc.RootElement.TryGetProperty("message", out var message) ? message.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<BankOption>> ListBanksAsync(CancellationToken cancellationToken)
     {
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", SecretKey);
