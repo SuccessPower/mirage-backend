@@ -78,7 +78,7 @@ public static class NewsletterEmailTemplate
         body.Append($"""
           <tr><td class="lede" style="padding:30px 0 0;font:400 18px/1.75 {Letter};color:#4a4034">
             <span class="accent" style="float:left;font:400 58px/44px {Display};color:{Plum};padding:6px 10px 0 0">D</span>
-            <span class="strong" style="letter-spacing:.03em;color:{Ink}">earest {Encode(displayName.Trim())},</span>
+            <span class="strong" style="letter-spacing:.03em;color:{Ink}">earest {Encode(FirstName(displayName))},</span>
             {Encode(excerpt)}
           </td></tr>
           <tr><td class="prose" style="padding:26px 0 0;font:400 17px/1.9 {Letter};color:#413729">{contentHtml}</td></tr>
@@ -251,8 +251,8 @@ public static class NewsletterEmailTemplate
             .prose blockquote{font-size:18px !important;margin:24px 8px !important}
             .cta{display:block !important;padding:17px 18px !important;text-align:center !important}
             .col{display:block !important;width:100% !important;padding:0 0 12px !important}
-            .masthead{height:28px !important}
-            .logo{height:20px !important}
+            .masthead{height:46px !important}
+            .logo{height:30px !important}
             .tagline{font-size:9px !important;letter-spacing:.22em !important}
           }
         """.Replace("@ink@", Ink).Replace("@plum@", Plum).Replace("@rule@", Rule)
@@ -292,14 +292,14 @@ public static class NewsletterEmailTemplate
                    word "Mirage", so no wordmark is set next to it. On paper rather than the ink bar this
                    used to be, because the lockup is dark and would disappear into it. -->
               <tr><td class="bar" align="center" style="background:{PaperDeep};border-bottom:1px solid {Rule};padding:26px 44px 20px">
-                <img class="masthead" src="{Encode(logo)}" alt="Mirage" height="34" style="display:block;margin:0 auto;height:34px;width:auto;border:0;outline:none;text-decoration:none" />
+                <img class="masthead" src="{Encode(logo)}" alt="Mirage" height="58" style="display:block;margin:0 auto;height:58px;width:auto;max-width:100%;border:0;outline:none;text-decoration:none" />
                 <div class="tagline" style="padding-top:12px;font:400 10px/1 {Utility};letter-spacing:.3em;text-transform:uppercase;color:{Plum}">Faith &#183; Love &#183; Becoming</div>
               </td></tr>
               <tr><td class="pad" style="padding:46px 44px 48px">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{bodyRows}</table>
               </td></tr>
               <tr><td class="foot" style="background:{PaperDeep};border-top:1px solid {Rule};padding:30px 44px;font:400 12px/1.75 {Utility};color:{Muted}" align="center">
-                <img class="logo" src="{Encode(logo)}" alt="Mirage" height="24" style="display:block;margin:0 auto 16px;height:24px;width:auto;border:0;outline:none;text-decoration:none" />
+                <img class="logo" src="{Encode(logo)}" alt="Mirage" height="36" style="display:block;margin:0 auto 16px;height:36px;width:auto;max-width:100%;border:0;outline:none;text-decoration:none" />
                 {SocialRow(socials ?? [])}
                 <div class="soft" style="font:italic 400 13px/1.7 {Letter};color:{Muted}">A faith-integrated home for relationships worth building.</div>
                 {footerNote}
@@ -310,6 +310,20 @@ public static class NewsletterEmailTemplate
       </body>
       </html>
     """;
+    }
+
+    /// <summary>A letter greets you the way a friend would — by your first name alone, never the full name a
+    /// profile happens to carry. Falls back to the whole string when there is nothing to split, and to a warm
+    /// generic when the display name is empty.</summary>
+    private static string FirstName(string displayName)
+    {
+        var name = displayName.Trim();
+        if (name.Length == 0) return "friend";
+        // A display name that is really an email address: greet by the local part, not user@host.
+        if (name.IndexOf('@') is > 0 and var at) name = name[..at];
+        var first = name.Split([' ', '\t', ',', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault();
+        return string.IsNullOrEmpty(first) ? "friend" : first;
     }
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
