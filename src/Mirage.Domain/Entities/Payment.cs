@@ -43,7 +43,22 @@ public sealed class Payment : Entity
     public DateTimeOffset? PayoutPaidAt { get; private set; }
     public string? PayoutFailureReason { get; private set; }
     public DateTimeOffset? PaidAt { get; private set; }
+
+    // Refunds. Mirage only ever refunds a session in full — the published policy has no partial
+    // case — but the amount is stored rather than implied so a future partial refund, or a
+    // provider that returns less than was asked for, is recorded truthfully.
+    public decimal? RefundedAmount { get; private set; }
+    public DateTimeOffset? RefundedAt { get; private set; }
+    public RefundReason? RefundReason { get; private set; }
+    public string? RefundProviderReference { get; private set; }
+    public string? RefundNote { get; private set; }
+    /// <summary>Null when the refund was automatic under the cancellation policy.</summary>
+    public Guid? RefundedByUserId { get; private set; }
+
     public CounsellingSession CounsellingSession { get; private set; } = null!;
+
+    public bool IsRefundable =>
+        Status == PaymentStatus.Successful && PayoutStatus is not (PayoutStatus.Paid or PayoutStatus.Processing);
 
     public void Initialize(PaymentProvider provider, PaymentMethod method, string providerReference)
     {
@@ -69,6 +84,35 @@ public sealed class Payment : Entity
     {
         if (Status == PaymentStatus.Successful) return;
         Status = PaymentStatus.Failed;
+        Touch();
+    }
+
+    /// <summary>
+    /// Records a refund the provider has already accepted. A payout still sitting with us is
+    /// cancelled in the same breath: the money is going back to the member, so the counsellor is
+    /// never paid for that session. A payout already paid or in flight cannot be unwound here —
+    /// <see cref="IsRefundable"/> gates that, and it becomes a finance matter instead.
+    /// </summary>
+    public void MarkRefunded(decimal refundedAmount, RefundReason reason, string? providerReference,
+        string? note, Guid? refundedByUserId)
+    {
+        if (Status == PaymentStatus.Refunded) return;
+        if (Status != PaymentStatus.Successful)
+            throw new InvalidOperationException("Only a successful payment can be refunded.");
+        if (PayoutStatus is PayoutStatus.Paid or PayoutStatus.Processing)
+            throw new InvalidOperationException(
+                "The counsellor has already been paid for this session, so it cannot be refunded automatically.");
+        if (refundedAmount <= 0 || refundedAmount > Amount)
+            throw new InvalidOperationException("The refund amount must be positive and no more than the amount paid.");
+
+        Status = PaymentStatus.Refunded;
+        RefundedAmount = decimal.Round(refundedAmount, 2);
+        RefundedAt = DateTimeOffset.UtcNow;
+        RefundReason = reason;
+        RefundProviderReference = providerReference;
+        RefundNote = note?.Trim() is { Length: > 0 } trimmed ? trimmed[..Math.Min(trimmed.Length, 500)] : null;
+        RefundedByUserId = refundedByUserId;
+        PayoutStatus = PayoutStatus.Cancelled;
         Touch();
     }
 

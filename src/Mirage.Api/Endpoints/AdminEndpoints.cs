@@ -51,6 +51,13 @@ internal static class AdminEndpoints
         admin.MapGet("/payouts", ListPayouts);
         admin.MapPost("/payouts/{id:guid}/approve", ApprovePayout);
 
+        // Pricing: the band counsellors must price inside, and the refunds that fall outside what
+        // the cancellation policy settles automatically.
+        admin.MapGet("/pricing", GetPricing);
+        admin.MapPut("/pricing", UpdatePricing);
+        admin.MapGet("/payments", ListPayments);
+        admin.MapPost("/payments/{id:guid}/refund", RefundPayment);
+
         // Mentor verification
         admin.MapGet("/mentors", ListMentorProfiles);
         admin.MapGet("/mentors/pending", ListPendingMentors);
@@ -110,6 +117,105 @@ internal static class AdminEndpoints
         });
         return ApiResults.Ok(context, await rows.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Payouts retrieved successfully.");
+    }
+
+    private static async Task<IResult> GetPricing(HttpContext context, PricingService pricing,
+        CancellationToken cancellationToken)
+    {
+        var band = await pricing.GetAsync(cancellationToken);
+        var observed = await pricing.ObservedRangeAsync(cancellationToken);
+        return ApiResults.Ok(context, new
+        {
+            band.MinSessionFee,
+            band.MaxSessionFee,
+            band.Currency,
+            CommissionPercent = Payment.PlatformCommissionRate * 100m,
+            ObservedLow = observed.Low,
+            ObservedHigh = observed.High,
+            observed.CounsellorCount,
+            band.UpdatedByUserId,
+            band.UpdatedAt,
+        }, "Pricing retrieved successfully.");
+    }
+
+    // Narrowing the band does not touch counsellors who are already priced outside it — their
+    // existing bookings stand, and they are held to the new band the next time they save.
+    private static async Task<IResult> UpdatePricing(UpdatePricingRequest request, HttpContext context,
+        MirageDbContext db, PricingService pricing, CancellationToken cancellationToken)
+    {
+        var band = await pricing.GetAsync(cancellationToken);
+        try { band.Update(request.MinSessionFee, request.MaxSessionFee, request.Currency, context.User.GetUserId()); }
+        catch (InvalidOperationException ex) { return EndpointHelpers.ValidationProblem(context, ("minSessionFee", ex.Message)); }
+        await db.SaveChangesAsync(cancellationToken);
+
+        var outsideBand = await db.Counsellors.AsNoTracking()
+            .CountAsync(x => x.PriceAmount != null
+                && ((band.MinSessionFee != null && x.PriceAmount < band.MinSessionFee)
+                    || (band.MaxSessionFee != null && x.PriceAmount > band.MaxSessionFee)), cancellationToken);
+
+        return ApiResults.Ok(context, new
+        {
+            band.MinSessionFee,
+            band.MaxSessionFee,
+            band.Currency,
+            CounsellorsOutsideBand = outsideBand,
+        }, outsideBand == 0
+            ? "Pricing updated."
+            : $"Pricing updated. {outsideBand} counsellor(s) are priced outside the new range and will be asked to reprice when they next save.");
+    }
+
+    private static async Task<IResult> ListPayments(HttpContext context, MirageDbContext db,
+        PaymentStatus? status, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+    {
+        var query = db.Payments.AsNoTracking();
+        if (status.HasValue) query = query.Where(x => x.Status == status.Value);
+        var rows = query.OrderByDescending(x => x.UpdatedAt).Select(x => new
+        {
+            x.Id,
+            x.CounsellingSessionId,
+            x.PayerUserId,
+            PayerName = db.Profiles.Where(p => p.UserId == x.PayerUserId).Select(p => p.DisplayName).FirstOrDefault(),
+            CounsellorName = x.CounsellingSession.Counsellor.UserProfile.DisplayName,
+            x.Amount,
+            x.Currency,
+            x.Provider,
+            x.Status,
+            x.PayoutStatus,
+            x.PaidAt,
+            SessionScheduledAt = x.CounsellingSession.ScheduledAt,
+            SessionStatus = x.CounsellingSession.Status,
+            x.RefundedAmount,
+            x.RefundedAt,
+            x.RefundReason,
+            x.RefundNote,
+            x.RefundProviderReference,
+            Refundable = x.Status == PaymentStatus.Successful
+                && x.PayoutStatus != PayoutStatus.Paid && x.PayoutStatus != PayoutStatus.Processing,
+        });
+        return ApiResults.Ok(context, await rows.ToPagedResultAsync(page, pageSize, cancellationToken),
+            "Payments retrieved successfully.");
+    }
+
+    // The manual path: a no-show, a technical failure, or a case support decides to honour outside
+    // the 24-hour window. Cancellations inside the policy refund themselves without an admin.
+    private static async Task<IResult> RefundPayment(Guid id, RefundPaymentRequest request, HttpContext context,
+        MirageDbContext db, RefundService refunds, CancellationToken cancellationToken)
+    {
+        var payment = await db.Payments.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (payment is null) return EndpointHelpers.NotFound(context, "Payment was not found.");
+
+        var outcome = await refunds.RefundAsync(payment, request.Reason, request.Note,
+            context.User.GetUserId(), cancellationToken);
+        if (!outcome.Refunded) return EndpointHelpers.Conflict(context, outcome.Message);
+
+        return ApiResults.Ok(context, new
+        {
+            payment.Id,
+            payment.Status,
+            payment.RefundedAmount,
+            payment.RefundedAt,
+            payment.RefundProviderReference,
+        }, outcome.Message);
     }
 
     private static async Task<IResult> ApprovePayout(Guid id, HttpContext context, MirageDbContext db,

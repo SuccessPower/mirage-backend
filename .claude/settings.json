@@ -71,10 +71,14 @@
       "Bash(curl -s -o /tmp/k2.json -w \"HTTP %{http_code}\\\\n\" \"https://api.klipy.com/api/v1/DUMMYKEY123/gifs/trending?per_page=24&page=1\" --max-time 20)",
       "Bash(curl -s -L -A \"Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36 Chrome/120 Safari/537.36\" \"https://docs.klipy.com/gifs-api/trending\" --max-time 25 -o /tmp/kd.html -w \"HTTP %{http_code}\\\\n\")",
       "Bash(ls /Applications | grep -iE \"chrome|chromium|edge|safari\" ; which chromium google-chrome 2>/dev/null; ls ~/Library/Caches/ms-playwright 2>/dev/null | head)",
-      "Read(//Applications/**)"
+      "Read(//Applications/**)",
+      "Bash(\"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" --headless=new --disable-gpu --no-pdf-header-footer --virtual-time-budget=6000 --print-to-pdf=/Users/payazaafrica/mirage-backend/miragehub-pricing.pdf \"http://127.0.0.1:4319/pricing\")",
+      "Bash(pkill -f \"vite preview\")",
+      "Bash(rm -f src/Mirage.Infrastructure/Persistence/Migrations/*_AddPlatformPricingAndRefunds*.cs && git checkout -- src/Mirage.Infrastructure/Persistence/Migrations/MirageDbContextModelSnapshot.cs && git status --short src/Mirage.Infrastructure/Persistence/Migrations/ | head)"
     ],
     "additionalDirectories": [
-      "/Users/payazaafrica/mirage-backend/src/*"
+      "/Users/payazaafrica/mirage-backend/src/*",
+      "/Users/payazaafrica/mirage-backend/src/Mirage.Infrastructure/Persistence/Migrations"
     ]
   }
 }

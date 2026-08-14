@@ -27,8 +27,12 @@ public enum SessionType { Group = 1, Personal = 2, Couples = 3 }
 public enum SessionStatus { Requested = 1, Scheduled = 2, InProgress = 3, Completed = 4, Cancelled = 5, Declined = 6, AwaitingPayment = 7 }
 public enum PaymentProvider { Paystack = 1, Flutterwave = 2 }
 public enum PaymentMethod { Card = 1, BankTransfer = 2 }
-public enum PaymentStatus { Pending = 1, Successful = 2, Failed = 3 }
-public enum PayoutStatus { NotApplicable = 0, Held = 1, AwaitingApproval = 2, Processing = 3, Paid = 4, Failed = 5 }
+public enum PaymentStatus { Pending = 1, Successful = 2, Failed = 3, Refunded = 4 }
+// Cancelled: the payment behind the payout was refunded, so the counsellor is never paid for it.
+public enum PayoutStatus { NotApplicable = 0, Held = 1, AwaitingApproval = 2, Processing = 3, Paid = 4, Failed = 5, Cancelled = 6 }
+// Who or what triggered a refund. Recorded on the payment so support can tell an automatic
+// cancellation refund from one an admin issued by hand.
+public enum RefundReason { ClientCancelled = 1, CounsellorCancelled = 2, CounsellorNoShow = 3, TechnicalFailure = 4, AdminDiscretion = 5 }
 public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3, PendingRequest = 4 }
 // Voice and Gif both carry their media in AttachmentUrl like Image does. Gif points at a
 // third-party (Tenor) CDN rather than our own Cloudinary account, so it is deliberately a
@@ -148,7 +152,8 @@ public enum NotificationType
     ProfilePhotosRequired = 39,
     ProfilePhotosComplete = 40,
     PostReaction = 41,
-    PostComment = 42
+    PostComment = 42,
+    PaymentRefunded = 43
 }
 
 public enum CelebrationType

@@ -261,6 +261,10 @@ public sealed record RegisterMentorRequest(
 public sealed record InviteCounsellorRequest(string Email);
 public sealed record InviteManagerRequest(string EmailOrUsername, Guid? BranchId);
 public sealed record ApproveOrgRequest(string? Note);
+// Admin-set band every counsellor fee must fall inside, and the manual refund path.
+// Either bound may be null, meaning "no limit at that end" — the market decides the top, not us.
+public sealed record UpdatePricingRequest(decimal? MinSessionFee, decimal? MaxSessionFee, string Currency);
+public sealed record RefundPaymentRequest(RefundReason Reason, string? Note = null);
 public sealed record UpdateCounsellorProfileRequest(
     int YearsExperience,
     string[] Specialisations,
