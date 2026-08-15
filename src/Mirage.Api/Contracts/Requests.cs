@@ -53,6 +53,15 @@ public sealed record ContactRequest(
     string Message,
     string? Website = null);
 public sealed record SendAdminInformationRequest(string Message);
+// DeadlineDays is how long the member has to comply before the account is eligible for
+// suspension — the email states the resulting date. Required unless SuspendImmediately is set,
+// in which case the account is suspended right away (for severe offences) and DeadlineDays is
+// ignored. Either way, an admin still has to act by hand — see WarningReminderService for the
+// reminder that fires when a deadline passes with no action taken. HideProfile only applies on
+// the deadline path (SuspendImmediately already removes the member from view entirely) — it
+// hides the account from other members while the deadline is pending, without blocking sign-in.
+public sealed record SendAdminWarningRequest(string Message, int? DeadlineDays, bool SuspendImmediately = false,
+    bool HideProfile = false);
 public sealed record CreateTestimonialRequest(string Title, string Body, string? ImageUrl = null,
     Guid? TaggedUserId = null, IReadOnlyList<string>? ImageUrls = null, Guid[]? MentionedUserIds = null);
 public sealed record UpdateTestimonialRequest(string Title, string Body,

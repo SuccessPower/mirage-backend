@@ -27,8 +27,12 @@ internal static class AdminEndpoints
         admin.MapGet("/users/{id:guid}", GetUser);
         admin.MapPatch("/users/{id:guid}/suspend", SuspendUser);
         admin.MapPatch("/users/{id:guid}/reactivate", ReactivateUser);
+        admin.MapPatch("/users/{id:guid}/hide", HideUser);
+        admin.MapPatch("/users/{id:guid}/unhide", UnhideUser);
         admin.MapPatch("/users/{id:guid}/verify-profile", VerifyProfile);
         admin.MapPost("/users/{id:guid}/information-request", SendInformationRequest);
+        admin.MapPost("/users/{id:guid}/warnings/profile", SendProfileWarning);
+        admin.MapPost("/users/{id:guid}/warnings/conduct", SendConductWarning);
         admin.MapPost("/users/welcome-emails/backfill", BackfillWelcomeEmails);
         admin.MapPost("/users/welcome-emails/reset", ResetWelcomeEmails);
 
@@ -309,6 +313,7 @@ internal static class AdminEndpoints
                     x.Id,
                     x.Email,
                     x.IsActive,
+                    x.IsHidden,
                     x.EmailConfirmed,
                     x.CreatedAt,
                     Profile = db.Profiles.Where(p => p.UserId == x.Id)
@@ -352,6 +357,7 @@ internal static class AdminEndpoints
             user.Id,
             user.Email,
             user.IsActive,
+            user.IsHidden,
             user.EmailConfirmed,
             user.CreatedAt,
             Roles = roles,
@@ -359,7 +365,18 @@ internal static class AdminEndpoints
         }, "User retrieved successfully.");
     }
 
-    private static async Task<IResult> SuspendUser(Guid id, HttpContext context,
+    private static async Task<IResult> SuspendUser(Guid id, HttpContext context, MirageDbContext db,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+    {
+        var error = await SuspendUserCore(id, context, db, userManager, cancellationToken);
+        if (error is not null) return error;
+        return ApiResults.Ok(context, new { UserId = id, IsActive = false }, "User suspended successfully.");
+    }
+
+    // Shared by the direct suspend action and the "suspend immediately" path on the warning
+    // endpoints below. Also resolves any still-open AccountWarning rows for this user so
+    // WarningReminderService doesn't nag an admin about a deadline the account no longer needs.
+    private static async Task<IResult?> SuspendUserCore(Guid id, HttpContext context, MirageDbContext db,
         UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
     {
         var actor = context.User.GetUserId();
@@ -369,8 +386,18 @@ internal static class AdminEndpoints
         if (!user.IsActive) return EndpointHelpers.Conflict(context, "User is already suspended.");
         user.IsActive = false;
         await userManager.UpdateAsync(user);
+
+        var openWarnings = await db.AccountWarnings
+            .Where(x => x.UserId == id && x.ResolvedAt == null)
+            .ToListAsync(cancellationToken);
+        if (openWarnings.Count > 0)
+        {
+            foreach (var warning in openWarnings) warning.Resolve();
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
         InvalidateAdminReads();
-        return ApiResults.Ok(context, new { UserId = id, IsActive = false }, "User suspended successfully.");
+        return null;
     }
 
     private static async Task<IResult> ReactivateUser(Guid id, HttpContext context,
@@ -383,6 +410,53 @@ internal static class AdminEndpoints
         await userManager.UpdateAsync(user);
         InvalidateAdminReads();
         return ApiResults.Ok(context, new { UserId = id, IsActive = true }, "User reactivated successfully.");
+    }
+
+    // Softer than suspension — the member can still sign in and fix things, but disappears from
+    // Discovery, search, and other members' direct profile views (see ProfileEndpoints.Discover/
+    // GetById and SearchEndpoints.Search) until an admin restores them with UnhideUser.
+    private static async Task<IResult> HideUser(Guid id, HttpContext context,
+        UserManager<ApplicationUser> userManager, NotificationService notifications, IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var actor = context.User.GetUserId();
+        if (actor == id) return EndpointHelpers.Conflict(context, "Cannot hide your own account.");
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "User was not found.");
+        if (!user.IsActive)
+            return EndpointHelpers.Conflict(context, "Suspended accounts are already hidden from other members.");
+        if (user.IsHidden) return EndpointHelpers.Conflict(context, "This account is already hidden.");
+        user.IsHidden = true;
+        await userManager.UpdateAsync(user);
+        InvalidateAdminReads();
+
+        await NotifyProfileHiddenAsync(id, notifications, configuration, cancellationToken);
+        return ApiResults.Ok(context, new { UserId = id, IsHidden = true }, "Profile hidden from other members.");
+    }
+
+    private static async Task<IResult> UnhideUser(Guid id, HttpContext context,
+        UserManager<ApplicationUser> userManager, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var user = await userManager.FindByIdAsync(id.ToString());
+        if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "User was not found.");
+        if (!user.IsHidden) return EndpointHelpers.Conflict(context, "This account is not hidden.");
+        user.IsHidden = false;
+        await userManager.UpdateAsync(user);
+        InvalidateAdminReads();
+
+        await notifications.NotifyAsync(id, NotificationType.ProfileVisibleAgain, "Your profile is visible again",
+            "Your profile is visible to other members again and will appear in Discovery and search as normal.",
+            cancellationToken: cancellationToken);
+        return ApiResults.Ok(context, new { UserId = id, IsHidden = false }, "Profile is visible again.");
+    }
+
+    private static Task NotifyProfileHiddenAsync(Guid id, NotificationService notifications,
+        IConfiguration configuration, CancellationToken cancellationToken)
+    {
+        var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
+        return notifications.NotifyAsync(id, NotificationType.ProfileHidden, "Your profile is temporarily hidden",
+            "Your profile is hidden from other members while our team reviews recent changes needed on your account. It won't appear in Discovery or search until it's restored.",
+            cancellationToken: cancellationToken, actionUrl: $"{frontendUrl}/profile/edit", actionLabel: "Update your profile");
     }
 
     private static async Task<IResult> VerifyProfile(Guid id, HttpContext context, IMirageDbContext db,
@@ -433,6 +507,100 @@ internal static class AdminEndpoints
                 "Email not sent", "The information request could not be delivered. Please try again.");
 
         return ApiResults.Ok(context, new { UserId = id }, "Information request sent successfully.");
+    }
+
+    private static Task<IResult> SendProfileWarning(Guid id, SendAdminWarningRequest request,
+        HttpContext context, MirageDbContext db, IEmailService email, UserManager<ApplicationUser> userManager,
+        NotificationService notifications, IConfiguration configuration, CancellationToken cancellationToken) =>
+        SendWarning(id, request, WarningType.Profile, context, db, email, userManager, notifications, configuration,
+            email.SendProfileWarningEmailAsync, "Profile warning sent successfully.", cancellationToken);
+
+    private static Task<IResult> SendConductWarning(Guid id, SendAdminWarningRequest request,
+        HttpContext context, MirageDbContext db, IEmailService email, UserManager<ApplicationUser> userManager,
+        NotificationService notifications, IConfiguration configuration, CancellationToken cancellationToken) =>
+        SendWarning(id, request, WarningType.Conduct, context, db, email, userManager, notifications, configuration,
+            email.SendConductWarningEmailAsync, "Conduct warning sent successfully.", cancellationToken);
+
+    // Shared by both warning endpoints: validates, optionally suspends immediately (severe
+    // offences) or hides the profile from other members while the deadline is pending, records
+    // the AccountWarning audit row, and sends the notice. `sendEmail` is whichever of the two
+    // templated methods matches the violation type.
+    private static async Task<IResult> SendWarning(Guid id, SendAdminWarningRequest request, WarningType type,
+        HttpContext context, MirageDbContext db, IEmailService email, UserManager<ApplicationUser> userManager,
+        NotificationService notifications, IConfiguration configuration,
+        Func<string, string, string, DateTimeOffset?, string, CancellationToken, Task<bool>> sendEmail,
+        string successMessage, CancellationToken cancellationToken)
+    {
+        var validation = await ValidateWarningRequest(id, request, context, db, configuration, cancellationToken);
+        if (validation.Error is not null) return validation.Error;
+        var (message, deadline, profileUrl, recipientEmail, displayName) = validation.Value!.Value;
+
+        var hidden = false;
+        if (request.SuspendImmediately)
+        {
+            var suspendError = await SuspendUserCore(id, context, db, userManager, cancellationToken);
+            if (suspendError is not null) return suspendError;
+        }
+        else if (request.HideProfile)
+        {
+            var target = await userManager.FindByIdAsync(id.ToString());
+            if (target is not null && !target.IsHidden)
+            {
+                target.IsHidden = true;
+                await userManager.UpdateAsync(target);
+                await NotifyProfileHiddenAsync(id, notifications, configuration, cancellationToken);
+                hidden = true;
+                InvalidateAdminReads();
+            }
+        }
+
+        db.AccountWarnings.Add(new AccountWarning(id, context.User.GetUserId(), type, message, deadline));
+        await db.SaveChangesAsync(cancellationToken);
+
+        var sent = await sendEmail(recipientEmail, displayName, message, deadline, profileUrl, cancellationToken);
+        if (!sent)
+            return EndpointHelpers.Problem(context, StatusCodes.Status503ServiceUnavailable,
+                "Email not sent", "The warning could not be delivered. Please try again.");
+
+        return ApiResults.Ok(context, new { UserId = id, DeadlineUtc = deadline, IsHidden = hidden }, successMessage);
+    }
+
+    // Shared validation for the two warning endpoints above — same message-length rule as
+    // SendInformationRequest. A deadline (1-30 days) is required unless SuspendImmediately is
+    // set, in which case the account is suspended right away and there's nothing to wait on.
+    private static async Task<(IResult? Error, (string Message, DateTimeOffset? Deadline, string ProfileUrl,
+        string RecipientEmail, string DisplayName)? Value)> ValidateWarningRequest(Guid id,
+        SendAdminWarningRequest request, HttpContext context, MirageDbContext db, IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var message = request.Message?.Trim();
+        if (string.IsNullOrWhiteSpace(message) || message.Length is < 10 or > 2000)
+            return (EndpointHelpers.ValidationProblem(context,
+                ("message", "Enter a message between 10 and 2,000 characters.")), null);
+
+        DateTimeOffset? deadline = null;
+        if (!request.SuspendImmediately)
+        {
+            if (request.DeadlineDays is null or < 1 or > 30)
+                return (EndpointHelpers.ValidationProblem(context,
+                    ("deadlineDays", "The deadline must be between 1 and 30 days.")), null);
+            deadline = DateTimeOffset.UtcNow.AddDays(request.DeadlineDays.Value);
+        }
+
+        var recipient = await db.Users.AsNoTracking()
+            .Where(x => x.Id == id && x.IsActive)
+            .Select(x => new
+            {
+                x.Email,
+                DisplayName = db.Profiles.Where(p => p.UserId == x.Id)
+                    .Select(p => p.DisplayName).FirstOrDefault()
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (recipient?.Email is null)
+            return (EndpointHelpers.NotFound(context, "An active user with an email address was not found."), null);
+
+        var frontendUrl = (configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app").TrimEnd('/');
+        return (null, (message, deadline, $"{frontendUrl}/profiles/{id}", recipient.Email, recipient.DisplayName ?? "there"));
     }
 
     // Runs the backlog down in batches within one request rather than one giant query — caps

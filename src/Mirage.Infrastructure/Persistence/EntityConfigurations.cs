@@ -811,6 +811,20 @@ public sealed class ContentReportConfiguration : IEntityTypeConfiguration<Conten
     }
 }
 
+public sealed class AccountWarningConfiguration : IEntityTypeConfiguration<AccountWarning>
+{
+    public void Configure(EntityTypeBuilder<AccountWarning> b)
+    {
+        b.ToTable("account_warnings");
+        // What WarningReminderService scans: open (unresolved), deadlined warnings past due.
+        b.HasIndex(x => new { x.ResolvedAt, x.DeadlineUtc });
+        b.HasIndex(x => x.UserId);
+        b.Property(x => x.Message).HasMaxLength(2000);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.IssuedByUserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notification>
 {
     public void Configure(EntityTypeBuilder<Notification> b)

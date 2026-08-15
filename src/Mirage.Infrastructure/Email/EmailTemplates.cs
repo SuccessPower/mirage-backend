@@ -106,7 +106,10 @@ public static class EmailTemplates
         [NotificationType.ProfileVerified] = ("Verification", Teal),
         [NotificationType.DateOfBirthInvalid] = ("Profile", Amber),
         [NotificationType.ProfilePhotosRequired] = ("Profile photos required", Amber),
-        [NotificationType.ProfilePhotosComplete] = ("Profile photos approved", Teal)
+        [NotificationType.ProfilePhotosComplete] = ("Profile photos approved", Teal),
+        [NotificationType.WarningDeadlinePassed] = ("Warning deadline", Amber),
+        [NotificationType.ProfileHidden] = ("Profile hidden", Amber),
+        [NotificationType.ProfileVisibleAgain] = ("Profile visible", Teal)
     };
 
     public static bool HasTemplate(NotificationType type) => TypeLabels.ContainsKey(type);
@@ -184,6 +187,72 @@ public static class EmailTemplates
                     <p style="color:#beb5cf;line-height:1.6">A Mirage administrator reviewed your account and left this request:</p>
                     <div style="margin:22px 0;padding:20px;background:#120f1b;border-left:3px solid #8b70ff;border-radius:12px;color:#eee8fa;line-height:1.65">{safeMessage}</div>
                     {TemplateEngine.PrimaryButton(profileUrl, "Complete your profile")}
+                    <p style="color:#827991;font-size:12px;margin:20px 0 0">If you believe this was sent in error, contact Mirage support through the Contact page.</p>
+                  </td></tr>
+                </table>
+              </td></tr></table>
+            </body></html>
+            """;
+    }
+
+    // deadline is null for an immediate suspension — the copy switches from "fix this by {date}"
+    // to "this has already happened", and the account is already inactive by the time this sends.
+    public static string ProfileWarning(string displayName, string message, DateTimeOffset? deadline, string profileUrl)
+    {
+        var safeName = WebUtility.HtmlEncode(displayName);
+        var safeMessage = WebUtility.HtmlEncode(message).Replace("\r\n", "<br>").Replace("\n", "<br>");
+        var immediate = deadline is null;
+        var eyebrow = immediate ? "Account suspended" : "Profile warning";
+        var heading = immediate
+            ? $"Hi {safeName}, your account has been suspended"
+            : $"Hi {safeName}, please update your profile";
+        var consequence = immediate
+            ? "This is effective immediately, for a serious breach of our Terms of Service. You will not be able to sign in."
+            : $"Please make the requested changes by <strong style=\"color:#fff\">{deadline:MMMM d, yyyy}</strong>. If your profile has not been updated by then, your account may be suspended.";
+        var ctaLabel = immediate ? "Appeal this decision" : "Update your profile";
+        return $"""
+            <!doctype html><html><body style="margin:0;background:#0f0c16;color:#f4f0ff;font-family:Arial,sans-serif">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#191525;border:1px solid #332b47;border-radius:24px">
+                  <tr><td style="padding:32px">
+                    <div style="color:#f5a524;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">{eyebrow}</div>
+                    <h1 style="font-size:26px;margin:12px 0 10px">{heading}</h1>
+                    <p style="color:#beb5cf;line-height:1.6">A Mirage administrator reviewed your account and found content that does not meet our Terms of Service:</p>
+                    <div style="margin:22px 0;padding:20px;background:#120f1b;border-left:3px solid #f5a524;border-radius:12px;color:#eee8fa;line-height:1.65">{safeMessage}</div>
+                    <p style="color:#beb5cf;line-height:1.6">{consequence}</p>
+                    {TemplateEngine.PrimaryButton(profileUrl, ctaLabel, "#F59E0B")}
+                    <p style="color:#827991;font-size:12px;margin:20px 0 0">If you believe this was sent in error, contact Mirage support through the Contact page.</p>
+                  </td></tr>
+                </table>
+              </td></tr></table>
+            </body></html>
+            """;
+    }
+
+    public static string ConductWarning(string displayName, string message, DateTimeOffset? deadline, string profileUrl)
+    {
+        var safeName = WebUtility.HtmlEncode(displayName);
+        var safeMessage = WebUtility.HtmlEncode(message).Replace("\r\n", "<br>").Replace("\n", "<br>");
+        var immediate = deadline is null;
+        var eyebrow = immediate ? "Account suspended" : "Formal warning";
+        var heading = immediate
+            ? $"Hi {safeName}, your account has been suspended"
+            : $"Hi {safeName}, your account is under review";
+        var consequence = immediate
+            ? "This is effective immediately, for a serious breach of our Terms of Service. You will not be able to sign in."
+            : $"This is a formal warning. If we confirm another violation on your account before <strong style=\"color:#fff\">{deadline:MMMM d, yyyy}</strong>, your account may be suspended.";
+        var ctaLabel = immediate ? "Appeal this decision" : "Review your account";
+        return $"""
+            <!doctype html><html><body style="margin:0;background:#0f0c16;color:#f4f0ff;font-family:Arial,sans-serif">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px">
+                <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#191525;border:1px solid #332b47;border-radius:24px">
+                  <tr><td style="padding:32px">
+                    <div style="color:#e8455a;font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase">{eyebrow}</div>
+                    <h1 style="font-size:26px;margin:12px 0 10px">{heading}</h1>
+                    <p style="color:#beb5cf;line-height:1.6">A Mirage administrator reviewed a report against your account and confirmed a breach of our Terms of Service:</p>
+                    <div style="margin:22px 0;padding:20px;background:#120f1b;border-left:3px solid #e8455a;border-radius:12px;color:#eee8fa;line-height:1.65">{safeMessage}</div>
+                    <p style="color:#beb5cf;line-height:1.6">{consequence}</p>
+                    {TemplateEngine.PrimaryButton(profileUrl, ctaLabel, "#E8455A")}
                     <p style="color:#827991;font-size:12px;margin:20px 0 0">If you believe this was sent in error, contact Mirage support through the Contact page.</p>
                   </td></tr>
                 </table>

@@ -95,6 +95,20 @@ public sealed class AmazonSesEmailService : IEmailService
         SendAsync(toEmail, "Action needed: please update your Mirage profile",
             EmailTemplates.AdminInformationRequest(displayName, message, profileUrl), cancellationToken);
 
+    public Task<bool> SendProfileWarningEmailAsync(string toEmail, string displayName, string message,
+        DateTimeOffset? deadline, string profileUrl, CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, deadline is null
+                ? "Your Mirage account has been suspended"
+                : "Action needed: please update your Mirage profile",
+            EmailTemplates.ProfileWarning(displayName, message, deadline, profileUrl), cancellationToken);
+
+    public Task<bool> SendConductWarningEmailAsync(string toEmail, string displayName, string message,
+        DateTimeOffset? deadline, string profileUrl, CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, deadline is null
+                ? "Your Mirage account has been suspended"
+                : "Your Mirage account is under review",
+            EmailTemplates.ConductWarning(displayName, message, deadline, profileUrl), cancellationToken);
+
     public Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,
         string storyUrl, CancellationToken cancellationToken = default)
     {
