@@ -43,13 +43,24 @@ internal static class NewsletterShareEndpoints
             ? share.Excerpt
             : "A story from The Mirage Journal.";
         // The cover mirrors the reader page: the chosen thumbnail, else the first gallery photograph.
-        var imageUrl = share.ThumbnailUrl ?? share.ImageUrls.FirstOrDefault() ?? FallbackImageUrl;
+        var imageUrl = ToPreviewImage(share.ThumbnailUrl ?? share.ImageUrls.FirstOrDefault() ?? FallbackImageUrl);
         // Same URL as the page itself — the SPA route (NewsletterDetailPage.vue) lives at
         // /newsletters/{id} too, and only bot traffic ever reaches this endpoint (see vercel.json's
         // user-agent-gated rewrite), so real browsers should never actually hit this redirect.
         var redirectUrl = pageUrl;
 
         return Results.Content(RenderHtml(title, description, imageUrl, pageUrl, redirectUrl), "text/html");
+    }
+
+    // WhatsApp (and several other messengers) silently drop og:image files heavier than ~600 KB,
+    // and uploaded covers can run to many megabytes. Cloudinary resizes on the fly: injecting a
+    // transformation segment after /upload/ serves a 1200x630 JPEG crop of preview weight without
+    // touching the stored original. Non-Cloudinary URLs pass through untouched.
+    private static string ToPreviewImage(string url)
+    {
+        const string marker = "/upload/";
+        var index = url.IndexOf(marker, StringComparison.Ordinal);
+        return index < 0 ? url : url.Insert(index + marker.Length, "w_1200,h_630,c_fill,g_auto,q_auto:good,f_jpg/");
     }
 
     // All string parameters are raw (un-encoded) — encoding happens once, here, for every field.
@@ -74,6 +85,8 @@ internal static class NewsletterShareEndpoints
             <meta property="og:title" content="{encodedTitle}">
             <meta property="og:description" content="{encodedDescription}">
             <meta property="og:image" content="{encodedImageUrl}">
+            <meta property="og:image:width" content="1200">
+            <meta property="og:image:height" content="630">
             <meta property="og:url" content="{encodedPageUrl}">
             <meta name="twitter:card" content="summary_large_image">
             <meta name="twitter:title" content="{encodedTitle}">
