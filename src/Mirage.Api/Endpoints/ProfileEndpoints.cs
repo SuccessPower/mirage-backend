@@ -507,7 +507,8 @@ internal static class ProfileEndpoints
         };
 
     private static async Task<IResult> UpdateMine(UpdateProfileRequest request, HttpContext context,
-        IMirageDbContext db, ProfileImageValidationService imageValidation, CancellationToken cancellationToken)
+        IMirageDbContext db, ProfileImageValidationService imageValidation, NotificationService notifications,
+        IConfiguration configuration, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.City))
             return EndpointHelpers.ValidationProblem(context, ("profile", "Display name and city are required."));
@@ -588,6 +589,8 @@ internal static class ProfileEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await notifications.NotifyAdminsOfProfileUpdateAsync(profile.UserId, FrontendBaseUrl(configuration),
+            cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");
     }
 
@@ -626,6 +629,8 @@ internal static class ProfileEndpoints
         try { profile.SetPhotos(request.PhotoUrls); }
         catch (InvalidOperationException ex) { return EndpointHelpers.Conflict(context, ex.Message); }
         await db.SaveChangesAsync(cancellationToken);
+        await notifications.NotifyAdminsOfProfileUpdateAsync(userId, FrontendBaseUrl(configuration),
+            cancellationToken);
 
         // Crossing the photo threshold is the moment the account stops being restricted, so it's
         // worth telling people out-of-band rather than leaving them to notice. Only on the crossing,

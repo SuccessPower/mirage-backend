@@ -163,7 +163,10 @@ public enum NotificationType
     // The member-facing pair for AdminEndpoints.HideUser/UnhideUser — distinct from suspension:
     // the account can still sign in, it's just hidden from other members in the meantime.
     ProfileHidden = 45,
-    ProfileVisibleAgain = 46
+    ProfileVisibleAgain = 46,
+    // Sent to the admin who hid a profile or issued a profile/conduct warning, once the user goes
+    // and updates their profile — see NotificationService.NotifyAdminsOfProfileUpdateAsync.
+    ProfileUpdatedAfterReview = 47
 }
 
 public enum CelebrationType

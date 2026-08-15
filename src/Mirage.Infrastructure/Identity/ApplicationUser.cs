@@ -9,6 +9,9 @@ public sealed class ApplicationUser : IdentityUser<Guid>
     // Discovery, search, and other members' direct profile views until an admin restores it.
     // See AdminEndpoints.HideUser/UnhideUser.
     public bool IsHidden { get; set; }
+    // Which admin hid this account, so NotificationService.NotifyAdminsOfProfileUpdateAsync knows
+    // who to nudge once the user updates their profile. Cleared on unhide or after that nudge fires.
+    public Guid? HiddenByAdminId { get; set; }
     public bool IsDeleted { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; } = DateTimeOffset.UtcNow;
