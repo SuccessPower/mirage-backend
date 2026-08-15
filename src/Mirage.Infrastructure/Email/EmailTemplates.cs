@@ -18,8 +18,8 @@ public static class EmailTemplates
     {
         var cta = confirmUrl is null ? "" : TemplateEngine.PrimaryButton(confirmUrl, "Confirm your email");
         var preheader = confirmUrl is null
-            ? $"Welcome to Mirage, {displayName} — your relationship journey starts now."
-            : $"Welcome to Mirage, {displayName} — confirm your email to start liking, matching, and chatting.";
+            ? $"Welcome to Mirage, {displayName}. Your relationship journey starts now."
+            : $"Welcome to Mirage, {displayName}. Confirm your email to start liking, matching, and chatting.";
         return TemplateEngine.RenderPage("welcome", preheader,
             new Dictionary<string, string> { [DisplayNameToken] = displayName },
             ctaBlock: cta).Replace("{{APP_URL}}", appUrl);
@@ -34,7 +34,7 @@ public static class EmailTemplates
             });
 
     public static string PasswordReset(string displayName, string resetUrl) =>
-        TemplateEngine.RenderPage("password-reset", "Reset your Mirage password — this link expires in 24 hours.",
+        TemplateEngine.RenderPage("password-reset", "Reset your Mirage password. This link expires in 24 hours.",
             new Dictionary<string, string>
             {
                 [DisplayNameToken] = displayName,
@@ -205,7 +205,7 @@ public static class EmailTemplates
             ? "wishing you a very happy birthday! May the year ahead be full of joy, growth, and beautiful moments."
             : "wishing you a very happy anniversary! Here's to many more years of love and partnership.";
         var title = $"{meta.Emoji} {meta.Label}, {displayName}!";
-        var preheader = $"{meta.Label}, {displayName} — the whole Mirage team is thinking of you today.";
+        var preheader = $"{meta.Label}, {displayName}! The whole Mirage team is thinking of you today.";
         var cta = TemplateEngine.PrimaryButton(storyUrl, "View your celebration", meta.Color);
 
         return TemplateEngine.RenderPage("celebration", preheader,

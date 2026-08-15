@@ -473,7 +473,7 @@ internal static class AdminEndpoints
             .ExecuteUpdateAsync(x => x.SetProperty(u => u.WelcomeEmailSentAt, (DateTimeOffset?)null), cancellationToken);
 
         return ApiResults.Ok(context, new { MatchedCount = updated },
-            "Welcome email status reset — call the backfill endpoint to re-send.");
+            "Welcome email status reset. Call the backfill endpoint to re-send.");
     }
 
     // --- Content reports ---
@@ -1135,6 +1135,6 @@ internal static class AdminEndpoints
 
         return ApiResults.Ok(context,
             new { Email = normalizedEmail, InviteToken = rawToken, ExpiresInDays = expiryDays },
-            "Organisation admin invite created. Share the token with the invitee — their organisation will be pre-approved.");
+            "Organisation admin invite created. Share the token with the invitee; their organisation will be pre-approved.");
     }
 }

@@ -42,7 +42,7 @@ internal static class GatheringShareEndpoints
                 RenderHtml("Mirage", "A gathering shared on Mirage.", FallbackImageUrl, pageUrl, SiteUrl),
                 "text/html");
 
-        var title = $"{share.Activity} — hosted by {share.HostDisplayName}";
+        var title = $"{share.Activity}, hosted by {share.HostDisplayName}";
         var description = !string.IsNullOrWhiteSpace(share.Note)
             ? share.Note
             : $"Join this gathering in {share.LocationArea} on Mirage.";

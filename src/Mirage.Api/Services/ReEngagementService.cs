@@ -78,7 +78,7 @@ public sealed class ReEngagementService(MirageDbContext db, IEmailService email,
     }
 
     private static string Intro(bool isMarried) => isMarried
-        ? "it's been a little while since you were on Mirage, and plenty has been happening. Here are a few places worth a look — including one that only you can fill in."
+        ? "it's been a little while since you were on Mirage, and plenty has been happening. Here are a few places worth a look, including one that only you can fill in."
         : "it's been a little while since you were on Mirage, and plenty has been happening. Here are a few places worth a look while you're back.";
 
     private static IReadOnlyList<(string Heading, string Blurb, string Url)> Highlights(string appUrl, bool isMarried)

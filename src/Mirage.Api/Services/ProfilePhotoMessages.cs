@@ -10,12 +10,12 @@ public static class ProfilePhotoMessages
     // Says why we ask and what a bad photo costs. People comply with a rule they understand, and
     // "your photo was rejected" lands very differently when they were told the standard up front.
     public const string ReminderBody =
-        "Mirage asks for at least two clear photos of you so members can see they're talking to a real person — "
-        + "it's the main thing that keeps the community trustworthy. Until you add them, your profile stays hidden "
-        + "and you can view only two profiles. Photos that don't clearly show your face — group shots, cartoons, "
-        + "logos or screenshots — will be rejected, and your profile stays hidden until you replace them.";
+        "Mirage asks for at least two clear photos of you so members can see they're talking to a real person. "
+        + "It's the main thing that keeps the community trustworthy. Until you add them, your profile stays hidden "
+        + "and you can view only two profiles. Photos that don't clearly show your face (group shots, cartoons, "
+        + "logos or screenshots) will be rejected, and your profile stays hidden until you replace them.";
 
-    public const string CompleteTitle = "Your photos are approved — you're fully unlocked";
+    public const string CompleteTitle = "Your photos are approved. You're fully unlocked";
 
     public const string CompleteBody =
         "Your photos passed our checks, so your profile is now visible to everyone on Mirage and you can browse as "
