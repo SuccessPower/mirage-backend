@@ -62,3 +62,19 @@ public sealed class CelebrationWish : Entity
     public Guid AuthorUserId { get; private set; }
     public string Body { get; private set; } = string.Empty;
 }
+
+// A reaction to a wish — lets a member cheer someone else's birthday message without writing
+// their own reply. One row per (wish, user); toggled on/off from CelebrationEndpoints.
+public sealed class CelebrationWishLike : Entity
+{
+    private CelebrationWishLike() { }
+
+    public CelebrationWishLike(Guid celebrationWishId, Guid userId)
+    {
+        CelebrationWishId = celebrationWishId;
+        UserId = userId;
+    }
+
+    public Guid CelebrationWishId { get; private set; }
+    public Guid UserId { get; private set; }
+}

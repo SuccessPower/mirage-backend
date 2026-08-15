@@ -230,7 +230,7 @@ public sealed record CelebrationResponse(
 
 public sealed record CelebrationWishResponse(
     Guid Id, Guid CelebrationId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
-    string Body, DateTimeOffset CreatedAt);
+    string Body, DateTimeOffset CreatedAt, int LikeCount, bool LikedByMe);
 
 public sealed record TestimonialCommentResponse(
     Guid Id, Guid TestimonialId, Guid AuthorUserId, string AuthorName, string? AuthorAvatarUrl,
