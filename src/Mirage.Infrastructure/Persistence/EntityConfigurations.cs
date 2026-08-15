@@ -199,6 +199,17 @@ public sealed class CelebrationWishConfiguration : IEntityTypeConfiguration<Cele
     }
 }
 
+public sealed class CelebrationWishLikeConfiguration : IEntityTypeConfiguration<CelebrationWishLike>
+{
+    public void Configure(EntityTypeBuilder<CelebrationWishLike> b)
+    {
+        b.ToTable("celebration_wish_likes");
+        b.HasIndex(x => new { x.CelebrationWishId, x.UserId }).IsUnique();
+        b.HasOne<CelebrationWish>().WithMany().HasForeignKey(x => x.CelebrationWishId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class TestimonialReadConfiguration : IEntityTypeConfiguration<TestimonialRead>
 {
     public void Configure(EntityTypeBuilder<TestimonialRead> b)

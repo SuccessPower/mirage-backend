@@ -15,6 +15,9 @@ internal static class CelebrationEndpoints
         group.MapGet("/user/{userId:guid}", ListForUser);
         group.MapGet("/{id:guid}/wishes", ListWishes);
         group.MapPost("/{id:guid}/wishes", AddWish);
+        group.MapDelete("/wishes/{wishId:guid}", DeleteWish);
+        group.MapPost("/wishes/{wishId:guid}/likes", LikeWish);
+        group.MapDelete("/wishes/{wishId:guid}/likes", UnlikeWish);
         return api;
     }
 
@@ -48,13 +51,16 @@ internal static class CelebrationEndpoints
     {
         if (!await db.CelebrationEntries.AsNoTracking().AnyAsync(x => x.Id == id, cancellationToken))
             return EndpointHelpers.NotFound(context, "Celebration was not found.");
+        var userId = context.User.GetUserId();
         var wishes = await db.CelebrationWishes.AsNoTracking()
             .Where(x => x.CelebrationEntryId == id)
             .OrderBy(x => x.CreatedAt)
             .Select(x => new CelebrationWishResponse(x.Id, x.CelebrationEntryId, x.AuthorUserId,
                 db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.DisplayName).FirstOrDefault() ?? "Mirage member",
                 db.Profiles.Where(p => p.UserId == x.AuthorUserId).Select(p => p.AvatarUrl).FirstOrDefault(),
-                x.Body, x.CreatedAt))
+                x.Body, x.CreatedAt,
+                db.CelebrationWishLikes.Count(l => l.CelebrationWishId == x.Id),
+                db.CelebrationWishLikes.Any(l => l.CelebrationWishId == x.Id && l.UserId == userId)))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, wishes, "Wishes retrieved successfully.");
     }
@@ -74,8 +80,58 @@ internal static class CelebrationEndpoints
         var author = await db.Profiles.AsNoTracking().Where(x => x.UserId == wish.AuthorUserId)
             .Select(x => new { x.DisplayName, x.AvatarUrl }).SingleAsync(cancellationToken);
         var response = new CelebrationWishResponse(wish.Id, wish.CelebrationEntryId, wish.AuthorUserId,
-            author.DisplayName, author.AvatarUrl, wish.Body, wish.CreatedAt);
+            author.DisplayName, author.AvatarUrl, wish.Body, wish.CreatedAt, 0, false);
         return ApiResults.Created(context, $"/api/v1/celebrations/{id}/wishes", response, "Wish posted.");
+    }
+
+    private static async Task<IResult> DeleteWish(Guid wishId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var wish = await db.CelebrationWishes.SingleOrDefaultAsync(x => x.Id == wishId, cancellationToken);
+        if (wish is null) return EndpointHelpers.NotFound(context, "Wish was not found.");
+        if (wish.AuthorUserId != userId) return EndpointHelpers.Forbidden(context);
+
+        db.CelebrationWishes.Remove(wish);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { wish.Id }, "Wish deleted successfully.");
+    }
+
+    private static async Task<IResult> LikeWish(Guid wishId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await db.CelebrationWishes.AsNoTracking().AnyAsync(x => x.Id == wishId, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Wish was not found.");
+
+        if (!await db.CelebrationWishLikes.AnyAsync(x => x.CelebrationWishId == wishId && x.UserId == userId,
+                cancellationToken))
+        {
+            db.CelebrationWishLikes.Add(new CelebrationWishLike(wishId, userId));
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var likeCount = await db.CelebrationWishLikes.CountAsync(x => x.CelebrationWishId == wishId, cancellationToken);
+        return ApiResults.Ok(context, new { wishId, likeCount, likedByMe = true }, "Wish liked successfully.");
+    }
+
+    private static async Task<IResult> UnlikeWish(Guid wishId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await db.CelebrationWishes.AsNoTracking().AnyAsync(x => x.Id == wishId, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Wish was not found.");
+
+        var like = await db.CelebrationWishLikes.SingleOrDefaultAsync(
+            x => x.CelebrationWishId == wishId && x.UserId == userId, cancellationToken);
+        if (like is not null)
+        {
+            db.CelebrationWishLikes.Remove(like);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        var likeCount = await db.CelebrationWishLikes.CountAsync(x => x.CelebrationWishId == wishId, cancellationToken);
+        return ApiResults.Ok(context, new { wishId, likeCount, likedByMe = false }, "Wish like removed.");
     }
 
     private static async Task<IReadOnlyList<CelebrationResponse>> ProjectAsync(
