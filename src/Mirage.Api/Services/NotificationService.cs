@@ -50,7 +50,12 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         NotificationType.VendorRejected,
         NotificationType.DateOfBirthInvalid,
         NotificationType.ProfilePhotosRequired,
-        NotificationType.ProfilePhotosComplete
+        NotificationType.ProfilePhotosComplete,
+        // Goes to an admin, not a member — it's the one nudge that a warning deadline passed
+        // unresolved, so it has to actually reach them rather than sit unread in-app.
+        NotificationType.WarningDeadlinePassed,
+        NotificationType.ProfileHidden,
+        NotificationType.ProfileVisibleAgain
     ];
 
     public async Task NotifyAsync(Guid userId, NotificationType type, string title, string body,

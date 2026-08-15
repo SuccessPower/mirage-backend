@@ -43,6 +43,19 @@ public interface IEmailService
     Task<bool> SendAdminInformationRequestEmailAsync(string toEmail, string displayName, string message,
         string profileUrl, CancellationToken cancellationToken = default);
 
+    // Warning that fictitious or non-compliant profile content (photos, name, DOB, bio) needs
+    // fixing by `deadline`, or the account becomes eligible for suspension. A null deadline means
+    // the account was already suspended immediately — the email tells the member that instead of
+    // giving them time to fix it. See SendConductWarningEmailAsync for behavioural warnings.
+    Task<bool> SendProfileWarningEmailAsync(string toEmail, string displayName, string message,
+        DateTimeOffset? deadline, string profileUrl, CancellationToken cancellationToken = default);
+
+    // Warning for a confirmed content-report violation (harassing, harmful, or otherwise
+    // rule-breaking posts/comments) — distinct from SendProfileWarningEmailAsync because the
+    // remedy here is behavioural, not a profile edit. Null deadline = immediate suspension.
+    Task<bool> SendConductWarningEmailAsync(string toEmail, string displayName, string message,
+        DateTimeOffset? deadline, string profileUrl, CancellationToken cancellationToken = default);
+
     // Sent alongside the in-app celebration post (see CelebrationPostService) when a member's
     // birthday or wedding anniversary falls on today's date.
     Task<bool> SendCelebrationEmailAsync(string toEmail, string displayName, CelebrationType type,

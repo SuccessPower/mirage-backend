@@ -38,7 +38,7 @@ internal static class NewsletterShareEndpoints
                     FallbackImageUrl, pageUrl, SiteUrl),
                 "text/html");
 
-        var title = $"{share.Title} — The Mirage Journal";
+        var title = $"{share.Title} | The Mirage Journal";
         var description = !string.IsNullOrWhiteSpace(share.Excerpt)
             ? share.Excerpt
             : "A story from The Mirage Journal.";

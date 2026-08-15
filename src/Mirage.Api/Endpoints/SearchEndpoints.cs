@@ -32,8 +32,8 @@ internal static class SearchEndpoints
         results.AddRange(await db.Profiles.AsNoTracking()
             .Where(profile => profile.IsProfileComplete
                 && EF.Functions.ILike(profile.DisplayName, pattern))
-            .Where(profile => db.Users.Any(user => user.Id == profile.UserId && user.IsActive))
-            // Search used the same visibility rule as Discovery, or it would surface profiles whose
+            .Where(profile => db.Users.Any(user => user.Id == profile.UserId && user.IsActive && !user.IsHidden))
+            // Search uses the same visibility rule as Discovery, or it would surface profiles whose
             // deep link then 404s at GetById.
             .Where(ProfilePhotoVisibility.IsVisible(ProfilePhotoVisibility.Cutoff(configuration)))
             .OrderBy(profile => profile.DisplayName)

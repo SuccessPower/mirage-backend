@@ -788,7 +788,7 @@ internal static class OrganisationEndpoints
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return EndpointHelpers.ValidationProblem(context,
-                ("file", "Could not read the uploaded file — make sure it's a valid .xlsx with Name/City/Country/Address columns."));
+                ("file", "Could not read the uploaded file. Make sure it's a valid .xlsx with Name/City/Country/Address columns."));
         }
 
         await db.SaveChangesAsync(cancellationToken);

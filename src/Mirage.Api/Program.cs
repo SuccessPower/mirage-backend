@@ -117,6 +117,8 @@ builder.Services.AddScoped<CompanionReminderService>();
 builder.Services.AddHostedService<CompanionReminderWorker>();
 builder.Services.AddScoped<ProfilePhotoReminderService>();
 builder.Services.AddHostedService<ProfilePhotoReminderWorker>();
+builder.Services.AddScoped<WarningReminderService>();
+builder.Services.AddHostedService<WarningReminderWorker>();
 builder.Services.AddScoped<ReEngagementService>();
 builder.Services.AddHostedService<ReEngagementWorker>();
 builder.Services.AddScoped<NewsletterDispatchService>();

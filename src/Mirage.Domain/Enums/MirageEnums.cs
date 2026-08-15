@@ -47,6 +47,9 @@ public enum MilestoneType { Dating = 1, Engaged = 2, Married = 3, Separated = 4 
 public enum ContentReportTargetType { Profile = 1, DateRequest = 2, Recommendation = 3, CounsellorProfile = 4 }
 public enum ContentReportReason { Inappropriate = 1, FakeProfile = 2, Harassment = 3, Spam = 4, Other = 5 }
 public enum ContentReportStatus { Pending = 1, UnderReview = 2, ActionTaken = 3, Dismissed = 4 }
+// The two admin warning emails (see AccountWarning) — distinct because the remedy differs: a
+// profile edit vs. a behaviour change.
+public enum WarningType { Profile = 1, Conduct = 2 }
 public enum GatheringInviteKind { Community = 1, DateRequest = 2, OrganisationManager = 3 }
 public enum GatheringInviteStatus { Pending = 1, Accepted = 2, Declined = 3 }
 public enum VendorStatus { Pending = 1, Approved = 2, Rejected = 3, Suspended = 4 }
@@ -153,7 +156,14 @@ public enum NotificationType
     ProfilePhotosComplete = 40,
     PostReaction = 41,
     PostComment = 42,
-    PaymentRefunded = 43
+    PaymentRefunded = 43,
+    // Sent to the admin who issued an AccountWarning when its deadline passes with the account
+    // still active — see WarningReminderService.
+    WarningDeadlinePassed = 44,
+    // The member-facing pair for AdminEndpoints.HideUser/UnhideUser — distinct from suspension:
+    // the account can still sign in, it's just hidden from other members in the meantime.
+    ProfileHidden = 45,
+    ProfileVisibleAgain = 46
 }
 
 public enum CelebrationType

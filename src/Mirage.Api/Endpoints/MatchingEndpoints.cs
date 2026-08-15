@@ -160,7 +160,7 @@ internal static class MatchingEndpoints
                 sourceUserId, requesterId, match.Id, cancellationToken);
             await db.SaveChangesAsync(cancellationToken);
             await notifications.NotifyAsync(requesterId, NotificationType.ChatRequestApproved,
-                "It's a match!", $"{sourceName} liked you back — you can start chatting now.",
+                "It's a match!", $"{sourceName} liked you back. You can start chatting now.",
                 match.Id, "Match", cancellationToken);
         }
         else
@@ -172,7 +172,7 @@ internal static class MatchingEndpoints
             new { isMatch = match.Status == MatchStatus.Active, matchId = match.Id, status = match.Status.ToString() },
             justMatched ? "It's a match!"
                 : match.Status == MatchStatus.Active ? "You are already connected."
-                : "Like sent — chat request delivered.");
+                : "Like sent. Chat request delivered.");
     }
 
     private static async Task<IResult> GetMyLikes(HttpContext context, IMirageDbContext db,

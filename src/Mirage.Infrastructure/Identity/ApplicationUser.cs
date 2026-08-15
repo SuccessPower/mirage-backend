@@ -5,6 +5,10 @@ namespace Mirage.Infrastructure.Identity;
 public sealed class ApplicationUser : IdentityUser<Guid>
 {
     public bool IsActive { get; set; } = true;
+    // Softer than suspension: the account can still sign in and fix things, but is hidden from
+    // Discovery, search, and other members' direct profile views until an admin restores it.
+    // See AdminEndpoints.HideUser/UnhideUser.
+    public bool IsHidden { get; set; }
     public bool IsDeleted { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; } = DateTimeOffset.UtcNow;

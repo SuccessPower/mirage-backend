@@ -88,8 +88,10 @@ internal static class ProfileEndpoints
 
         var query = db.Profiles.AsNoTracking().AsQueryable();
 
-        // Deactivated/deleted accounts (ApplicationUser.IsActive = false) never surface here.
-        query = query.Where(x => db.Users.Any(u => u.Id == x.UserId && u.IsActive));
+        // Deactivated/deleted accounts (ApplicationUser.IsActive = false) never surface here, nor
+        // do accounts an admin has temporarily hidden pending a warning (IsHidden — see
+        // AdminEndpoints.HideUser). Hidden differs from suspended: the member can still sign in.
+        query = query.Where(x => db.Users.Any(u => u.Id == x.UserId && u.IsActive && !u.IsHidden));
 
         // A Google sign-in that hasn't finished CompleteProfile yet has a sentinel DOB and blank
         // city/denomination — not fit to show in Discovery until they fill it in.
@@ -281,13 +283,19 @@ internal static class ProfileEndpoints
         var profile = await db.Profiles.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
         var account = await db.Users.AsNoTracking().Where(user => user.Id == userId)
-            .Select(user => new { user.Email, user.IsActive }).SingleOrDefaultAsync(cancellationToken);
+            .Select(user => new { user.Email, user.IsActive, user.IsHidden }).SingleOrDefaultAsync(cancellationToken);
         if (account is null || !account.IsActive) return EndpointHelpers.NotFound(context, "Profile was not found.");
+
+        var visitorUserId = context.User.GetUserId();
+        // A hidden account stays visible to its own owner and to platform admins reviewing it —
+        // everyone else gets the same "not found" a suspended profile would return.
+        if (account.IsHidden && visitorUserId != userId && !context.User.IsInRole(MirageRoles.PlatformAdmin))
+            return EndpointHelpers.NotFound(context, "Profile was not found.");
+
         var recommended = await db.Recommendations.AnyAsync(
             x => x.RecommendedUserId == userId && x.Status == RecommendationStatus.Active, cancellationToken);
         var badge = await db.GetOrgBadgeAsync(userId, cancellationToken);
 
-        var visitorUserId = context.User.GetUserId();
         if (visitorUserId != userId)
         {
             var photoCutoff = ProfilePhotoVisibility.Cutoff(configuration);

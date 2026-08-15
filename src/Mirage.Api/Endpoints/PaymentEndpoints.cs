@@ -95,7 +95,7 @@ internal static class PaymentEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         await notifications.NotifyAsync(payment.PayerUserId, NotificationType.PaymentConfirmed,
-            "Payment confirmed", "Your payment was received — your session request has been sent to the counsellor.",
+            "Payment confirmed", "Your payment was received and your session request has been sent to the counsellor.",
             session.Id, "CounsellingSession", cancellationToken);
         await notifications.NotifyAsync(session.Counsellor.UserId, NotificationType.SessionBooked,
             "New session request", $"A new {session.Type.ToString().ToLowerInvariant()} session was requested.",
