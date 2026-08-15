@@ -25,6 +25,7 @@ public interface IMirageDbContext
     DbSet<MilestoneLog> MilestoneLogs { get; }
     DbSet<DateFeedback> DateFeedbacks { get; }
     DbSet<ContentReport> ContentReports { get; }
+    DbSet<AccountWarning> AccountWarnings { get; }
     DbSet<Message> Messages { get; }
     DbSet<ChatEncryptionIdentity> ChatEncryptionIdentities { get; }
     DbSet<ChatDeviceLink> ChatDeviceLinks { get; }

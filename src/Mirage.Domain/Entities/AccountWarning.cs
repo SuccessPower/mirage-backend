@@ -28,11 +28,22 @@ public sealed class AccountWarning : Entity
     public string Message { get; private set; } = string.Empty;
     public DateTimeOffset? DeadlineUtc { get; private set; }
     public DateTimeOffset? ResolvedAt { get; private set; }
+    // Set once NotificationService.NotifyAdminsOfProfileUpdateAsync has nudged IssuedByUserId that
+    // the user updated their profile — separate from ResolvedAt, which only the admin sets by
+    // actually resolving the warning, so that nudge fires at most once per warning.
+    public DateTimeOffset? ProfileUpdateNotifiedAt { get; private set; }
 
     public void Resolve()
     {
         if (ResolvedAt is not null) return;
         ResolvedAt = DateTimeOffset.UtcNow;
+        Touch();
+    }
+
+    public void MarkProfileUpdateNotified()
+    {
+        if (ProfileUpdateNotifiedAt is not null) return;
+        ProfileUpdateNotifiedAt = DateTimeOffset.UtcNow;
         Touch();
     }
 }

@@ -85,6 +85,45 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
             await SendNotificationEmailAsync(userId, type, title, body, actionUrl, actionLabel, cancellationToken);
     }
 
+    // Called after a self-service profile update (UpdateMine/UpdateMyPhotos) to nudge whichever
+    // admin(s) flagged this account — via a direct hide or an open profile/conduct warning — that
+    // it's worth another look. Each flag fires at most once: the hide flag clears itself here, and
+    // each warning is stamped so it won't re-fire on the next edit.
+    public async Task NotifyAdminsOfProfileUpdateAsync(Guid userId, string frontendUrl,
+        CancellationToken cancellationToken = default)
+    {
+        var adminIds = new List<Guid>();
+
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user?.HiddenByAdminId is { } hiddenBy)
+        {
+            adminIds.Add(hiddenBy);
+            user.HiddenByAdminId = null;
+            await userManager.UpdateAsync(user);
+        }
+
+        var pendingWarnings = await db.AccountWarnings
+            .Where(w => w.UserId == userId && w.ResolvedAt == null && w.ProfileUpdateNotifiedAt == null
+                && (w.Type == WarningType.Profile || w.Type == WarningType.Conduct))
+            .ToListAsync(cancellationToken);
+        foreach (var warning in pendingWarnings)
+        {
+            adminIds.Add(warning.IssuedByUserId);
+            warning.MarkProfileUpdateNotified();
+        }
+        if (pendingWarnings.Count > 0) await db.SaveChangesAsync(cancellationToken);
+        if (adminIds.Count == 0) return;
+
+        var memberName = await db.Profiles.AsNoTracking().Where(p => p.UserId == userId)
+            .Select(p => p.DisplayName).FirstOrDefaultAsync(cancellationToken) ?? "A member";
+
+        foreach (var adminId in adminIds.Distinct())
+            await NotifyAsync(adminId, NotificationType.ProfileUpdatedAfterReview, "Member updated their profile",
+                $"{memberName} updated their profile after you flagged it for review. Take a look and resolve it if it's sorted.",
+                referenceId: userId, referenceType: "Profile", cancellationToken: cancellationToken,
+                actionUrl: $"{frontendUrl}/profiles/{userId}", actionLabel: "Review profile");
+    }
+
     private async Task SendPushAsync(Notification notification, CancellationToken cancellationToken)
     {
         if (!push.IsEnabled) return;

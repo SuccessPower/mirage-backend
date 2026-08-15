@@ -427,6 +427,7 @@ internal static class AdminEndpoints
             return EndpointHelpers.Conflict(context, "Suspended accounts are already hidden from other members.");
         if (user.IsHidden) return EndpointHelpers.Conflict(context, "This account is already hidden.");
         user.IsHidden = true;
+        user.HiddenByAdminId = actor;
         await userManager.UpdateAsync(user);
         InvalidateAdminReads();
 
@@ -441,6 +442,7 @@ internal static class AdminEndpoints
         if (user is null || user.IsDeleted) return EndpointHelpers.NotFound(context, "User was not found.");
         if (!user.IsHidden) return EndpointHelpers.Conflict(context, "This account is not hidden.");
         user.IsHidden = false;
+        user.HiddenByAdminId = null;
         await userManager.UpdateAsync(user);
         InvalidateAdminReads();
 
