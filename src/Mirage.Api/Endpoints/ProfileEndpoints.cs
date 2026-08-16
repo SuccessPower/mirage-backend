@@ -108,7 +108,6 @@ internal static class ProfileEndpoints
         string? myCity = null;
         string? myCountry = null;
         Sex? mySex = null;
-        var viewerIsMarried = false;
         if (currentUserId.HasValue)
         {
             var me = currentUserId.Value;
@@ -137,7 +136,6 @@ internal static class ProfileEndpoints
             myCity = mine?.City;
             myCountry = mine?.Country;
             mySex = mine?.Sex;
-            viewerIsMarried = mine?.RelationshipStatus == RelationshipStatus.Married;
 
             // Grandfathered members browse unthrottled too — the 2-profile budget is meant to push
             // new joiners to upload, not to lock out people who predate the rule. Photos are also
@@ -166,26 +164,20 @@ internal static class ProfileEndpoints
                 query = query.Where(x => x.ContinentCode == mine.ContinentCode);
         }
 
-        if (section == SectionCategory.Friendship)
-        {
-            // Friendship pairs marital peer groups: married members see other married members,
-            // everyone else (including guests) sees unmarried members.
-            query = viewerIsMarried
-                ? query.Where(x => x.RelationshipStatus == RelationshipStatus.Married)
-                : query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
-        }
-        else if (section == SectionCategory.Marriage)
+        if (section == SectionCategory.Marriage)
         {
             // The Marriage tab is a browse-only community of already-married members — not a
             // romantic matching feed — so both genders show up regardless of the viewer's own
             // sex or marital status.
             query = query.Where(x => x.RelationshipStatus == RelationshipStatus.Married);
         }
-        else
+        else if (section != SectionCategory.Friendship)
         {
             // Dating and the default "All" feed never surface married profiles — married members
             // browse couples through /couples/discover instead — and approved couples are off
-            // the market.
+            // the market. Friendship has no relationship-status filter at all: every status,
+            // married included, shows to every viewer there (connecting across the married/
+            // unmarried line is still blocked in MatchingEndpoints.Like — this is visibility only).
             query = query.Where(x => x.RelationshipStatus != RelationshipStatus.Married);
             query = query.Where(x => !db.Couples.Any(c => c.Status == CoupleStatus.Approved
                 && (c.User1Id == x.UserId || c.User2Id == x.UserId)));
