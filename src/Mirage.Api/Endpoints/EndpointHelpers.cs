@@ -82,7 +82,8 @@ internal static class EndpointHelpers
             ContinentCode: profile.ContinentCode, TimeZoneId: profile.TimeZoneId,
             DiscoveryScope: profile.DiscoveryScope, PreferredCountryCodes: profile.PreferredCountryCodes,
             WeddingAnniversaryDate: profile.WeddingAnniversaryDate, CelebrationOptOut: profile.CelebrationOptOut,
-            HasRequiredProfilePhotos: profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos);
+            HasRequiredProfilePhotos: profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
+                || profile.RelationshipStatus == RelationshipStatus.Married);
 
     // Badge eligibility: an approved member of an org (or the org's own owner/admin), where that
     // org has a logo uploaded and is itself approved. A user belongs to at most one org at a time

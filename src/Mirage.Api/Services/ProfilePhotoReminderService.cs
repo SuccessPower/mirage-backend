@@ -13,6 +13,7 @@ public sealed class ProfilePhotoReminderService(MirageDbContext db, Notification
         var cutoff = DateTimeOffset.UtcNow.AddHours(-24);
         var candidates = await db.Profiles.AsNoTracking()
             .Where(profile => profile.PhotoUrls.Length < UserProfile.MinimumRequiredPhotos
+                && profile.RelationshipStatus != RelationshipStatus.Married
                 && db.Users.Any(user => user.Id == profile.UserId && user.IsActive)
                 && !db.Notifications.Any(notification => notification.UserId == profile.UserId
                     && notification.Type == NotificationType.ProfilePhotosRequired
