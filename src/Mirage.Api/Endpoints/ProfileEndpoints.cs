@@ -140,11 +140,13 @@ internal static class ProfileEndpoints
             viewerIsMarried = mine?.RelationshipStatus == RelationshipStatus.Married;
 
             // Grandfathered members browse unthrottled too — the 2-profile budget is meant to push
-            // new joiners to upload, not to lock out people who predate the rule.
+            // new joiners to upload, not to lock out people who predate the rule. Photos are also
+            // optional for married members, so they're never throttled either.
             var viewerIsUnthrottled = await db.Profiles.AsNoTracking()
                 .Where(x => x.UserId == me)
                 .AnyAsync(x => x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
-                    || x.CreatedAt < photoCutoff, cancellationToken);
+                    || x.CreatedAt < photoCutoff || x.RelationshipStatus == RelationshipStatus.Married,
+                    cancellationToken);
             if (!viewerIsUnthrottled)
             {
                 var viewedIds = db.DiscoveryProfileViews.AsNoTracking()
@@ -241,7 +243,8 @@ internal static class ProfileEndpoints
             var viewerIsUnthrottled = await db.Profiles.AsNoTracking()
                 .Where(x => x.UserId == currentUserId.Value)
                 .AnyAsync(x => x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
-                    || x.CreatedAt < photoCutoff, cancellationToken);
+                    || x.CreatedAt < photoCutoff || x.RelationshipStatus == RelationshipStatus.Married,
+                    cancellationToken);
             if (!viewerIsUnthrottled)
             {
                 var alreadyViewed = await db.DiscoveryProfileViews.Where(x => x.ViewerUserId == currentUserId.Value)
@@ -305,7 +308,8 @@ internal static class ProfileEndpoints
             var visitorIsUnthrottled = await db.Profiles.AsNoTracking()
                 .Where(x => x.UserId == visitorUserId)
                 .AnyAsync(x => x.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
-                    || x.CreatedAt < photoCutoff, cancellationToken);
+                    || x.CreatedAt < photoCutoff || x.RelationshipStatus == RelationshipStatus.Married,
+                    cancellationToken);
             if (!visitorIsUnthrottled)
             {
                 var existingView = await db.DiscoveryProfileViews.AnyAsync(
@@ -438,7 +442,11 @@ internal static class ProfileEndpoints
             .Select(x => new { x.Id, x.IsApproved })
             .SingleOrDefaultAsync(cancellationToken);
         var badge = await db.GetOrgBadgeAsync(userId, cancellationToken);
-        var hasRequiredPhotos = profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos;
+        // Photos are optional for married members — the two-photo rule exists to prove a dating/
+        // friendship profile belongs to a real person, which doesn't carry over the same way once
+        // someone's browsing the Marriage/Friendship community, so they're treated as satisfied.
+        var hasRequiredPhotos = profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
+            || profile.RelationshipStatus == RelationshipStatus.Married;
         if (!hasRequiredPhotos)
         {
             var reminderCutoff = DateTimeOffset.UtcNow.AddHours(-24);
@@ -601,7 +609,8 @@ internal static class ProfileEndpoints
         var userId = context.User.GetUserId();
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
-        var hadRequiredPhotos = profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos;
+        var hadRequiredPhotos = profile.PhotoUrls.Length >= UserProfile.MinimumRequiredPhotos
+            || profile.RelationshipStatus == RelationshipStatus.Married;
 
         var newUrls = request.PhotoUrls.Except(profile.PhotoUrls).ToArray();
         foreach (var url in newUrls)
