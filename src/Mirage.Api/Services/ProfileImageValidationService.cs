@@ -10,11 +10,10 @@ public sealed class ProfileImageValidationService(
     HttpClient http, IFaceDetectionService faceDetection, IConfiguration configuration,
     ILogger<ProfileImageValidationService> logger)
 {
-    // Identity matching is off unless a deployment opts in. In production it was rejecting genuine
-    // photos of the right person, and a member who can't get past it has no way to finish their
-    // profile at all — a false reject costs far more than a missed impostor. The cheap "is this a
-    // human face" gate is unaffected and still runs. Set PhotoValidation:RequireSamePerson=true to
-    // exercise it in test until it's proven out.
+    // Both checks are configurable because false rejects can prevent genuine members from completing
+    // their profiles. Face-presence validation is temporarily disabled while the upload UX and
+    // detector accuracy are reassessed; retaining the implementation makes restoration explicit.
+    private bool RequireHumanFace => configuration.GetValue("PhotoValidation:RequireHumanFace", false);
     private bool RequireSamePerson => configuration.GetValue("PhotoValidation:RequireSamePerson", false);
 
     public async Task<FaceComparisonResult> AreSamePersonAsync(string firstImageUrl, string secondImageUrl,
@@ -40,6 +39,8 @@ public sealed class ProfileImageValidationService(
 
     public async Task<bool> IsValidHumanPhotoAsync(string imageUrl, CancellationToken cancellationToken)
     {
+        if (!RequireHumanFace) return true;
+
         try
         {
             // Phone photos are frequently stored with the pixel buffer in its raw sensor orientation
