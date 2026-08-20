@@ -634,6 +634,45 @@ public sealed record AdminGenderSummary(Sex? Sex, int Users, int ActiveUsers, in
 
 public sealed record AdminCountrySummary(string Country, int Users, int ActiveUsers, int RegistrationsInPeriod);
 
+public sealed record AdminPeriodEngagementSummary(
+    string Period,
+    int Messages,
+    int Conversations,
+    int EngagedUsers);
+
+public sealed record AdminGenderEngagementSummary(
+    Sex? Sex,
+    int EngagedUsers,
+    int MessagesSent,
+    int EngagementEvents);
+
+public sealed record AdminConversationGenderSummary(
+    string GenderPair,
+    int Conversations,
+    int ActiveConversations,
+    int Messages);
+
+public sealed record AdminRegionEngagementSummary(
+    string Country,
+    int Users,
+    int ActiveUsers,
+    int EngagedUsers,
+    int Messages,
+    int EngagementEvents);
+
+public sealed record AdminDailyEngagementSummary(
+    DateOnly Date,
+    int Messages,
+    int Conversations,
+    int EngagedUsers);
+
+public sealed record AdminEngagementAnalyticsSummary(
+    IReadOnlyList<AdminPeriodEngagementSummary> Periods,
+    IReadOnlyList<AdminGenderEngagementSummary> ByGender,
+    IReadOnlyList<AdminConversationGenderSummary> ConversationsByGenderPair,
+    IReadOnlyList<AdminRegionEngagementSummary> ByRegion,
+    IReadOnlyList<AdminDailyEngagementSummary> DailyTrend);
+
 public sealed record AdminRevenueSummary(
     string Source,
     string Currency,
@@ -653,6 +692,7 @@ public sealed record AdminComprehensiveAnalyticsResponse(
     IReadOnlyList<AdminTierSummary> Tiers,
     IReadOnlyList<AdminGenderSummary> Genders,
     IReadOnlyList<AdminCountrySummary> Countries,
+    AdminEngagementAnalyticsSummary Engagement,
     IReadOnlyList<AdminRevenueSummary> Revenue,
     int NewRegistrations,
     int CompletedCounsellingSessions,
