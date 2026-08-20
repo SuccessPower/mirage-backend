@@ -145,7 +145,63 @@ internal static class AdminAnalyticsPdf
             }));
 
             column.Item().PageBreak();
-            Title(column, "02", "Financial performance", "Revenue quality, provider obligations and settlement exposure");
+            Title(column, "02", "Engagement & conversations", "How members participate across time, gender and region");
+            column.Item().Row(row =>
+            {
+                foreach (var period in report.Engagement.Periods)
+                    Metric(row, period.Period, period.Messages,
+                        $"{period.Conversations:N0} conversations · {period.EngagedUsers:N0} people", Purple);
+            });
+            column.Item().Element(c => Panel(c, "Engagement by gender", "Selected reporting period", body =>
+            {
+                body.Item().Table(table =>
+                {
+                    Columns(table, 1.6f, 1f, 1f, 1f);
+                    TableHeader(table, "Gender", "Engaged people", "Messages", "Platform actions");
+                    foreach (var gender in report.Engagement.ByGender)
+                        TableRow(table, GenderLabel(gender.Sex), gender.EngagedUsers.ToString("N0"),
+                            gender.MessagesSent.ToString("N0"), gender.EngagementEvents.ToString("N0"));
+                });
+            }));
+            column.Item().Element(c => Panel(c, "Chats between genders", "Distinct conversations with message activity", body =>
+            {
+                var max = Math.Max(1, report.Engagement.ConversationsByGenderPair.DefaultIfEmpty().Max(x => x?.Messages ?? 0));
+                foreach (var pair in report.Engagement.ConversationsByGenderPair)
+                    HealthBar(body, pair.GenderPair, pair.Messages, max, Purple);
+                body.Item().Table(table =>
+                {
+                    Columns(table, 1.5f, 1f, 1f, 1f);
+                    TableHeader(table, "Gender pairing", "Conversations", "Active now", "Messages");
+                    foreach (var pair in report.Engagement.ConversationsByGenderPair)
+                        TableRow(table, pair.GenderPair, pair.Conversations.ToString("N0"),
+                            pair.ActiveConversations.ToString("N0"), pair.Messages.ToString("N0"));
+                });
+            }));
+            column.Item().Element(c => Panel(c, "Regional engagement", "Top regions by engaged people", body =>
+            {
+                body.Item().Table(table =>
+                {
+                    Columns(table, 1.7f, .8f, .8f, .8f, .8f);
+                    TableHeader(table, "Region", "Users", "Engaged", "Messages", "Actions");
+                    foreach (var region in report.Engagement.ByRegion.Take(20))
+                        TableRow(table, region.Country, region.Users.ToString("N0"), region.EngagedUsers.ToString("N0"),
+                            region.Messages.ToString("N0"), region.EngagementEvents.ToString("N0"));
+                });
+            }));
+            column.Item().Element(c => Panel(c, "Daily activity", "Most recent 21 days in the selected period", body =>
+            {
+                body.Item().Table(table =>
+                {
+                    Columns(table, 1.4f, 1f, 1f, 1f);
+                    TableHeader(table, "Date", "Messages", "Conversations", "Engaged people");
+                    foreach (var day in report.Engagement.DailyTrend.TakeLast(21))
+                        TableRow(table, day.Date.ToString("dd MMM yyyy"), day.Messages.ToString("N0"),
+                            day.Conversations.ToString("N0"), day.EngagedUsers.ToString("N0"));
+                });
+            }));
+
+            column.Item().PageBreak();
+            Title(column, "03", "Financial performance", "Revenue quality, provider obligations and settlement exposure");
             if (report.Revenue.Count == 0)
             {
                 column.Item().Element(c => EmptyPanel(c, "No recognised revenue in this reporting period",
@@ -182,7 +238,7 @@ internal static class AdminAnalyticsPdf
                 "Mirage revenue is the commission snapshotted on successful counselling payments. Gross customer charges and counsellor obligations are presented separately. Currencies are never consolidated without an explicit FX policy. Additional income streams remain excluded until backed by an auditable transaction ledger."));
 
             column.Item().PageBreak();
-            Title(column, "03", "Market footprint", "Geographic reach, concentration and acquisition momentum");
+            Title(column, "04", "Market footprint", "Geographic reach, concentration and acquisition momentum");
             column.Item().Row(row =>
             {
                 var leading = report.Countries.FirstOrDefault();
@@ -219,7 +275,7 @@ internal static class AdminAnalyticsPdf
             });
 
             column.Item().PageBreak();
-            Title(column, "04", "Operations & governance", "Capacity, relationship outcomes and control environment");
+            Title(column, "05", "Operations & governance", "Capacity, relationship outcomes and control environment");
             column.Item().Row(row =>
             {
                 OperationCard(row, report.CompletedCounsellingSessions, "Completed sessions", "Period throughput", Green);

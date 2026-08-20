@@ -150,15 +150,117 @@ internal static class AdminAnalyticsEndpoints
             && x.UpdatedAt >= from && x.UpdatedAt <= to);
         if (countryUserIds is not null) sessionQuery = sessionQuery.Where(x => countryUserIds.Contains(x.ClientUserId));
 
+        var engagement = await BuildEngagement(db, from, to, normalizedCountry, inactivityCutoff, cancellationToken);
+
         return new AdminComprehensiveAnalyticsResponse(from, to, normalizedCountry, now,
             new AdminUserActivitySummary(registered, enabled, registered - enabled, active, registered - active,
-                neverLoggedIn, inactivityCutoff), tiers, genders, countries, revenue, newRegistrations,
+                neverLoggedIn, inactivityCutoff), tiers, genders, countries, engagement, revenue, newRegistrations,
             await sessionQuery.CountAsync(cancellationToken),
             await db.Couples.CountAsync(x => x.Status == CoupleStatus.Approved, cancellationToken),
             await db.Organisations.CountAsync(x => x.Status == OrganisationStatus.Approved, cancellationToken),
             await db.Counsellors.CountAsync(x => x.IsApproved, cancellationToken),
             await db.Mentors.CountAsync(x => x.IsApproved, cancellationToken),
             await db.ContentReports.CountAsync(x => x.Status == ContentReportStatus.Pending || x.Status == ContentReportStatus.UnderReview, cancellationToken));
+    }
+
+    private static async Task<AdminEngagementAnalyticsSummary> BuildEngagement(MirageDbContext db,
+        DateTimeOffset from, DateTimeOffset to, string? country, DateTimeOffset inactivityCutoff,
+        CancellationToken cancellationToken)
+    {
+        var countryUserIds = db.Profiles.AsNoTracking()
+            .Where(p => country == null || p.Country == country)
+            .Select(p => p.UserId);
+
+        var messageBase = db.Messages.AsNoTracking().Where(m => country == null || countryUserIds.Contains(m.SenderId));
+        var eventBase = db.AnalyticsEvents.AsNoTracking()
+            .Where(e => country == null || countryUserIds.Contains(e.ActorUserId));
+
+        async Task<AdminPeriodEngagementSummary> Period(string label, DateTimeOffset? start, DateTimeOffset end)
+        {
+            var messages = messageBase.Where(m => (!start.HasValue || m.CreatedAt >= start) && m.CreatedAt <= end);
+            var events = eventBase.Where(e => (!start.HasValue || e.CreatedAt >= start) && e.CreatedAt <= end);
+            var messageUsers = await messages.Select(m => m.SenderId).Distinct().ToListAsync(cancellationToken);
+            var eventUsers = await events.Select(e => e.ActorUserId).Distinct().ToListAsync(cancellationToken);
+            return new AdminPeriodEngagementSummary(label,
+                await messages.CountAsync(cancellationToken),
+                await messages.Select(m => m.MatchId).Distinct().CountAsync(cancellationToken),
+                messageUsers.Concat(eventUsers).Distinct().Count());
+        }
+
+        var today = new DateTimeOffset(to.UtcDateTime.Date, TimeSpan.Zero);
+        var month = new DateTimeOffset(to.UtcDateTime.Year, to.UtcDateTime.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var periods = new List<AdminPeriodEngagementSummary>
+        {
+            await Period("Selected period", from, to),
+            await Period("Today", today, to),
+            await Period("This month", month, to),
+            await Period("All time", null, to)
+        };
+
+        var selectedMessages = await messageBase.Where(m => m.CreatedAt >= from && m.CreatedAt <= to)
+            .Select(m => new { m.MatchId, m.SenderId, m.CreatedAt }).ToListAsync(cancellationToken);
+        var selectedEvents = await eventBase.Where(e => e.CreatedAt >= from && e.CreatedAt <= to)
+            .Select(e => new { e.ActorUserId, e.ActorSex, e.CreatedAt }).ToListAsync(cancellationToken);
+
+        var profileRows = await db.Profiles.AsNoTracking()
+            .Where(p => country == null || p.Country == country)
+            .Join(db.Users.AsNoTracking().Where(u => !u.IsDeleted), p => p.UserId, u => u.Id,
+                (p, u) => new { p.UserId, p.Sex, p.Country, u.IsActive, u.LastLoginAt })
+            .ToListAsync(cancellationToken);
+        var profileByUser = profileRows.ToDictionary(x => x.UserId);
+
+        var byGender = Enum.GetValues<Sex>().Select(s => (Sex?)s).Append(null).Select(sex =>
+        {
+            var senders = selectedMessages.Where(m => profileByUser.GetValueOrDefault(m.SenderId)?.Sex == sex)
+                .Select(m => m.SenderId);
+            var actors = selectedEvents.Where(e => e.ActorSex == sex).Select(e => e.ActorUserId);
+            return new AdminGenderEngagementSummary(sex, senders.Concat(actors).Distinct().Count(),
+                selectedMessages.Count(m => profileByUser.GetValueOrDefault(m.SenderId)?.Sex == sex),
+                selectedEvents.Count(e => e.ActorSex == sex));
+        }).ToList();
+
+        var selectedMatchIds = selectedMessages.Select(m => m.MatchId).Distinct().ToList();
+        var matches = await db.Matches.AsNoTracking().Where(m => selectedMatchIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.User1Id, m.User2Id, m.Status }).ToListAsync(cancellationToken);
+        var participantIds = matches.SelectMany(m => new[] { m.User1Id, m.User2Id }).Distinct().ToList();
+        var participantSex = await db.Profiles.AsNoTracking().Where(p => participantIds.Contains(p.UserId))
+            .ToDictionaryAsync(p => p.UserId, p => p.Sex, cancellationToken);
+        var messagesByMatch = selectedMessages.GroupBy(m => m.MatchId).ToDictionary(g => g.Key, g => g.Count());
+        var pairRows = matches.Select(m => new
+        {
+            Match = m,
+            Pair = GenderPairOf(participantSex.GetValueOrDefault(m.User1Id),
+                participantSex.GetValueOrDefault(m.User2Id))
+        }).GroupBy(x => x.Pair).Select(g => new AdminConversationGenderSummary(g.Key, g.Count(),
+            g.Count(x => x.Match.Status == MatchStatus.Active),
+            g.Sum(x => messagesByMatch.GetValueOrDefault(x.Match.Id))))
+            .OrderByDescending(x => x.Conversations).ToList();
+
+        var regions = profileRows.GroupBy(p => string.IsNullOrWhiteSpace(p.Country) ? "Not specified" : p.Country)
+            .Select(g =>
+            {
+                var ids = g.Select(x => x.UserId).ToHashSet();
+                var regionMessages = selectedMessages.Where(m => ids.Contains(m.SenderId)).ToList();
+                var regionEvents = selectedEvents.Where(e => ids.Contains(e.ActorUserId)).ToList();
+                return new AdminRegionEngagementSummary(g.Key, g.Count(),
+                    g.Count(x => x.IsActive && x.LastLoginAt >= inactivityCutoff),
+                    regionMessages.Select(x => x.SenderId).Concat(regionEvents.Select(x => x.ActorUserId)).Distinct().Count(),
+                    regionMessages.Count, regionEvents.Count);
+            }).OrderByDescending(x => x.EngagedUsers).ThenByDescending(x => x.Messages).ToList();
+
+        var daily = selectedMessages.Select(m => DateOnly.FromDateTime(m.CreatedAt.UtcDateTime))
+            .Concat(selectedEvents.Select(e => DateOnly.FromDateTime(e.CreatedAt.UtcDateTime))).Distinct()
+            .Select(date =>
+            {
+                var messages = selectedMessages.Where(m => DateOnly.FromDateTime(m.CreatedAt.UtcDateTime) == date).ToList();
+                var actors = selectedEvents.Where(e => DateOnly.FromDateTime(e.CreatedAt.UtcDateTime) == date)
+                    .Select(e => e.ActorUserId);
+                return new AdminDailyEngagementSummary(date, messages.Count,
+                    messages.Select(x => x.MatchId).Distinct().Count(),
+                    messages.Select(x => x.SenderId).Concat(actors).Distinct().Count());
+            }).OrderBy(x => x.Date).ToList();
+
+        return new AdminEngagementAnalyticsSummary(periods, byGender, pairRows, regions, daily);
     }
 
     private static (DateTimeOffset From, DateTimeOffset To, IResult? Error) ValidateRange(
