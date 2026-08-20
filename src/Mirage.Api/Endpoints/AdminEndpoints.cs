@@ -307,9 +307,7 @@ internal static class AdminEndpoints
             // per-row fetch pattern could exhaust the DB connection pool under the admin page's own
             // concurrent Promise.all and made "profile unavailable" a frequent, misleading UI state.
             var result = query
-                .OrderByDescending(x => x.LastLoginAt.HasValue)
-                .ThenByDescending(x => x.LastLoginAt)
-                .ThenByDescending(x => x.CreatedAt)
+                .OrderByDescending(x => x.CreatedAt)
                 .Select(x => new
                 {
                     x.Id,

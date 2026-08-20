@@ -56,4 +56,7 @@ public sealed class PresenceTracker
 
     public IReadOnlySet<Guid> OnlineAmong(IEnumerable<Guid> userIds) =>
         userIds.Where(IsOnline).ToHashSet();
+
+    /// <summary>Returns a point-in-time snapshot for relevance ranking; callers must not cache it.</summary>
+    public IReadOnlySet<Guid> OnlineUserIds() => connectionsByUser.Keys.Where(IsOnline).ToHashSet();
 }
