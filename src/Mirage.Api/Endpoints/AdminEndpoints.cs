@@ -307,7 +307,10 @@ internal static class AdminEndpoints
             // per-row fetch pattern could exhaust the DB connection pool under the admin page's own
             // concurrent Promise.all and made "profile unavailable" a frequent, misleading UI state.
             var result = query
+                // ThenBy(Id) breaks ties deterministically — without it, rows that share a CreatedAt
+                // tick (e.g. concurrent signups) can flip order between page loads under Skip/Take.
                 .OrderByDescending(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
                 .Select(x => new
                 {
                     x.Id,
