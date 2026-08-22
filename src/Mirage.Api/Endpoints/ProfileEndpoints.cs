@@ -78,7 +78,7 @@ internal static class ProfileEndpoints
     }
 
     private static async Task<IResult> Discover(HttpContext context, MirageDbContext db,
-        IConfiguration configuration, SectionCategory? section, string? city,
+        IConfiguration configuration, PresenceTracker presence, SectionCategory? section, string? city,
         string? denomination, int? minAge, int? maxAge, string? search, int page = 1, int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
@@ -215,20 +215,33 @@ internal static class ProfileEndpoints
         }
         var recommendedIds = db.Recommendations.AsNoTracking()
             .Where(x => x.Status == RecommendationStatus.Active).Select(x => x.RecommendedUserId);
-        // Nearest-first: same city, then same country, before falling back to verified/recency.
-        // Profiles the viewer upvoted are boosted to the top of their personal feed.
-        var pagedProfiles = await query
+        var onlineUserIds = presence.OnlineUserIds();
+        var activeToday = DateTimeOffset.UtcNow.AddDays(-1);
+        var activeThisWeek = DateTimeOffset.UtcNow.AddDays(-7);
+        var activeThisMonth = DateTimeOffset.UtcNow.AddDays(-30);
+        var prioritizeDatingActivity = section is null || section == SectionCategory.Dating;
+
+        // Dating remains fresh on every request, but randomness only breaks ties inside relevance
+        // bands: personal boosts, live presence, location and recent activity retain priority.
+        var ranked = query
             .OrderByDescending(x => currentUserId.HasValue && db.ProfileVotes.Any(
                 v => v.VoterUserId == currentUserId.Value && v.TargetUserId == x.UserId && v.Value > 0))
+            .ThenByDescending(x => prioritizeDatingActivity && onlineUserIds.Contains(x.UserId))
             .ThenByDescending(x => myCity != null && x.City == myCity)
             .ThenByDescending(x => myCountry != null && x.Country == myCountry)
             .ThenByDescending(x => currentUserId.HasValue && db.Profiles.Any(me => me.UserId == currentUserId.Value
                 && me.PreferredCountryCodes.Contains(x.CountryCode!)))
             .ThenByDescending(x => currentUserId.HasValue && db.Profiles.Any(me => me.UserId == currentUserId.Value
                 && me.ContinentCode != null && x.ContinentCode == me.ContinentCode))
+            .ThenByDescending(x => prioritizeDatingActivity
+                && db.Users.Any(u => u.Id == x.UserId && u.LastLoginAt >= activeToday))
+            .ThenByDescending(x => prioritizeDatingActivity
+                && db.Users.Any(u => u.Id == x.UserId && u.LastLoginAt >= activeThisWeek))
+            .ThenByDescending(x => prioritizeDatingActivity
+                && db.Users.Any(u => u.Id == x.UserId && u.LastLoginAt >= activeThisMonth))
             .ThenByDescending(x => x.IsVerified)
-            .ThenByDescending(x => x.CreatedAt)
-            .ToPagedResultAsync(page, pageSize, cancellationToken);
+            .ThenBy(x => EF.Functions.Random());
+        var pagedProfiles = await ranked.ToPagedResultAsync(page, pageSize, cancellationToken);
 
         if (currentUserId.HasValue)
         {
