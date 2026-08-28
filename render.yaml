@@ -24,9 +24,20 @@ services:
       - key: Jwt__Audience
         value: mirage-client
       - key: Jwt__AccessTokenMinutes
-        value: "15"
+        value: "60"
+      # Browser sessions, on machines that may be shared.
       - key: Jwt__RefreshTokenDays
         value: "30"
+      # Native apps identify themselves with X-Client-Platform: mobile and get a year, sliding on
+      # every refresh. A phone is held in the hand behind a lock screen, and members expect it to
+      # stay signed in the way every other app on the device does.
+      - key: Jwt__MobileRefreshTokenDays
+        value: "365"
+      # Refresh tokens rotate, and the old one is revoked. A mobile client suspended or
+      # disconnected mid-refresh replays the token it still holds; inside this window the API
+      # re-issues rather than treating it as a breach and signing the member out.
+      - key: Jwt__RefreshRotationGraceSeconds
+        value: "60"
       - key: Swagger__Enabled
         value: "true"
       - key: Google__ClientId
