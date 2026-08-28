@@ -109,7 +109,7 @@ internal static class AuthEndpoints
                 });
 
                 var refreshValue = tokens.CreateRefreshToken();
-                var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+                var refreshDays = RefreshTokenDays(context, configuration);
                 var refreshToken = new RefreshToken(
                     user.Id,
                     refreshValue,
@@ -285,7 +285,7 @@ internal static class AuthEndpoints
             .SingleAsync(cancellationToken);
 
         var refreshValue = tokens.CreateRefreshToken();
-        var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+        var refreshDays = RefreshTokenDays(context, configuration);
 
         var strategy = db.Database.CreateExecutionStrategy();
         try
@@ -372,7 +372,7 @@ internal static class AuthEndpoints
             .SingleAsync(cancellationToken);
 
         var refreshValue = tokens.CreateRefreshToken();
-        var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+        var refreshDays = RefreshTokenDays(context, configuration);
 
         var strategy = db.Database.CreateExecutionStrategy();
         try
@@ -459,7 +459,7 @@ internal static class AuthEndpoints
             .SingleAsync(cancellationToken);
 
         var refreshValue = tokens.CreateRefreshToken();
-        var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+        var refreshDays = RefreshTokenDays(context, configuration);
 
         var strategy = db.Database.CreateExecutionStrategy();
         try
@@ -509,7 +509,7 @@ internal static class AuthEndpoints
         await userManager.ResetAccessFailedCountAsync(user);
         var roles = await userManager.GetRolesAsync(user);
         return ApiResults.Ok(context,
-            await IssueTokens(user, roles, db, tokens, configuration, cancellationToken),
+            await IssueTokens(user, roles, db, tokens, configuration, context, cancellationToken),
             "Login completed successfully.");
     }
 
@@ -593,7 +593,7 @@ internal static class AuthEndpoints
 
             var existingRoles = await userManager.GetRolesAsync(existingUser);
             return ApiResults.Ok(context,
-                await IssueTokens(existingUser, existingRoles, db, tokens, configuration, cancellationToken),
+                await IssueTokens(existingUser, existingRoles, db, tokens, configuration, context, cancellationToken),
                 "Signed in with Google successfully.");
         }
 
@@ -626,7 +626,7 @@ internal static class AuthEndpoints
 
                 var displayName = string.IsNullOrWhiteSpace(payload.Name) ? payload.Email.Split('@')[0] : payload.Name;
                 var refreshValue = tokens.CreateRefreshToken();
-                var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+                var refreshDays = RefreshTokenDays(context, configuration);
                 var accessToken = tokens.CreateAccessToken(user, [MirageRoles.User]);
 
                 // Do not trust the Google account avatar as a dating profile photo. It may be a
@@ -667,10 +667,12 @@ internal static class AuthEndpoints
         CancellationToken cancellationToken)
     {
         var hash = RefreshToken.ComputeHash(request.RefreshToken);
+        // Deliberately not filtered on RevokedAt: a token rotated seconds ago has to be told apart
+        // from one that was never valid, so the row is loaded first and judged below.
         var existing = await db.RefreshTokens.SingleOrDefaultAsync(
-            x => x.TokenHash == hash && x.RevokedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow,
-            cancellationToken);
-        if (existing is null)
+            x => x.TokenHash == hash && x.ExpiresAt > DateTimeOffset.UtcNow, cancellationToken);
+        var grace = TimeSpan.FromSeconds(configuration.GetValue("Jwt:RefreshRotationGraceSeconds", 60));
+        if (existing is null || (existing.RevokedAt is not null && !existing.IsWithinRotationGrace(grace)))
             return EndpointHelpers.Problem(context, StatusCodes.Status401Unauthorized,
                 "Authentication failed", "Invalid refresh token.");
         existing.Revoke();
@@ -680,7 +682,7 @@ internal static class AuthEndpoints
                 "Authentication failed", "User is unavailable.");
         var roles = await userManager.GetRolesAsync(user);
         return ApiResults.Ok(context,
-            await IssueTokens(user, roles, db, tokens, configuration, cancellationToken),
+            await IssueTokens(user, roles, db, tokens, configuration, context, cancellationToken),
             "Token refreshed successfully.");
     }
 
@@ -952,7 +954,8 @@ internal static class AuthEndpoints
     }
 
     private static async Task<AuthResponse> IssueTokens(ApplicationUser user, IEnumerable<string> roles,
-        MirageDbContext db, TokenService tokens, IConfiguration configuration, CancellationToken cancellationToken)
+        MirageDbContext db, TokenService tokens, IConfiguration configuration, HttpContext context,
+        CancellationToken cancellationToken)
     {
         user.LastLoginAt = DateTimeOffset.UtcNow;
         // They came back, so the "we miss you" series has done its job — clear it so a future
@@ -961,10 +964,26 @@ internal static class AuthEndpoints
         user.LastReEngagementEmailAt = null;
         var access = tokens.CreateAccessToken(user, roles);
         var refreshValue = tokens.CreateRefreshToken();
-        var refreshDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+        var refreshDays = RefreshTokenDays(context, configuration);
         db.RefreshTokens.Add(new RefreshToken(user.Id, refreshValue, DateTimeOffset.UtcNow.AddDays(refreshDays)));
         await db.SaveChangesAsync(cancellationToken);
         return new AuthResponse(access.Token, access.ExpiresAt, refreshValue);
+    }
+
+    /// <summary>
+    /// How long a refresh token issued on this request should live. Native apps are held in the
+    /// hand, protected by the device lock screen, and expected to stay signed in the way every
+    /// other phone app does; a browser session on a possibly shared machine is not. The client
+    /// declares itself with X-Client-Platform, and anything that does not say "mobile" (including
+    /// a caller that lies by omission) falls back to the shorter web lifetime.
+    /// </summary>
+    private static int RefreshTokenDays(HttpContext context, IConfiguration configuration)
+    {
+        var webDays = configuration.GetValue("Jwt:RefreshTokenDays", 30);
+        var platform = context.Request.Headers["X-Client-Platform"].ToString();
+        return string.Equals(platform, "mobile", StringComparison.OrdinalIgnoreCase)
+            ? configuration.GetValue("Jwt:MobileRefreshTokenDays", 365)
+            : webDays;
     }
 
     // Prefers the frontend-supplied X-Client-IP (populated from a browser-side IP lookup), since
