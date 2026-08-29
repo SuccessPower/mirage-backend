@@ -867,7 +867,8 @@ internal static class AdminEndpoints
     }
 
     private static async Task<IResult> ApproveIndependentCounsellor(Guid id, HttpContext context, IMirageDbContext db,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, NotificationService notifications,
+        CancellationToken cancellationToken)
     {
         var counsellor = await db.Counsellors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (counsellor is null) return EndpointHelpers.NotFound(context, "Counsellor was not found.");
@@ -878,6 +879,11 @@ internal static class AdminEndpoints
         var user = await userManager.FindByIdAsync(counsellor.UserId.ToString());
         if (user is not null && !await userManager.IsInRoleAsync(user, MirageRoles.Counsellor))
             await userManager.AddToRoleAsync(user, MirageRoles.Counsellor);
+
+        await notifications.NotifyAsync(counsellor.UserId, NotificationType.CounsellorApproved,
+            "You're approved as a counsellor",
+            "Your counsellor application has been approved. Your counselling practice is now open and members can book sessions with you.",
+            counsellor.Id, "CounsellorProfile", cancellationToken);
 
         return ApiResults.Ok(context, new { counsellor.Id, counsellor.IsApproved }, "Counsellor approved successfully.");
     }
@@ -994,7 +1000,8 @@ internal static class AdminEndpoints
     }
 
     private static async Task<IResult> ApproveMentor(Guid id, HttpContext context, IMirageDbContext db,
-        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+        UserManager<ApplicationUser> userManager, NotificationService notifications,
+        CancellationToken cancellationToken)
     {
         var mentor = await db.Mentors.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (mentor is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
@@ -1007,6 +1014,14 @@ internal static class AdminEndpoints
             await userManager.AddToRoleAsync(user, MirageRoles.Mentor);
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // Approval is the whole point of applying, so the mentor hears about it in-app, on their
+        // phone and by email — the same treatment the counsellor side gets.
+        await notifications.NotifyAsync(mentor.UserId, NotificationType.MentorApproved,
+            "You're approved as a mentor",
+            "Your mentor application has been approved. Your mentorship page is now open, and members can ask you to walk with them.",
+            mentor.Id, "MentorProfile", cancellationToken);
+
         return ApiResults.Ok(context, new { mentor.Id, mentor.UserId, mentor.IsApproved },
             "Mentor approved successfully.");
     }

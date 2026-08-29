@@ -96,6 +96,7 @@ public static class EmailTemplates
         [NotificationType.OrganisationApproved] = ("Organisation", Teal),
         [NotificationType.OrganisationRejected] = ("Organisation", Amber),
         [NotificationType.CounsellorApproved] = ("Counsellor", Teal),
+        [NotificationType.MentorApproved] = ("Mentor", Teal),
         [NotificationType.MembershipApproved] = ("Membership", Teal),
         [NotificationType.MembershipRejected] = ("Membership", Amber),
         [NotificationType.Mention] = ("Mention", Purple),
