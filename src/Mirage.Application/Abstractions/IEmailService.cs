@@ -73,4 +73,9 @@ public interface IEmailService
 
     Task<bool> SendPlatformManagerInviteAsync(string toEmail, string inviteUrl,
         CancellationToken cancellationToken = default);
+
+    // Partner sync aimed at an address with no Mirage account yet: the invitee is asked to sign up
+    // so the pending PartnerInvite can become a real Couple invitation (see CoupleEndpoints.Invite).
+    Task<bool> SendPartnerSyncInviteAsync(string toEmail, string inviterName, string signUpUrl,
+        CancellationToken cancellationToken = default);
 }

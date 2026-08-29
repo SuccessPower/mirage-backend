@@ -460,6 +460,10 @@ public sealed record CoupleResponse(
     string? OtherOrgBadgeUrl = null,
     string? OtherOrgName = null);
 
+// Returned by POST /couples/invite when the address has no Mirage account yet: no Couple row was
+// created, an invitation email went out instead. Clients render this as a success, not an error.
+public sealed record InvitePartnerResponse(bool Invited, string PartnerEmail);
+
 public sealed record CouplePartnerSummary(
     Guid UserId,
     string DisplayName,

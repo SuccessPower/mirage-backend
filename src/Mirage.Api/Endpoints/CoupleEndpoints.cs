@@ -170,8 +170,13 @@ internal static class CoupleEndpoints
         return ApiResults.Ok(context, response, "Couple records retrieved successfully.");
     }
 
+    // How long a repeated request for the same address waits before it emails that person again.
+    // Tapping "sync" twice should not send two invitations.
+    private static readonly TimeSpan PartnerInviteResendInterval = TimeSpan.FromHours(24);
+
     private static async Task<IResult> Invite(InviteCoupleRequest request, HttpContext context, MirageDbContext db,
-        NotificationService notifications, CancellationToken cancellationToken)
+        NotificationService notifications, IEmailService emailService, IConfiguration configuration,
+        ILoggerFactory loggerFactory, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.PartnerEmail))
             return EndpointHelpers.ValidationProblem(context, ("partnerEmail", "Partner email is required."));
@@ -181,7 +186,12 @@ internal static class CoupleEndpoints
         var partner = await db.Profiles.AsNoTracking()
             .Join(db.Users.AsNoTracking(), p => p.UserId, u => u.Id, (p, u) => new { p.UserId, u.Email })
             .SingleOrDefaultAsync(x => x.Email != null && x.Email.ToLower() == normalizedEmail, cancellationToken);
-        if (partner is null) return EndpointHelpers.NotFound(context, "No account found with that email address.");
+        // Nobody at that address yet. Rather than dead-ending the inviter, park the intent and invite
+        // the person to join — registration turns the parked invite into a real Couple invitation.
+        if (partner is null)
+            return await InviteUnregisteredPartnerAsync(normalizedEmail, userId, context, db, emailService,
+                configuration, loggerFactory, cancellationToken);
+
         if (partner.UserId == userId)
             return EndpointHelpers.ValidationProblem(context, ("partnerEmail", "You cannot link yourself as your own spouse."));
 
@@ -202,6 +212,64 @@ internal static class CoupleEndpoints
 
         return ApiResults.Created(context, $"/api/v1/couples/{couple.Id}", new { couple.Id, couple.Status },
             "Couple invitation sent successfully.");
+    }
+
+    private static async Task<IResult> InviteUnregisteredPartnerAsync(string normalizedEmail, Guid userId,
+        HttpContext context, MirageDbContext db, IEmailService emailService, IConfiguration configuration,
+        ILoggerFactory loggerFactory, CancellationToken cancellationToken)
+    {
+        var myEmail = await db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.Email)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (myEmail is not null && string.Equals(myEmail, normalizedEmail, StringComparison.OrdinalIgnoreCase))
+            return EndpointHelpers.ValidationProblem(context, ("partnerEmail", "You cannot link yourself as your own spouse."));
+
+        var invite = await db.PartnerInvites.SingleOrDefaultAsync(
+            x => x.InviterUserId == userId && x.InviteeEmail == normalizedEmail, cancellationToken);
+
+        // An invite that was already accepted means they signed up and the Couple request exists —
+        // sending them back to the sign-up page would be wrong.
+        if (invite is { Status: PartnerInviteStatus.Accepted })
+            return EndpointHelpers.Conflict(context, "A couple invitation already exists between you and this person.");
+
+        var alreadyEmailedRecently = invite is not null
+            && DateTimeOffset.UtcNow - invite.LastSentAt < PartnerInviteResendInterval;
+
+        if (invite is null)
+        {
+            invite = new PartnerInvite(userId, normalizedEmail);
+            db.PartnerInvites.Add(invite);
+        }
+        else if (!alreadyEmailedRecently)
+        {
+            invite.MarkResent();
+        }
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (alreadyEmailedRecently)
+            return ApiResults.Ok(context, new InvitePartnerResponse(true, normalizedEmail),
+                $"We have already emailed {normalizedEmail} an invitation to join Mirage. We will link you up as soon as they sign up.");
+
+        var inviterName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+        var appUrl = configuration["Frontend:BaseUrl"] ?? "https://www.themiragehub.com";
+        var signUpUrl = $"{appUrl}/register?email={Uri.EscapeDataString(normalizedEmail)}";
+
+        // A failed send is logged rather than surfaced: the invite row is what makes the link happen
+        // on signup, and the inviter can re-send once the throttle window passes.
+        try
+        {
+            await emailService.SendPartnerSyncInviteAsync(normalizedEmail, inviterName ?? "Your partner", signUpUrl,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            loggerFactory.CreateLogger(typeof(CoupleEndpoints))
+                .LogError(ex, "Partner sync invite email failed for invite {InviteId}", invite.Id);
+        }
+
+        return ApiResults.Ok(context, new InvitePartnerResponse(true, normalizedEmail),
+            $"{normalizedEmail} is not on Mirage yet, so we have emailed them an invitation to join. " +
+            "Your sync request will be waiting for them when they sign up.");
     }
 
     private static async Task<IResult> Approve(Guid id, HttpContext context, IMirageDbContext db,

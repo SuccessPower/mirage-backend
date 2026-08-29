@@ -50,6 +50,7 @@ public interface IMirageDbContext
     DbSet<MentorMeeting> MentorMeetings { get; }
     DbSet<MentorMessage> MentorMessages { get; }
     DbSet<Couple> Couples { get; }
+    DbSet<PartnerInvite> PartnerInvites { get; }
     DbSet<CoupleFriendship> CoupleFriendships { get; }
     DbSet<CoupleFriendMessage> CoupleFriendMessages { get; }
     DbSet<ProfileVote> ProfileVotes { get; }

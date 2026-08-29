@@ -6,6 +6,7 @@ public enum Sex { Male = 1, Female = 2 }
 public enum RelationshipStatus { Single = 1, Divorced = 2, Widowed = 3, Separated = 4, Married = 5, Engaged = 6, InARelationship = 7 }
 public enum CoupleStatus { Pending = 1, Approved = 2, Declined = 3 }
 public enum CoupleFriendshipStatus { Active = 1, Ended = 2 }
+public enum PartnerInviteStatus { Pending = 1, Accepted = 2 }
 public enum SkinTone { Fair = 1, Light = 2, Medium = 3, Tan = 4, Brown = 5, Dark = 6 }
 public enum SubscriptionTier { Free = 1, Plus = 2, Premium = 3 }
 public enum DiscoveryScope { Country = 1, Continent = 2, Worldwide = 3 }

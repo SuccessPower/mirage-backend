@@ -132,6 +132,41 @@ public static class NewsletterEmailTemplate
           </td></tr>
         """, socials, null, logoUrl);
 
+    /// <summary>Sent when someone asks to sync with a partner who has no Mirage account yet. The person
+    /// receiving this has never heard of us, so it leads with who is asking rather than with the product.</summary>
+    public static string PartnerSyncInvite(string inviterName, string signUpUrl,
+        IReadOnlyList<NewsletterSocialLink>? socials = null, string? logoUrl = null) => Shell(
+        $"{inviterName} wants to sync with you as a couple on Mirage.",
+        $"""
+          <tr><td align="center" style="padding:0 0 6px">
+            <div class="eyebrow" style="font:400 11px/1 {Utility};letter-spacing:.42em;text-transform:uppercase;color:{Plum}">An invitation</div>
+          </td></tr>
+          <tr><td align="center" style="padding:14px 0 0">
+            <h1 class="display" style="margin:0;font:400 40px/1.14 {Display};color:{Ink};letter-spacing:.4px">{Encode(inviterName)}<br />wants to sync with you.</h1>
+          </td></tr>
+          {Ornament()}
+          <tr><td class="lede" style="padding:22px 0 0;font:400 18px/1.8 {Letter};color:#4a4034">
+            <b class="strong" style="color:{Ink}">{Encode(inviterName)}</b> is on Mirage, a community for Christian couples and
+            singles, and has asked to link their account with yours as their partner. There is no account at this
+            address yet &#8212; create one and the request will be waiting for you.
+          </td></tr>
+          <tr><td style="padding:26px 0 0">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="inset" style="background:{PaperDeep};border:1px solid {Rule};border-radius:6px">
+              <tr><td class="card-pad body-copy" style="padding:22px 24px;font:400 16px/1.8 {Letter};color:#4a4034">
+                <b class="strong" style="color:{Ink};font-variant:small-caps;letter-spacing:.06em">What syncing means</b><br />
+                &#8212; Your profiles are linked as a married couple<br />
+                &#8212; You share one conversation with the couples you befriend<br />
+                &#8212; Either of you can undo the link at any time
+              </td></tr>
+            </table>
+          </td></tr>
+          <tr><td align="center" style="padding:32px 0 6px">{Button(signUpUrl, "Join and accept")}</td></tr>
+          <tr><td align="center" style="padding:12px 0 0;font:italic 400 14px/1.6 {Letter};color:{Muted}">
+            Sign up with this email address so we know it is you. If you were not expecting this, you can ignore it &#8212;
+            nothing is linked until you approve the request yourself.
+          </td></tr>
+        """, socials, null, logoUrl);
+
     /// <summary>"Lumi from Mirage" — one voice for every edition, so a newsletter reads as coming from a person
     /// without exposing which member of the editorial team wrote it. Overridable with Brand:NewsletterSender.</summary>
     public static string SenderName(IConfiguration configuration) =>

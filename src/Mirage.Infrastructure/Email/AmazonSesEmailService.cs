@@ -139,6 +139,13 @@ public sealed class AmazonSesEmailService : IEmailService
                 _brandLogoUrl),
             cancellationToken);
 
+    public Task<bool> SendPartnerSyncInviteAsync(string toEmail, string inviterName, string signUpUrl,
+        CancellationToken cancellationToken = default) => SendAsync(toEmail,
+            $"{inviterName} wants to sync with you on Mirage",
+            NewsletterEmailTemplate.PartnerSyncInvite(inviterName, signUpUrl,
+                NewsletterEmailTemplate.SocialLinks(_config), _brandLogoUrl),
+            cancellationToken);
+
     private async Task<bool> SendAsync(string to, string subject, string html, CancellationToken cancellationToken,
         string? replyTo = null, string? fromName = null)
     {
