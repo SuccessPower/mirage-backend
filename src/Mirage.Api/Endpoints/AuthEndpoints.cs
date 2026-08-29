@@ -146,6 +146,24 @@ internal static class AuthEndpoints
                     await db.SaveChangesAsync(cancellationToken);
                 }
 
+                // Someone may have asked to sync with this address before it had an account (see
+                // CoupleEndpoints.Invite parking a PartnerInvite). Those parked invites become real
+                // Couple invitations now, so the inviter never has to send the request twice.
+                var inviteeEmail = PartnerInvite.Normalise(user.Email!);
+                var pendingPartnerInvites = await db.PartnerInvites
+                    .Where(x => x.InviteeEmail == inviteeEmail && x.Status == PartnerInviteStatus.Pending)
+                    .ToListAsync(cancellationToken);
+                var acceptedPartnerInvites = new List<(Guid InviterUserId, Guid CoupleId)>();
+                foreach (var partnerInvite in pendingPartnerInvites)
+                {
+                    if (partnerInvite.InviterUserId == user.Id) continue;
+                    var couple = new Couple(partnerInvite.InviterUserId, user.Id);
+                    db.Couples.Add(couple);
+                    partnerInvite.MarkAccepted(couple.Id);
+                    acceptedPartnerInvites.Add((partnerInvite.InviterUserId, couple.Id));
+                }
+                if (acceptedPartnerInvites.Count > 0) await db.SaveChangesAsync(cancellationToken);
+
                 var confirmToken = await userManager.GenerateEmailConfirmationTokenAsync(user);
                 var appUrl = configuration["Frontend:BaseUrl"] ?? "https://mirage-ui-iota.vercel.app";
                 var confirmUrl = $"{appUrl}/confirm-email?email={Uri.EscapeDataString(user.Email!)}&token={Uri.EscapeDataString(confirmToken)}";
@@ -165,6 +183,25 @@ internal static class AuthEndpoints
                         using var scope = scopeFactory.CreateScope();
                         var scopedEmailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
                         var scopedDb = scope.ServiceProvider.GetRequiredService<MirageDbContext>();
+
+                        if (acceptedPartnerInvites.Count > 0)
+                        {
+                            var scopedNotifications = scope.ServiceProvider.GetRequiredService<NotificationService>();
+                            foreach (var (inviterUserId, coupleId) in acceptedPartnerInvites)
+                            {
+                                var inviterName = await scopedDb.Profiles.AsNoTracking()
+                                    .Where(x => x.UserId == inviterUserId).Select(x => x.DisplayName)
+                                    .SingleOrDefaultAsync(CancellationToken.None) ?? "Your partner";
+                                await scopedNotifications.NotifyAsync(inviterUserId, NotificationType.NewMatch,
+                                    "Your partner joined Mirage",
+                                    $"{displayName} has signed up. Your partner sync request is waiting for them to approve.",
+                                    coupleId, "Couple", CancellationToken.None);
+                                await scopedNotifications.NotifyAsync(userId, NotificationType.NewMatch,
+                                    "Spouse link request",
+                                    $"{inviterName} wants to link with you as a married couple.",
+                                    coupleId, "Couple", CancellationToken.None);
+                            }
+                        }
 
                         var welcomeEmailSent = await scopedEmailService.SendWelcomeEmailAsync(
                             userEmail, displayName, confirmUrl, CancellationToken.None);

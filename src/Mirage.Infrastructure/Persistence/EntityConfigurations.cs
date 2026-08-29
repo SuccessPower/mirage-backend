@@ -436,6 +436,21 @@ public sealed class CoupleConfiguration : IEntityTypeConfiguration<Couple>
     }
 }
 
+public sealed class PartnerInviteConfiguration : IEntityTypeConfiguration<PartnerInvite>
+{
+    public void Configure(EntityTypeBuilder<PartnerInvite> b)
+    {
+        b.ToTable("partner_invites");
+        b.Property(x => x.InviteeEmail).HasMaxLength(256);
+        // One live invite per inviter/address pair — a repeated request updates LastSentAt
+        // instead of stacking rows.
+        b.HasIndex(x => new { x.InviterUserId, x.InviteeEmail }).IsUnique();
+        // Registration looks invites up by the address that just signed up.
+        b.HasIndex(x => new { x.InviteeEmail, x.Status });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InviterUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public sealed class CoupleFriendshipConfiguration : IEntityTypeConfiguration<CoupleFriendship>
 {
     public void Configure(EntityTypeBuilder<CoupleFriendship> b)
