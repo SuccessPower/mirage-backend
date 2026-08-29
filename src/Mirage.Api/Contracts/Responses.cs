@@ -450,6 +450,126 @@ public sealed record DateRequestCommentResponse(
     string Body,
     DateTimeOffset CreatedAt);
 
+// ---- Practice: the mentor's and the counsellor's own caseloads ----
+//
+// Mentorship and counselling are separate practices with separate pages, so they have separate
+// payloads. Nothing here merges the two, and neither endpoint reads the other's data.
+
+public sealed record MentorshipCountsResponse(
+    int Mentees,
+    int PendingRequests,
+    int Single,
+    int Married,
+    int Couples,
+    int OtherStatus,
+    int UpcomingMeetings,
+    int PastMeetings);
+
+public sealed record CounsellingCountsResponse(
+    int Clients,
+    int RequestedSessions,
+    int OngoingSessions,
+    int CompletedSessions,
+    int Single,
+    int Married,
+    int Couples,
+    int OtherStatus);
+
+// The spouse of a roster person who is in an approved couple. A practitioner works with the
+// marriage, not just the individual, so a married mentee or client is shown as a couple.
+public sealed record PracticePartnerResponse(
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    Guid CoupleId);
+
+// One person in a practitioner's roster. MentorRequestId is set on the mentorship page and
+// LatestSessionId on the counselling page — each page fills only the handle it can act on.
+public sealed record PracticePersonResponse(
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    RelationshipStatus? RelationshipStatus,
+    string City,
+    string Country,
+    DateTimeOffset Since,
+    Guid? MentorRequestId,
+    Guid? LatestSessionId,
+    int SessionCount,
+    bool IsAnonymous,
+    PracticePartnerResponse? Partner = null,
+    string? OrgBadgeUrl = null,
+    string? OrgName = null);
+
+public sealed record PracticeSessionResponse(
+    Guid Id,
+    Guid ClientUserId,
+    string ClientDisplayName,
+    string? ClientAvatarUrl,
+    RelationshipStatus? ClientRelationshipStatus,
+    SessionType Type,
+    SessionStatus Status,
+    DateTimeOffset ScheduledAt,
+    string Topic,
+    bool ClientAnonymous,
+    Guid? PartnerUserId,
+    bool PartnerAccepted,
+    DateTimeOffset CreatedAt);
+
+public sealed record PracticeRequestResponse(
+    Guid Id,
+    Guid MenteeUserId,
+    string MenteeDisplayName,
+    string? MenteeAvatarUrl,
+    RelationshipStatus? MenteeRelationshipStatus,
+    string Message,
+    DateTimeOffset CreatedAt);
+
+// A mentor's scheduled call or video meeting with their group. Mentors run meetings the same way
+// counsellors run sessions, so the mentorship page shows them as that practice's activity.
+public sealed record PracticeMeetingResponse(
+    Guid Id,
+    string Title,
+    string MeetingLink,
+    DateTimeOffset ScheduledAt,
+    int? DurationMinutes,
+    bool IsPast);
+
+public sealed record MentorshipPracticeResponse(
+    Guid MentorProfileId,
+    MentorshipCountsResponse Counts,
+    IReadOnlyList<PracticePersonResponse> Mentees,
+    IReadOnlyList<PracticeRequestResponse> PendingRequests,
+    IReadOnlyList<PracticeMeetingResponse> UpcomingMeetings,
+    IReadOnlyList<PracticeMeetingResponse> PastMeetings);
+
+// Admin oversight: one row per mentor, with the activity that shows whether the mentorship is
+// actually happening — a mentor with mentees but no meetings in months is the thing to spot.
+public sealed record AdminMentorActivityResponse(
+    Guid MentorProfileId,
+    Guid UserId,
+    string DisplayName,
+    string? AvatarUrl,
+    string City,
+    string Country,
+    bool IsApproved,
+    int Mentees,
+    int PendingRequests,
+    int SingleMentees,
+    int MarriedMentees,
+    int UpcomingMeetings,
+    int PastMeetings,
+    DateTimeOffset? LastMeetingAt,
+    DateTimeOffset? NextMeetingAt,
+    DateTimeOffset JoinedAt);
+
+public sealed record CounsellingPracticeResponse(
+    Guid CounsellorProfileId,
+    CounsellingCountsResponse Counts,
+    IReadOnlyList<PracticePersonResponse> Clients,
+    IReadOnlyList<PracticeSessionResponse> RequestedSessions,
+    IReadOnlyList<PracticeSessionResponse> OngoingSessions);
+
 public sealed record CoupleResponse(
     Guid Id,
     Guid OtherUserId,

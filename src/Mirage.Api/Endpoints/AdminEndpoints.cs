@@ -65,6 +65,9 @@ internal static class AdminEndpoints
         // Mentor verification
         admin.MapGet("/mentors", ListMentorProfiles);
         admin.MapGet("/mentors/pending", ListPendingMentors);
+        // Mentor oversight: who is actually mentoring, and whether meetings are happening. The
+        // counselling side already has this through sessions and payouts.
+        admin.MapGet("/mentors/activity", ListMentorActivity);
         admin.MapPatch("/mentors/{id:guid}/approve", ApproveMentor);
 
         // Couples overview
@@ -920,6 +923,50 @@ internal static class AdminEndpoints
             .ToPagedResultAsync(page, pageSize, cancellationToken);
 
         return ApiResults.Ok(context, result, "Mentor profiles retrieved successfully.");
+    }
+
+    private static async Task<IResult> ListMentorActivity(HttpContext context, IMirageDbContext db,
+        bool? approved, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var query = db.Mentors.AsNoTracking().AsQueryable();
+        if (approved.HasValue) query = query.Where(x => x.IsApproved == approved.Value);
+
+        var result = await query
+            .OrderByDescending(x => db.MentorMeetings
+                .Where(m => m.MentorProfileId == x.Id && m.ScheduledAt <= now)
+                .Max(m => (DateTimeOffset?)m.ScheduledAt))
+            .ThenByDescending(x => x.CreatedAt)
+            .Select(x => new AdminMentorActivityResponse(
+                x.Id,
+                x.UserId,
+                x.UserProfile.DisplayName,
+                x.UserProfile.AvatarUrl,
+                x.UserProfile.City,
+                x.UserProfile.Country,
+                x.IsApproved,
+                db.MentorRequests.Count(r => r.MentorProfileId == x.Id
+                    && r.Status == MentorRequestStatus.Accepted),
+                db.MentorRequests.Count(r => r.MentorProfileId == x.Id
+                    && r.Status == MentorRequestStatus.Pending),
+                db.MentorRequests.Count(r => r.MentorProfileId == x.Id
+                    && r.Status == MentorRequestStatus.Accepted
+                    && db.Profiles.Any(p => p.UserId == r.MenteeUserId
+                        && p.RelationshipStatus == RelationshipStatus.Single)),
+                db.MentorRequests.Count(r => r.MentorProfileId == x.Id
+                    && r.Status == MentorRequestStatus.Accepted
+                    && db.Profiles.Any(p => p.UserId == r.MenteeUserId
+                        && p.RelationshipStatus == RelationshipStatus.Married)),
+                db.MentorMeetings.Count(m => m.MentorProfileId == x.Id && m.ScheduledAt > now),
+                db.MentorMeetings.Count(m => m.MentorProfileId == x.Id && m.ScheduledAt <= now),
+                db.MentorMeetings.Where(m => m.MentorProfileId == x.Id && m.ScheduledAt <= now)
+                    .Max(m => (DateTimeOffset?)m.ScheduledAt),
+                db.MentorMeetings.Where(m => m.MentorProfileId == x.Id && m.ScheduledAt > now)
+                    .Min(m => (DateTimeOffset?)m.ScheduledAt),
+                x.CreatedAt))
+            .ToPagedResultAsync(page, pageSize, cancellationToken);
+
+        return ApiResults.Ok(context, result, "Mentor activity retrieved successfully.");
     }
 
     private static async Task<IResult> ListPendingMentors(HttpContext context, IMirageDbContext db,
