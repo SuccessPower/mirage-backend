@@ -167,7 +167,13 @@ public enum NotificationType
     ProfileVisibleAgain = 46,
     // Sent to the admin who hid a profile or issued a profile/conduct warning, once the user goes
     // and updates their profile — see NotificationService.NotifyAdminsOfProfileUpdateAsync.
-    ProfileUpdatedAfterReview = 47
+    ProfileUpdatedAfterReview = 47,
+    // An admin approved the mentor application. The counsellor equivalent is CounsellorApproved.
+    MentorApproved = 48,
+    // A mentor posted to, or messaged, their mentorship group. In-app and push only — a mentor
+    // who posts a few times a week should not generate a few emails a week.
+    MentorGroupPost = 49,
+    MentorGroupMessage = 50
 }
 
 public enum CelebrationType

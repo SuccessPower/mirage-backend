@@ -41,6 +41,7 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         NotificationType.OrganisationApproved,
         NotificationType.OrganisationRejected,
         NotificationType.CounsellorApproved,
+        NotificationType.MentorApproved,
         NotificationType.SessionBooked,
         NotificationType.SessionAccepted,
         NotificationType.MentorRequestAccepted,
