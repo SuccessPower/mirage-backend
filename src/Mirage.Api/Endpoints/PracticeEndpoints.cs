@@ -104,7 +104,7 @@ internal static class PracticeEndpoints
         // sessions, so those are this practice's activity.
         var now = DateTimeOffset.UtcNow;
         var meetings = await db.MentorMeetings.AsNoTracking()
-            .Where(x => x.MentorProfileId == mentorProfileId)
+            .Where(x => x.MentorProfileId == mentorProfileId && x.MentorRequestId == null)
             .OrderBy(x => x.ScheduledAt)
             .Select(x => new PracticeMeetingResponse(x.Id, x.Title, x.MeetingLink, x.ScheduledAt,
                 x.DurationMinutes, x.ScheduledAt < now))

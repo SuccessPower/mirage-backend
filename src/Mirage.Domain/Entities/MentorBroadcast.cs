@@ -70,7 +70,7 @@ public sealed class MentorMeeting : Entity
     private MentorMeeting() { }
 
     public MentorMeeting(Guid mentorProfileId, Guid scheduledByUserId, string title, string meetingLink,
-        DateTimeOffset scheduledAt, int? durationMinutes)
+        DateTimeOffset scheduledAt, int? durationMinutes, Guid? mentorRequestId = null)
     {
         MentorProfileId = mentorProfileId;
         ScheduledByUserId = scheduledByUserId;
@@ -78,9 +78,11 @@ public sealed class MentorMeeting : Entity
         MeetingLink = meetingLink.Trim();
         ScheduledAt = scheduledAt;
         DurationMinutes = durationMinutes;
+        MentorRequestId = mentorRequestId;
     }
 
     public Guid MentorProfileId { get; private set; }
+    public Guid? MentorRequestId { get; private set; }
     public Guid ScheduledByUserId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public string MeetingLink { get; private set; } = string.Empty;

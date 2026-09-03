@@ -380,9 +380,11 @@ public sealed class MentorMeetingConfiguration : IEntityTypeConfiguration<Mentor
     {
         b.ToTable("mentor_meetings");
         b.HasIndex(x => x.MentorProfileId);
+        b.HasIndex(x => x.MentorRequestId);
         b.Property(x => x.Title).HasMaxLength(200);
         b.Property(x => x.MeetingLink).HasMaxLength(500);
         b.HasOne<MentorProfile>().WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<MentorRequest>().WithMany().HasForeignKey(x => x.MentorRequestId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ScheduledByUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
