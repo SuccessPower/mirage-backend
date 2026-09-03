@@ -37,6 +37,9 @@ internal static class MentorEndpoints
         // MentorRequest that represents their relationship.
         requests.MapGet("/{id:guid}/messages", ListMentorMessages);
         requests.MapPost("/{id:guid}/messages", SendMentorMessage);
+        requests.MapGet("/{id:guid}/meetings", ListPrivateMeetings);
+        requests.MapPost("/{id:guid}/meetings", SchedulePrivateMeeting).RequireAuthorization(MiragePolicy.Mentor);
+        requests.MapGet("/{id:guid}/meetings/{meetingId:guid}/video-token", GetPrivateMeetingVideoToken);
 
         // Broadcast group: posts, group chat, and meetings shared between a mentor and their
         // accepted mentees.
@@ -132,6 +135,65 @@ internal static class MentorEndpoints
 
         return ApiResults.Created(context, $"/api/v1/mentorship/requests/{id}/messages/{message.Id}",
             new { message.Id }, "Message sent successfully.");
+    }
+
+    private static async Task<IResult> ListPrivateMeetings(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsMentorRequestPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        var meetings = await db.MentorMeetings.AsNoTracking()
+            .Where(x => x.MentorRequestId == id)
+            .OrderBy(x => x.ScheduledAt)
+            .Select(x => new MentorMeetingResponse(x.Id, x.MentorProfileId, x.ScheduledByUserId, x.Title,
+                x.MeetingLink, x.ScheduledAt, x.DurationMinutes))
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, meetings, "Private meetings retrieved successfully.");
+    }
+
+    private static async Task<IResult> SchedulePrivateMeeting(Guid id, ScheduleMentorMeetingRequest request,
+        HttpContext context, IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var relationship = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.Id == id && x.Mentor.UserId == userId && x.Status == MentorRequestStatus.Accepted)
+            .Select(x => new { x.MentorProfileId, x.MenteeUserId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (relationship is null) return EndpointHelpers.Forbidden(context);
+        if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.MeetingLink))
+            return EndpointHelpers.ValidationProblem(context, ("meeting", "Title and meeting link are required."));
+
+        var meeting = new MentorMeeting(relationship.MentorProfileId, userId, request.Title, request.MeetingLink,
+            request.ScheduledAt, request.DurationMinutes, id);
+        db.MentorMeetings.Add(meeting);
+        await db.SaveChangesAsync(cancellationToken);
+        await notifications.NotifyAsync(relationship.MenteeUserId, NotificationType.SessionBooked,
+            "One-to-one call scheduled", $"{request.Title} was scheduled for {request.ScheduledAt:MMM d, h:mm tt}.",
+            id, "MentorRequest", cancellationToken);
+        return ApiResults.Created(context, $"/api/v1/mentorship/requests/{id}/meetings/{meeting.Id}",
+            new { meeting.Id }, "Private meeting scheduled successfully.");
+    }
+
+    private static async Task<IResult> GetPrivateMeetingVideoToken(Guid id, Guid meetingId, HttpContext context,
+        MirageDbContext db, JitsiService jitsi, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (!await IsMentorRequestPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
+        var meeting = await db.MentorMeetings.AsNoTracking()
+            .Where(x => x.Id == meetingId && x.MentorRequestId == id)
+            .Select(x => new { x.MentorProfileId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (meeting is null) return EndpointHelpers.NotFound(context, "Meeting was not found.");
+        var mentorUserId = await db.Mentors.AsNoTracking().Where(x => x.Id == meeting.MentorProfileId)
+            .Select(x => x.UserId).SingleAsync(cancellationToken);
+        var displayName = await db.Profiles.AsNoTracking().Where(x => x.UserId == userId)
+            .Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken) ?? "Mirage member";
+        var email = await db.Users.AsNoTracking().Where(x => x.Id == userId)
+            .Select(x => x.Email).SingleOrDefaultAsync(cancellationToken);
+        var room = $"mirage-mentor-private-{id:N}-{meetingId:N}";
+        var token = jitsi.CreateToken(userId, displayName, email, room, mentorUserId == userId);
+        return ApiResults.Ok(context, new { AppId = jitsi.AppId, Room = room, Token = token },
+            "Video token issued successfully.");
     }
 
     private static async Task<IResult> ListMentees(Guid id, HttpContext context, IMirageDbContext db,
@@ -285,7 +347,7 @@ internal static class MentorEndpoints
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
 
         var meetings = await db.MentorMeetings.AsNoTracking()
-            .Where(x => x.MentorProfileId == id)
+            .Where(x => x.MentorProfileId == id && x.MentorRequestId == null)
             .OrderBy(x => x.ScheduledAt)
             .Select(x => new MentorMeetingResponse(x.Id, x.MentorProfileId, x.ScheduledByUserId, x.Title,
                 x.MeetingLink, x.ScheduledAt, x.DurationMinutes))
@@ -325,7 +387,7 @@ internal static class MentorEndpoints
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
         if (!await db.MentorMeetings.AsNoTracking()
-                .AnyAsync(x => x.Id == meetingId && x.MentorProfileId == id, cancellationToken))
+                .AnyAsync(x => x.Id == meetingId && x.MentorProfileId == id && x.MentorRequestId == null, cancellationToken))
             return EndpointHelpers.NotFound(context, "Meeting was not found.");
 
         var mentorUserId = await db.Mentors.AsNoTracking().Where(x => x.Id == id)
