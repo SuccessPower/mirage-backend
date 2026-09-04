@@ -135,10 +135,9 @@ internal static class MentorEndpoints
     /// </summary>
     private static MentorAudience[] VisibleAudiences(MentorshipTier? viewerTier, MentorAudience? requested)
     {
-        if (viewerTier is not null) return [MentorAudience.Everyone, AudienceFor(viewerTier.Value)];
-        return requested is null or MentorAudience.Everyone
-            ? [MentorAudience.Everyone]
-            : [MentorAudience.Everyone, requested.Value];
+        if (viewerTier is not null) return new[] { MentorAudience.Everyone, AudienceFor(viewerTier.Value) };
+        if (requested is null or MentorAudience.Everyone) return new[] { MentorAudience.Everyone };
+        return new[] { MentorAudience.Everyone, requested.Value };
     }
 
     // A mentor may address either group or both; a mentee only ever addresses their own.
