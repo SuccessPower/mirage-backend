@@ -17,6 +17,18 @@ internal static class CalendarEndpoints
         return api;
     }
 
+    // A meeting Mirage hosts itself stores the `mirage://secure-video` marker as its link: a marker,
+    // not an address, because the room is only reachable with a token the API mints per viewer.
+    // Handing that out as a link sent whoever tapped Join out of the app to a scheme nothing
+    // answers, so only a real web address travels as a link — an in-app room is joined from the
+    // item's own page.
+    private static string? ExternalLink(string? link) =>
+        link is not null
+        && (link.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || link.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            ? link
+            : null;
+
     private static async Task<IResult> ListMine(HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
     {
@@ -37,16 +49,26 @@ internal static class CalendarEndpoints
             .Select(x => x.MentorProfileId).Distinct().ToList();
         var acceptedMentorRequestIds = acceptedMemberships.Select(x => x.Id).ToList();
 
-        var meetings = await db.MentorMeetings.AsNoTracking()
+        var meetingRows = await db.MentorMeetings.AsNoTracking()
             .Where(x => (x.MentorRequestId == null
                     && ((x.Audience != MentorAudience.PaidMentees && freeGroupIds.Contains(x.MentorProfileId))
                         || (x.Audience != MentorAudience.FreeMentees && paidGroupIds.Contains(x.MentorProfileId))))
                 || (x.MentorRequestId != null && acceptedMentorRequestIds.Contains(x.MentorRequestId.Value))
                 || (ownMentorProfileId != null && x.MentorProfileId == ownMentorProfileId.Value))
-            .Select(x => new CalendarItemResponse("MentorMeeting", x.Id, x.Title, x.ScheduledAt,
-                x.DurationMinutes != null ? x.ScheduledAt.AddMinutes(x.DurationMinutes.Value) : null,
-                x.MeetingLink, null, x.MentorProfileId))
+            .Select(x => new { x.Id, x.Title, x.ScheduledAt, x.DurationMinutes, x.MeetingLink,
+                x.MentorProfileId, x.MentorRequestId })
             .ToListAsync(cancellationToken);
+
+        // A one-to-one call lives in the private channel, not the group, so it is a source of its
+        // own carrying the request id — routed at the group it left the mentor on a page whose
+        // video token is for a different room.
+        var meetings = meetingRows
+            .Select(x => new CalendarItemResponse(
+                x.MentorRequestId != null ? "MentorPrivateMeeting" : "MentorMeeting",
+                x.Id, x.Title, x.ScheduledAt,
+                x.DurationMinutes != null ? x.ScheduledAt.AddMinutes(x.DurationMinutes.Value) : null,
+                ExternalLink(x.MeetingLink), null, x.MentorRequestId ?? x.MentorProfileId))
+            .ToList();
 
         var sessions = await db.CounsellingSessions.AsNoTracking()
             .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId
@@ -116,12 +138,15 @@ internal static class CalendarEndpoints
             .Select(x => x.CounsellorId).Distinct().ToListAsync(cancellationToken);
         if (ownCounsellorProfileId is { } ownCounsellorId) counsellorGroupIds.Add(ownCounsellorId);
 
-        var counsellorGroupMeetings = await db.CounsellorGroupMeetings.AsNoTracking()
+        var counsellorGroupMeetingRows = await db.CounsellorGroupMeetings.AsNoTracking()
             .Where(x => counsellorGroupIds.Contains(x.CounsellorProfileId))
+            .Select(x => new { x.Id, x.Title, x.ScheduledAt, x.DurationMinutes, x.MeetingLink, x.CounsellorProfileId })
+            .ToListAsync(cancellationToken);
+        var counsellorGroupMeetings = counsellorGroupMeetingRows
             .Select(x => new CalendarItemResponse("CounsellorGroupMeeting", x.Id, x.Title, x.ScheduledAt,
                 x.DurationMinutes != null ? x.ScheduledAt.AddMinutes(x.DurationMinutes.Value) : null,
-                x.MeetingLink, null, x.CounsellorProfileId))
-            .ToListAsync(cancellationToken);
+                ExternalLink(x.MeetingLink), null, x.CounsellorProfileId))
+            .ToList();
 
         var dateRequests = await db.DateRequests.AsNoTracking()
             .Where(x => x.RequestorUserId == userId ||
