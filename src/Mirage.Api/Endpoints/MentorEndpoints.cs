@@ -553,9 +553,18 @@ internal static class MentorEndpoints
         CancellationToken cancellationToken)
     {
         var currentUserId = context.User.TryGetUserId();
-        var isAcceptedMentee = currentUserId is not null && await db.MentorRequests.AsNoTracking()
-            .AnyAsync(x => x.MentorProfileId == id && x.MenteeUserId == currentUserId
-                && x.Status == MentorRequestStatus.Accepted, cancellationToken);
+
+        // The viewer's own relationship with this mentor, resolved here rather than left to the
+        // client to find by paging its request list — a mentee who already has this mentor must
+        // never be offered "Request mentorship" again, and that must not depend on how many
+        // requests they happen to have.
+        var myRequest = currentUserId is null
+            ? null
+            : await db.MentorRequests.AsNoTracking()
+                .Where(x => x.MentorProfileId == id && x.MenteeUserId == currentUserId)
+                .Select(x => new { x.Id, x.Status, x.Tier })
+                .SingleOrDefaultAsync(cancellationToken);
+        var isAcceptedMentee = myRequest is { Status: MentorRequestStatus.Accepted };
 
         var mentor = await db.Mentors.AsNoTracking()
             .Where(x => x.Id == id && x.IsApproved)
@@ -580,9 +589,20 @@ internal static class MentorEndpoints
                     && x.PriceAmount > 0 && x.PriceCurrency != null,
             })
             .SingleOrDefaultAsync(cancellationToken);
-        return mentor is null
-            ? EndpointHelpers.NotFound(context, "Mentor was not found.")
-            : ApiResults.Ok(context, mentor, "Mentor retrieved successfully.");
+        if (mentor is null) return EndpointHelpers.NotFound(context, "Mentor was not found.");
+
+        return ApiResults.Ok(context, new
+        {
+            mentor.Id, mentor.DisplayName, mentor.Denomination, mentor.City, mentor.AvatarUrl,
+            mentor.YearsMarried, mentor.Testimony, mentor.AcceptsFreeSessions,
+            mentor.AreasOfGuidance, mentor.Languages, mentor.PhoneNumber,
+            mentor.OffersPaidMentorship, mentor.PriceAmount, mentor.PriceCurrency,
+            mentor.AcceptsPaidMentees,
+            // Null when the viewer has no relationship with this mentor at all.
+            MyRequestId = myRequest?.Id,
+            MyRequestStatus = myRequest?.Status,
+            MyTier = myRequest?.Tier,
+        }, "Mentor retrieved successfully.");
     }
 
     private static async Task<IResult> GetMyProfile(HttpContext context, IMirageDbContext db,
