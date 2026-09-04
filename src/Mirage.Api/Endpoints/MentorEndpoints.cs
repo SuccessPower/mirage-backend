@@ -126,6 +126,21 @@ internal static class MentorEndpoints
     private static MentorAudience AudienceFor(MentorshipTier tier) =>
         tier == MentorshipTier.Paid ? MentorAudience.PaidMentees : MentorAudience.FreeMentees;
 
+    /// <summary>
+    /// Which audiences the caller may read. A mentee reads what was addressed to everyone plus
+    /// their own group. The mentor sees each group exactly as its members do — Everyone plus that
+    /// group's own traffic — and the unnarrowed view is the announcement stream to both rather
+    /// than a merge of all three, so the free and paid conversations stay separate rooms on the
+    /// mentor's screen too.
+    /// </summary>
+    private static MentorAudience[] VisibleAudiences(MentorshipTier? viewerTier, MentorAudience? requested)
+    {
+        if (viewerTier is not null) return [MentorAudience.Everyone, AudienceFor(viewerTier.Value)];
+        return requested is null or MentorAudience.Everyone
+            ? [MentorAudience.Everyone]
+            : [MentorAudience.Everyone, requested.Value];
+    }
+
     // A mentor may address either group or both; a mentee only ever addresses their own.
     private static MentorAudience ResolveSendAudience(MentorshipTier? viewerTier, MentorAudience requested) =>
         viewerTier is null ? requested : AudienceFor(viewerTier.Value);
@@ -291,13 +306,8 @@ internal static class MentorEndpoints
         // else; the mentor (null tier) sees both groups, optionally narrowed by ?audience=.
         var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
         var query = db.MentorPosts.AsNoTracking().Where(x => x.MentorProfileId == id);
-        if (viewerTier is not null)
-        {
-            var own = AudienceFor(viewerTier.Value);
-            query = query.Where(x => x.Audience == MentorAudience.Everyone || x.Audience == own);
-        }
-        else if (audience is not null)
-            query = query.Where(x => x.Audience == audience);
+        var visible = VisibleAudiences(viewerTier, audience);
+        query = query.Where(x => visible.Contains(x.Audience));
 
         var posts = await query
             .OrderByDescending(x => x.CreatedAt)
@@ -350,13 +360,8 @@ internal static class MentorEndpoints
         // group. The mentor reads both, and can narrow to one with ?audience=.
         var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
         var query = db.MentorGroupMessages.AsNoTracking().Where(x => x.MentorProfileId == id);
-        if (viewerTier is not null)
-        {
-            var own = AudienceFor(viewerTier.Value);
-            query = query.Where(x => x.Audience == MentorAudience.Everyone || x.Audience == own);
-        }
-        else if (audience is not null)
-            query = query.Where(x => x.Audience == audience);
+        var visible = VisibleAudiences(viewerTier, audience);
+        query = query.Where(x => visible.Contains(x.Audience));
 
         var messages = await query
             .OrderBy(x => x.CreatedAt)
@@ -442,13 +447,8 @@ internal static class MentorEndpoints
         var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
         var query = db.MentorMeetings.AsNoTracking()
             .Where(x => x.MentorProfileId == id && x.MentorRequestId == null);
-        if (viewerTier is not null)
-        {
-            var own = AudienceFor(viewerTier.Value);
-            query = query.Where(x => x.Audience == MentorAudience.Everyone || x.Audience == own);
-        }
-        else if (audience is not null)
-            query = query.Where(x => x.Audience == audience);
+        var visible = VisibleAudiences(viewerTier, audience);
+        query = query.Where(x => visible.Contains(x.Audience));
 
         var meetings = await query
             .OrderBy(x => x.ScheduledAt)
