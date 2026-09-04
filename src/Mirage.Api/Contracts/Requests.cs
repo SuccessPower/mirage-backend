@@ -28,7 +28,8 @@ public sealed record RegisterRequest(
     string? TimeZoneId = null,
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
     string[]? PreferredCountryCodes = null,
-    bool SubscribeToNewsletter = true);
+    bool SubscribeToNewsletter = true,
+    string? ProfessionalInviteCode = null);
 
 public sealed record CreateNewsletterRequest(string Title, string Subject, string Excerpt, string ContentHtml,
     string[]? ImageUrls = null, string? ThumbnailUrl = null);
@@ -98,7 +99,10 @@ public sealed record UpdateProfileRequest(
     DiscoveryScope DiscoveryScope = DiscoveryScope.Continent,
     string[]? PreferredCountryCodes = null,
     DateOnly? WeddingAnniversaryDate = null,
-    bool CelebrationOptOut = false);
+    bool CelebrationOptOut = false,
+    string? ProfessionalInviteCode = null);
+
+public sealed record RedeemProfessionalInviteRequest(string Code);
 public sealed record SetProfilePhotosRequest(string[] PhotoUrls);
 public sealed record CompleteProfileRequest(
     DateOnly DateOfBirth,

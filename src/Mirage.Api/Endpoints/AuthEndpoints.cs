@@ -57,6 +57,9 @@ internal static class AuthEndpoints
     {
         var errors = Validate(request);
         if (errors.Length > 0) return EndpointHelpers.ValidationProblem(context, errors);
+        if (!await ProfessionalInviteEndpoints.IsValidCode(request.ProfessionalInviteCode, db, cancellationToken))
+            return EndpointHelpers.ValidationProblem(context,
+                ("professionalInviteCode", "Mentor or counsellor invite code is invalid."));
 
         var logger = loggerFactory.CreateLogger("Mirage.Performance.Registration");
         var registrationStopwatch = Stopwatch.StartNew();
@@ -135,6 +138,11 @@ internal static class AuthEndpoints
                     await OrganisationMembershipService.AddMemberAsync(db, churchSelection.OrganisationId.Value,
                         user.Id, churchSelection.BranchId, newProfile, cancellationToken);
                 await db.SaveChangesAsync(cancellationToken);
+
+                if (!await ProfessionalInviteEndpoints.RedeemCode(user.Id, request.ProfessionalInviteCode, db,
+                        cancellationToken))
+                    return EndpointHelpers.ValidationProblem(context,
+                        ("professionalInviteCode", "Mentor or counsellor invite code is invalid."));
 
                 // Joining a church's community is immediate — it isn't gated on the ChurchAdmin
                 // approving the OrganisationMember row above (which only stays Pending when the

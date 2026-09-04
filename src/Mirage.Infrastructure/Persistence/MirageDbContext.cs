@@ -88,6 +88,8 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<NewsletterCommentLike> NewsletterCommentLikes => Set<NewsletterCommentLike>();
     public DbSet<PlatformManagerInvite> PlatformManagerInvites => Set<PlatformManagerInvite>();
     public DbSet<PlatformPricing> PlatformPricing => Set<PlatformPricing>();
+    public DbSet<ProfessionalConnection> ProfessionalConnections => Set<ProfessionalConnection>();
+    public DbSet<CalendarReminderDelivery> CalendarReminderDeliveries => Set<CalendarReminderDelivery>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

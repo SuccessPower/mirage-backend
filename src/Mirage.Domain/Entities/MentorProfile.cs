@@ -24,6 +24,7 @@ public sealed class MentorProfile : Entity
     public bool AcceptsFreeSessions { get; private set; } = true;
     public bool AllowMenteesToSeeEachOther { get; private set; }
     public string? PhoneNumber { get; private set; }
+    public string? InviteCode { get; private set; }
     public UserProfile UserProfile { get; private set; } = null!;
 
     public void Approve() { IsApproved = true; Touch(); }
@@ -45,4 +46,6 @@ public sealed class MentorProfile : Entity
         PhoneNumber = string.IsNullOrWhiteSpace(phoneNumber) ? null : phoneNumber.Trim();
         Touch();
     }
+
+    public void SetInviteCode(string inviteCode) { InviteCode = inviteCode.Trim().ToUpperInvariant(); Touch(); }
 }
