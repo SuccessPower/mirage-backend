@@ -111,6 +111,8 @@ public static class EmailTemplates
         [NotificationType.WarningDeadlinePassed] = ("Warning deadline", Amber),
         [NotificationType.ProfileHidden] = ("Profile hidden", Amber),
         [NotificationType.ProfileVisibleAgain] = ("Profile visible", Teal)
+        ,[NotificationType.CalendarReminder] = ("Calendar reminder", Purple)
+        ,[NotificationType.ProfessionalConnectionRequest] = ("Connection request", Purple)
     };
 
     public static bool HasTemplate(NotificationType type) => TypeLabels.ContainsKey(type);

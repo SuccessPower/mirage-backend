@@ -565,6 +565,8 @@ public sealed class CounsellorConfiguration : IEntityTypeConfiguration<Counsello
     {
         b.ToTable("counsellors");
         b.HasIndex(x => x.UserId).IsUnique();
+        b.HasIndex(x => x.InviteCode).IsUnique();
+        b.Property(x => x.InviteCode).HasMaxLength(16);
         b.Property(x => x.Specialisations).HasColumnType("text[]");
         b.Property(x => x.Languages).HasColumnType("text[]");
         b.Property(x => x.VerificationDocumentUrls).HasColumnType("text[]");
@@ -902,10 +904,34 @@ public sealed class MentorProfileConfiguration : IEntityTypeConfiguration<Mentor
     {
         b.ToTable("mentors");
         b.HasIndex(x => x.UserId).IsUnique();
+        b.HasIndex(x => x.InviteCode).IsUnique();
+        b.Property(x => x.InviteCode).HasMaxLength(16);
         b.Property(x => x.Testimony).HasMaxLength(2000);
         b.Property(x => x.AreasOfGuidance).HasColumnType("text[]");
         b.Property(x => x.Languages).HasColumnType("text[]");
         b.HasOne(x => x.UserProfile).WithMany().HasForeignKey(x => x.UserId).HasPrincipalKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class ProfessionalConnectionConfiguration : IEntityTypeConfiguration<ProfessionalConnection>
+{
+    public void Configure(EntityTypeBuilder<ProfessionalConnection> b)
+    {
+        b.ToTable("professional_connections");
+        b.HasKey(x => x.Id);
+        b.HasIndex(x => new { x.ProfessionalUserId, x.MemberUserId, x.Role }).IsUnique();
+        b.HasIndex(x => new { x.ProfessionalUserId, x.Status });
+    }
+}
+
+public sealed class CalendarReminderDeliveryConfiguration : IEntityTypeConfiguration<CalendarReminderDelivery>
+{
+    public void Configure(EntityTypeBuilder<CalendarReminderDelivery> b)
+    {
+        b.ToTable("calendar_reminder_deliveries");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Source).HasMaxLength(40);
+        b.HasIndex(x => new { x.Source, x.SourceId, x.UserId, x.LeadTime }).IsUnique();
     }
 }
 

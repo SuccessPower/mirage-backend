@@ -173,8 +173,14 @@ public enum NotificationType
     // A mentor posted to, or messaged, their mentorship group. In-app and push only — a mentor
     // who posts a few times a week should not generate a few emails a week.
     MentorGroupPost = 49,
-    MentorGroupMessage = 50
+    MentorGroupMessage = 50,
+    CalendarReminder = 51,
+    ProfessionalConnectionRequest = 52
 }
+
+public enum ProfessionalRole { Mentor = 1, Counsellor = 2 }
+public enum ProfessionalConnectionStatus { Pending = 1, Accepted = 2, Declined = 3, Withdrawn = 4 }
+public enum CalendarReminderLeadTime { OneDay = 1, FifteenMinutes = 2 }
 
 public enum CelebrationType
 {

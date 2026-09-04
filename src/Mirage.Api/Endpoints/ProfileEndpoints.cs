@@ -525,6 +525,9 @@ internal static class ProfileEndpoints
     {
         if (string.IsNullOrWhiteSpace(request.DisplayName) || string.IsNullOrWhiteSpace(request.City))
             return EndpointHelpers.ValidationProblem(context, ("profile", "Display name and city are required."));
+        if (!await ProfessionalInviteEndpoints.IsValidCode(request.ProfessionalInviteCode, db, cancellationToken))
+            return EndpointHelpers.ValidationProblem(context,
+                ("professionalInviteCode", "Mentor or counsellor invite code is invalid."));
         var profile = await db.Profiles.SingleOrDefaultAsync(x => x.UserId == context.User.GetUserId(), cancellationToken);
         if (profile is null) return EndpointHelpers.NotFound(context, "Profile was not found.");
 
@@ -602,6 +605,10 @@ internal static class ProfileEndpoints
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        if (!await ProfessionalInviteEndpoints.RedeemCode(profile.UserId, request.ProfessionalInviteCode, db,
+                cancellationToken))
+            return EndpointHelpers.ValidationProblem(context,
+                ("professionalInviteCode", "Mentor or counsellor invite code is invalid."));
         await notifications.NotifyAdminsOfProfileUpdateAsync(profile.UserId, FrontendBaseUrl(configuration),
             cancellationToken);
         return ApiResults.Ok(context, new { profile.UserId }, "Profile updated successfully.");

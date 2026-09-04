@@ -83,5 +83,7 @@ public interface IMirageDbContext
     DbSet<NewsletterCommentLike> NewsletterCommentLikes { get; }
     DbSet<PlatformManagerInvite> PlatformManagerInvites { get; }
     DbSet<PlatformPricing> PlatformPricing { get; }
+    DbSet<ProfessionalConnection> ProfessionalConnections { get; }
+    DbSet<CalendarReminderDelivery> CalendarReminderDeliveries { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

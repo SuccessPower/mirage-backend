@@ -36,6 +36,7 @@ public sealed class CounsellorProfile : Entity
     public string[] Languages { get; private set; } = [];
     public string[] VerificationDocumentUrls { get; private set; } = [];
     public string? PhoneNumber { get; private set; }
+    public string? InviteCode { get; private set; }
     public decimal? PriceAmount { get; private set; }
     public string? PriceCurrency { get; private set; }
     public bool SupportsVoiceCalls { get; private set; } = true;
@@ -157,4 +158,6 @@ public sealed class CounsellorProfile : Entity
         RatingCount++;
         Touch();
     }
+
+    public void SetInviteCode(string inviteCode) { InviteCode = inviteCode.Trim().ToUpperInvariant(); Touch(); }
 }
