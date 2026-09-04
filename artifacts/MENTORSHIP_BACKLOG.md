@@ -27,15 +27,19 @@ Chunks in execution order. Tick as completed.
       Flutter (ThemeController now defaults to ThemeMode.system)
 - [x] Profile settings theme control now shares the same composable, with an Auto option
 
-## Chunk 3 — professional invite links (IN PROGRESS)
-- [ ] Short descriptive codes (initials + digits)
-- [ ] Invite link routes to SIGNUP (create the route if missing), not an empty page
-- [ ] Signup + edit-profile: invite-code field
-- [ ] Mentee's mentors hub: enter a mentor's code to send a request
-- [ ] Shareable as QR / postcard
-- [ ] Every request still subject to the professional's approval
+## Chunk 3 — professional invite links (DONE)
+- [x] Short descriptive codes — already initials + 4 digits (e.g. AO-4821); left as-is
+- [x] /join route created (JoinWithInvitePage) — the backend was handing out /join?invite=CODE
+      links to a route that did not exist, so every shared invite opened a blank page
+- [x] Public GET /professional-invites/lookup/{code} so /join can name the inviter before signup
+- [x] Invite links are now absolute URLs (were site-relative, unusable in WhatsApp or a QR code)
+- [x] Signup already had the field and prefills from ?invite=; auth modal now opens on Register
+- [x] Edit-profile: invite-code field (the backend already redeemed it on update)
+- [x] Mentors hub (web + mobile): enter a mentor's code to send a request
+- [x] QR code, save-as-PNG and print-a-postcard on the professional's InviteCard
+- [x] Approval unchanged — redeeming only ever creates a Pending request
 
-## Chunk 4 — calendar + reminders
+## Chunk 4 — calendar + reminders (IN PROGRESS)
 - [ ] Every scheduled meeting (mentor or counsellor) appears on BOTH sides' calendars
 - [ ] Reminder in-app + email the day before, and 15 minutes before
 - [ ] Events (community, dates, friends' events) marked on calendars + reminders
