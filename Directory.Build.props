@@ -1,5 +1,15 @@
 <Project>
   <!--
+    CI and Render build on dotnet/sdk:8.0, whose compiler is C# 12. A newer SDK installed
+    locally defaults to a newer language version and will happily compile syntax the deploy
+    then rejects, so the language version is pinned rather than inferred from whatever SDK
+    happens to be on the machine.
+  -->
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+  </PropertyGroup>
+
+  <!--
     OpenCvSharp4's bundled analyzer targets a Roslyn version newer than the
     dotnet/sdk:8.0 compiler used in CI/Render builds (CS9057). Strip it from
     every project's analyzer list rather than relying on PackageReference
