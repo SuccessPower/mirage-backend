@@ -93,6 +93,9 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<PlatformPricing> PlatformPricing => Set<PlatformPricing>();
     public DbSet<ProfessionalConnection> ProfessionalConnections => Set<ProfessionalConnection>();
     public DbSet<CalendarReminderDelivery> CalendarReminderDeliveries => Set<CalendarReminderDelivery>();
+    public DbSet<ChatThemePreference> ChatThemePreferences => Set<ChatThemePreference>();
+    public DbSet<ChatMessageHide> ChatMessageHides => Set<ChatMessageHide>();
+    public DbSet<ChatClearMarker> ChatClearMarkers => Set<ChatClearMarker>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

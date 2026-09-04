@@ -464,19 +464,39 @@ internal static class MatchingEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var counts = await db.Messages.AsNoTracking()
+        // A message this member hid, or one behind a chat they cleared, is gone from their screen —
+        // counting it would leave a badge on a conversation with nothing new left to open.
+        var hiddenIds = await db.ChatMessageHides.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.MessageId).ToArrayAsync(cancellationToken);
+        var clearMarkers = await db.ChatClearMarkers.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new { x.ConversationKey, x.ClearedAt })
+            .ToListAsync(cancellationToken);
+
+        // Grouped in memory rather than by the database: a per-conversation cut-off cannot be
+        // expressed as one predicate, and the rows here are only ever a member's unread messages.
+        var unread = await db.Messages.AsNoTracking()
             .Where(m => !m.IsRead && m.SenderId != userId
+                && !hiddenIds.Contains(m.Id)
                 && db.Matches.Any(x => x.Id == m.MatchId
                     && x.Status == MatchStatus.Active
                     && (x.User1Id == userId || x.User2Id == userId)))
+            .Select(m => new { m.MatchId, m.CreatedAt })
+            .ToListAsync(cancellationToken);
+
+        var cleared = clearMarkers.ToDictionary(x => x.ConversationKey, x => x.ClearedAt);
+        var visibleCounts = unread
+            .Where(m => !cleared.TryGetValue(new ChatSurface(ChatSurfaceKind.Match, m.MatchId).Key,
+                            out var clearedAt)
+                        || m.CreatedAt > clearedAt)
             .GroupBy(m => m.MatchId)
             .Select(g => new { MatchId = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         return ApiResults.Ok(context, new
         {
-            Total = counts.Sum(x => x.Count),
-            Matches = counts
+            Total = visibleCounts.Sum(x => x.Count),
+            Matches = visibleCounts
         }, "Unread message counts retrieved successfully.");
     }
 
@@ -491,7 +511,11 @@ internal static class MatchingEndpoints
             .AnyAsync(x => x.Id == id && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (!inMatch) return EndpointHelpers.Forbidden(context);
 
-        var query = db.Messages.AsNoTracking().Where(x => x.MatchId == id);
+        // Messages this member deleted from their own copy, and anything before they cleared the
+        // chat, are theirs alone to have removed: the other side still has the conversation whole.
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.Match, id).Key, cancellationToken);
+        var query = visibility.Apply(db.Messages.AsNoTracking().Where(x => x.MatchId == id));
         if (before.HasValue) query = query.Where(x => x.CreatedAt < before.Value);
 
         var messages = await query
@@ -535,8 +559,10 @@ internal static class MatchingEndpoints
             && (x.User1Id == userId || x.User2Id == userId), cancellationToken);
         if (!inMatch) return EndpointHelpers.Forbidden(context);
 
-        var messages = await db.Messages.AsNoTracking()
-            .Where(x => x.MatchId == id && x.EncryptionVersion == 0)
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.Match, id).Key, cancellationToken);
+        var messages = await visibility
+            .Apply(db.Messages.AsNoTracking().Where(x => x.MatchId == id && x.EncryptionVersion == 0))
             .OrderBy(x => x.CreatedAt)
             .Take(100)
             .Select(x => new

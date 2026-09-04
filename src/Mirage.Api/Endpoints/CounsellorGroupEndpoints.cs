@@ -147,8 +147,10 @@ internal static class CounsellorGroupEndpoints
             .Where(x => x.Id == id).Select(x => x.UserId).SingleAsync(cancellationToken);
         var isCounsellor = counsellorUserId == userId;
 
-        var messages = await db.CounsellorGroupMessages.AsNoTracking()
-            .Where(x => x.CounsellorProfileId == id)
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.CounsellorGroup, id).Key, cancellationToken);
+        var messages = await visibility
+            .Apply(db.CounsellorGroupMessages.AsNoTracking().Where(x => x.CounsellorProfileId == id))
             .OrderBy(x => x.CreatedAt)
             // Left join, not inner: a sender whose profile row is missing must not silently erase
             // their message from the conversation.

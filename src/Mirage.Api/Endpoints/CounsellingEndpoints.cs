@@ -74,8 +74,10 @@ internal static class CounsellingEndpoints
         var userId = context.User.GetUserId();
         if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
 
-        var messages = await db.CounsellingMessages.AsNoTracking()
-            .Where(x => x.SessionId == id)
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.CounsellingSession, id).Key, cancellationToken);
+        var messages = await visibility
+            .Apply(db.CounsellingMessages.AsNoTracking().Where(x => x.SessionId == id))
             .OrderBy(x => x.CreatedAt)
             .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new CounsellingMessageResponse(
                 m.Id, m.SessionId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt,
@@ -188,8 +190,12 @@ internal static class CounsellingEndpoints
     {
         var userId = context.User.GetUserId();
         if (!await IsSessionPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
-        var messages = await db.CounsellingMessages.AsNoTracking()
-            .Where(x => x.SessionId == id && x.EncryptionVersion == 0).OrderBy(x => x.CreatedAt).Take(100)
+        var legacyVisibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.CounsellingSession, id).Key, cancellationToken);
+        var messages = await legacyVisibility
+            .Apply(db.CounsellingMessages.AsNoTracking()
+                .Where(x => x.SessionId == id && x.EncryptionVersion == 0))
+            .OrderBy(x => x.CreatedAt).Take(100)
             .Select(x => new { x.Id, x.SenderId, x.Content, x.Type, x.AttachmentUrl }).ToListAsync(cancellationToken);
         return ApiResults.Ok(context, messages, "Legacy counselling messages retrieved for encryption.");
     }

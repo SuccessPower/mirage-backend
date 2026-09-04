@@ -88,5 +88,8 @@ public interface IMirageDbContext
     DbSet<PlatformPricing> PlatformPricing { get; }
     DbSet<ProfessionalConnection> ProfessionalConnections { get; }
     DbSet<CalendarReminderDelivery> CalendarReminderDeliveries { get; }
+    DbSet<ChatThemePreference> ChatThemePreferences { get; }
+    DbSet<ChatMessageHide> ChatMessageHides { get; }
+    DbSet<ChatClearMarker> ChatClearMarkers { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

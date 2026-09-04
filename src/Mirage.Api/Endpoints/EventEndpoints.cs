@@ -5,6 +5,7 @@ using Mirage.Domain.Entities;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Enums;
+using Mirage.Infrastructure.Identity;
 
 namespace Mirage.Api.Endpoints;
 
@@ -23,7 +24,52 @@ internal static class EventEndpoints
         // admin surface, but a mentor's event has no organisation to scope to, so registering by
         // event id alone is the only route that works for every event on this feed.
         events.MapPost("/{id:guid}/register", Register).RequireAuthorization();
+        // Whoever posted an event can take it down, whichever surface they posted it from. The
+        // mentor-scoped DELETE /mentors/me/events/{id} still exists for the mentor dashboard, but
+        // a church admin's event had no delete route at all, and neither route is reachable from
+        // this shared feed — where the host is the one person most likely to be looking at it.
+        events.MapDelete("/{id:guid}", Delete).RequireAuthorization();
         return api;
+    }
+
+    // Deleting is the host's own call: the account that posted it, a manager of the host church
+    // (the poster may have left, or another manager may be clearing the calendar), or a platform
+    // admin. Tickets cascade with the event, so nothing is left pointing at a deleted row.
+    private static async Task<bool> CanDeleteAsync(Guid createdByUserId, Guid? organisationId,
+        HttpContext context, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        if (createdByUserId == userId) return true;
+        if (context.User.IsInRole(MirageRoles.PlatformAdmin)) return true;
+        if (organisationId is not { } orgId) return false;
+        return await db.Organisations.AsNoTracking()
+                   .AnyAsync(x => x.Id == orgId && x.AdminUserId == userId, cancellationToken)
+               || await db.OrganisationManagers.AsNoTracking()
+                   .AnyAsync(x => x.OrganisationId == orgId && x.UserId == userId, cancellationToken);
+    }
+
+    // Every organisation this user speaks for, as its original admin or as an added manager.
+    private static async Task<HashSet<Guid>> ManagedOrganisationIdsAsync(Guid userId, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var owned = await db.Organisations.AsNoTracking()
+            .Where(x => x.AdminUserId == userId).Select(x => x.Id).ToListAsync(cancellationToken);
+        var managed = await db.OrganisationManagers.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.OrganisationId).ToListAsync(cancellationToken);
+        return owned.Concat(managed).ToHashSet();
+    }
+
+    private static async Task<IResult> Delete(Guid id, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var evt = await db.OrgEvents.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (evt is null) return EndpointHelpers.NotFound(context, "Event was not found.");
+        if (!await CanDeleteAsync(evt.CreatedByUserId, evt.OrganisationId, context, db, cancellationToken))
+            return EndpointHelpers.Forbidden(context, "Only the host can delete this event.");
+
+        db.OrgEvents.Remove(evt);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { evt.Id }, "Event deleted successfully.");
     }
 
     private static async Task<IResult> Register(Guid id, HttpContext context, IMirageDbContext db,
@@ -96,6 +142,7 @@ internal static class EventEndpoints
                 x.EndsAt,
                 x.Location,
                 x.Capacity,
+                x.CreatedByUserId,
                 TicketsIssued = db.EventTickets.Count(t => t.EventId == x.Id),
             })
             .ToPagedResultAsync(page, pageSize, cancellationToken);
@@ -113,6 +160,18 @@ internal static class EventEndpoints
                 .Select(x => x.EventId)
                 .ToListAsync(cancellationToken);
 
+        // Resolved once for the page rather than per row: a manager looking at the feed would
+        // otherwise cost one membership query per event.
+        var managedOrganisationIds = currentUserId is null
+            ? []
+            : await ManagedOrganisationIdsAsync(currentUserId.Value, db, cancellationToken);
+        var isPlatformAdmin = context.User.IsInRole(MirageRoles.PlatformAdmin);
+        bool CanDelete(Guid createdByUserId, Guid? organisationId) =>
+            currentUserId is not null
+            && (createdByUserId == currentUserId
+                || isPlatformAdmin
+                || (organisationId is { } orgId && managedOrganisationIds.Contains(orgId)));
+
         var response = new Mirage.Application.Common.PagedResult<PublicEventResponse>(
             paged.Items.Select(x => new PublicEventResponse(
                 x.Id, x.OrganisationId, x.OrganisationName, x.BranchId,
@@ -121,7 +180,8 @@ internal static class EventEndpoints
                 x.MentorProfileId is null ? "Organisation" : "Mentor",
                 x.MentorProfileId is null ? x.OrganisationName ?? "Mirage" : x.MentorName ?? "A mentor",
                 x.Title, x.Description, x.ImageUrl, x.StartsAt, x.EndsAt, x.Location, x.Capacity,
-                x.TicketsIssued, registeredEventIds.Contains(x.Id)))
+                x.TicketsIssued, registeredEventIds.Contains(x.Id),
+                CanDelete(x.CreatedByUserId, x.OrganisationId)))
                 .ToList(),
             paged.Page, paged.PageSize, paged.TotalCount);
 
@@ -151,6 +211,7 @@ internal static class EventEndpoints
                 x.EndsAt,
                 x.Location,
                 x.Capacity,
+                x.CreatedByUserId,
                 TicketsIssued = db.EventTickets.Count(t => t.EventId == x.Id),
             })
             .SingleOrDefaultAsync(cancellationToken);
@@ -168,7 +229,9 @@ internal static class EventEndpoints
             evt.MentorProfileId is null ? "Organisation" : "Mentor",
             evt.MentorProfileId is null ? evt.OrganisationName ?? "Mirage" : evt.MentorName ?? "A mentor",
             evt.Title, evt.Description, evt.ImageUrl, evt.StartsAt, evt.EndsAt, evt.Location,
-            evt.Capacity, evt.TicketsIssued, isRegistered);
+            evt.Capacity, evt.TicketsIssued, isRegistered,
+            currentUserId is not null
+            && await CanDeleteAsync(evt.CreatedByUserId, evt.OrganisationId, context, db, cancellationToken));
         return ApiResults.Ok(context, response, "Event retrieved successfully.");
     }
 }

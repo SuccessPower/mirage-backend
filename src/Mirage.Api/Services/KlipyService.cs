@@ -3,6 +3,9 @@ using System.Text.Json;
 
 namespace Mirage.Api.Services;
 
+/// <summary>Which of Klipy's libraries a request is against.</summary>
+public enum KlipyLibrary { Gifs, Stickers }
+
 /// <summary>A single GIF result, flattened from the provider's nested media shape.</summary>
 public sealed record GifResult(string Id, string Description, string Url, string PreviewUrl,
     int Width, int Height);
@@ -43,11 +46,21 @@ public sealed class KlipyService(HttpClient http, IConfiguration configuration)
     public bool IsConfigured => !string.IsNullOrWhiteSpace(configuration["Klipy:ApiKey"]);
 
     public Task<GifSearchResult> SearchAsync(string query, int limit, int page,
-        CancellationToken cancellationToken) =>
-        FetchAsync($"gifs/search?q={Uri.EscapeDataString(query)}", limit, page, cancellationToken);
+        CancellationToken cancellationToken, KlipyLibrary library = KlipyLibrary.Gifs) =>
+        FetchAsync($"{Slug(library)}/search?q={Uri.EscapeDataString(query)}", limit, page, cancellationToken);
 
-    public Task<GifSearchResult> TrendingAsync(int limit, int page, CancellationToken cancellationToken) =>
-        FetchAsync("gifs/trending", limit, page, cancellationToken);
+    public Task<GifSearchResult> TrendingAsync(int limit, int page, CancellationToken cancellationToken,
+        KlipyLibrary library = KlipyLibrary.Gifs) =>
+        FetchAsync($"{Slug(library)}/trending", limit, page, cancellationToken);
+
+    // Klipy serves stickers from a sibling library with the same request and response shape, so
+    // the only difference is the path segment. Stickers are transparent rather than boxed, which
+    // is why they travel as their own MessageType and render without a bubble.
+    private static string Slug(KlipyLibrary library) => library switch
+    {
+        KlipyLibrary.Stickers => "stickers",
+        _ => "gifs",
+    };
 
     private async Task<GifSearchResult> FetchAsync(string endpoint, int limit, int page,
         CancellationToken cancellationToken)

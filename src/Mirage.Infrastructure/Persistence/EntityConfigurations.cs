@@ -1111,3 +1111,40 @@ public sealed class PlatformManagerInviteConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<PlatformManagerInvite> b) { b.ToTable("platform_manager_invites"); b.Property(x => x.Email).HasMaxLength(256); b.Property(x => x.TokenHash).HasMaxLength(64); b.HasIndex(x => x.TokenHash).IsUnique(); b.HasIndex(x => new { x.Email, x.AcceptedAt }); b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.InvitedByUserId).OnDelete(DeleteBehavior.Restrict); }
 }
+
+// ---------------------------------------------------------------- chat personalisation
+public sealed class ChatThemePreferenceConfiguration : IEntityTypeConfiguration<ChatThemePreference>
+{
+    public void Configure(EntityTypeBuilder<ChatThemePreference> b)
+    {
+        b.ToTable("chat_theme_preferences");
+        b.Property(x => x.ConversationKey).HasMaxLength(80);
+        b.Property(x => x.ThemeKey).HasMaxLength(60);
+        // One row per member per conversation, with "*" standing for their account-wide default,
+        // so setting a wallpaper twice updates rather than accumulates.
+        b.HasIndex(x => new { x.UserId, x.ConversationKey }).IsUnique();
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+public sealed class ChatMessageHideConfiguration : IEntityTypeConfiguration<ChatMessageHide>
+{
+    public void Configure(EntityTypeBuilder<ChatMessageHide> b)
+    {
+        b.ToTable("chat_message_hides");
+        b.Property(x => x.ConversationKey).HasMaxLength(80);
+        b.HasIndex(x => new { x.UserId, x.MessageId }).IsUnique();
+        // The read path is always "everything this member hid in this conversation".
+        b.HasIndex(x => new { x.UserId, x.ConversationKey });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+public sealed class ChatClearMarkerConfiguration : IEntityTypeConfiguration<ChatClearMarker>
+{
+    public void Configure(EntityTypeBuilder<ChatClearMarker> b)
+    {
+        b.ToTable("chat_clear_markers");
+        b.Property(x => x.ConversationKey).HasMaxLength(80);
+        b.HasIndex(x => new { x.UserId, x.ConversationKey }).IsUnique();
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}

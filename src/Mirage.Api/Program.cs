@@ -134,6 +134,8 @@ builder.Services.AddHttpClient<FlutterwaveService>();
 // Short timeout: GIF search sits in front of a user watching a picker load, so failing fast and
 // letting them retry beats holding the request open.
 builder.Services.AddHttpClient<KlipyService>(client => client.Timeout = TimeSpan.FromSeconds(8));
+// Knows how each of the six chat surfaces decides who belongs to it and where its messages live.
+builder.Services.AddScoped<ChatSurfaceService>();
 var sesRegion = builder.Configuration["AmazonSes:Region"] ?? "eu-north-1";
 builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2>(
     _ => new AmazonSimpleEmailServiceV2Client(RegionEndpoint.GetBySystemName(sesRegion)));
