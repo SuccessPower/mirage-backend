@@ -44,14 +44,20 @@ internal static class PracticeEndpoints
         CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
-        var mentorProfileId = await db.Mentors.AsNoTracking().Where(x => x.UserId == userId)
-            .Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
-        if (mentorProfileId is null)
+        var mentor = await db.Mentors.AsNoTracking().Where(x => x.UserId == userId)
+            .Select(x => new
+            {
+                x.Id, x.OffersPaidMentorship, x.PriceAmount, x.PriceCurrency,
+                x.BankCode, x.BankName, x.BankAccountName, x.BankAccountNumber,
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (mentor is null)
             return EndpointHelpers.Forbidden(context, "Only mentors have a mentorship practice.");
+        var mentorProfileId = mentor.Id;
 
         var accepted = await db.MentorRequests.AsNoTracking()
             .Where(x => x.MentorProfileId == mentorProfileId && x.Status == MentorRequestStatus.Accepted)
-            .Select(x => new { x.Id, x.MenteeUserId, Since = x.UpdatedAt })
+            .Select(x => new { x.Id, x.MenteeUserId, x.Tier, x.PaidAt, Since = x.UpdatedAt })
             .ToListAsync(cancellationToken);
 
         var menteeIds = accepted.Select(x => x.MenteeUserId).Distinct().ToList();
@@ -80,25 +86,47 @@ internal static class PracticeEndpoints
                     false,
                     partners.GetValueOrDefault(x.MenteeUserId),
                     badges.GetValueOrDefault(x.MenteeUserId)?.LogoUrl,
-                    badges.GetValueOrDefault(x.MenteeUserId)?.OrganisationName);
+                    badges.GetValueOrDefault(x.MenteeUserId)?.OrganisationName,
+                    x.Tier,
+                    x.PaidAt);
             })
             .OrderByDescending(x => x.Since)
             .ToList();
 
-        var pending = await db.MentorRequests.AsNoTracking()
-            .Where(x => x.MentorProfileId == mentorProfileId && x.Status == MentorRequestStatus.Pending)
+        // Requests the mentor still has to answer, plus the paid places someone has started
+        // checkout for. The unpaid ones are shown greyed rather than hidden: a mentor watching a
+        // paid place sit in AwaitingPayment for days is information, not noise.
+        var openStatuses = new[] { MentorRequestStatus.Pending, MentorRequestStatus.AwaitingPayment };
+        var open = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId && openStatuses.Contains(x.Status))
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new PracticeRequestResponse(
+            .Select(x => new
+            {
                 x.Id,
                 x.MenteeUserId,
-                db.Profiles.Where(p => p.UserId == x.MenteeUserId).Select(p => p.DisplayName).SingleOrDefault()
-                    ?? "Unknown",
-                db.Profiles.Where(p => p.UserId == x.MenteeUserId).Select(p => p.AvatarUrl).SingleOrDefault(),
-                db.Profiles.Where(p => p.UserId == x.MenteeUserId)
+                DisplayName = db.Profiles.Where(p => p.UserId == x.MenteeUserId)
+                    .Select(p => p.DisplayName).SingleOrDefault(),
+                AvatarUrl = db.Profiles.Where(p => p.UserId == x.MenteeUserId)
+                    .Select(p => p.AvatarUrl).SingleOrDefault(),
+                RelationshipStatus = db.Profiles.Where(p => p.UserId == x.MenteeUserId)
                     .Select(p => (RelationshipStatus?)p.RelationshipStatus).SingleOrDefault(),
                 x.Message,
-                x.CreatedAt))
+                x.CreatedAt,
+                x.Tier,
+                x.Status,
+                AmountPaid = db.Payments
+                    .Where(pay => pay.MentorRequestId == x.Id && pay.Status == PaymentStatus.Successful)
+                    .Select(pay => (decimal?)pay.Amount).FirstOrDefault(),
+                Currency = db.Payments
+                    .Where(pay => pay.MentorRequestId == x.Id && pay.Status == PaymentStatus.Successful)
+                    .Select(pay => pay.Currency).FirstOrDefault(),
+            })
             .ToListAsync(cancellationToken);
+
+        var pending = open
+            .Select(x => new PracticeRequestResponse(x.Id, x.MenteeUserId, x.DisplayName ?? "Unknown", x.AvatarUrl,
+                x.RelationshipStatus, x.Message, x.CreatedAt, x.Tier, x.Status, x.AmountPaid, x.Currency))
+            .ToList();
 
         // Mentors run calls and video meetings with their group the same way counsellors run
         // sessions, so those are this practice's activity.
@@ -107,25 +135,65 @@ internal static class PracticeEndpoints
             .Where(x => x.MentorProfileId == mentorProfileId && x.MentorRequestId == null)
             .OrderBy(x => x.ScheduledAt)
             .Select(x => new PracticeMeetingResponse(x.Id, x.Title, x.MeetingLink, x.ScheduledAt,
-                x.DurationMinutes, x.ScheduledAt < now))
+                x.DurationMinutes, x.ScheduledAt < now, x.Audience))
             .ToListAsync(cancellationToken);
         var upcoming = meetings.Where(x => !x.IsPast).ToList();
         var past = meetings.Where(x => x.IsPast).OrderByDescending(x => x.ScheduledAt).ToList();
 
+        var events = await db.OrgEvents.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId)
+            .OrderBy(x => x.StartsAt)
+            .Select(x => new PracticeEventResponse(x.Id, x.Title, x.Description, x.ImageUrl, x.StartsAt, x.EndsAt,
+                x.Location, x.Capacity, db.EventTickets.Count(t => t.EventId == x.Id), x.Audience, x.EndsAt < now))
+            .ToListAsync(cancellationToken);
+
+        // What the paid group has actually brought in. Refunded and pending charges are excluded,
+        // and the figure is the mentor's share after the platform fee — the number they are owed,
+        // not the number the mentee was charged.
+        var earnings = await db.Payments.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId && x.Status == PaymentStatus.Successful)
+            .Select(x => new { x.CounsellorAmount, x.Currency })
+            .ToListAsync(cancellationToken);
+
+        var freeMentees = mentees.Count(x => x.Tier == MentorshipTier.Free);
         var counts = new MentorshipCountsResponse(
             mentees.Count,
-            pending.Count,
+            pending.Count(x => x.Status == MentorRequestStatus.Pending),
             CountStatus(mentees, RelationshipStatus.Single),
             CountStatus(mentees, RelationshipStatus.Married),
             mentees.Count(x => x.Partner is not null),
             mentees.Count(x => x.RelationshipStatus is not (RelationshipStatus.Single or RelationshipStatus.Married)),
             upcoming.Count,
-            past.Count);
+            past.Count,
+            freeMentees,
+            mentees.Count - freeMentees,
+            pending.Count(x => x is { Status: MentorRequestStatus.Pending, Tier: MentorshipTier.Free }),
+            pending.Count(x => x is { Status: MentorRequestStatus.Pending, Tier: MentorshipTier.Paid }),
+            pending.Count(x => x.Status == MentorRequestStatus.AwaitingPayment),
+            earnings.Sum(x => x.CounsellorAmount),
+            earnings.Select(x => x.Currency).FirstOrDefault() ?? mentor.PriceCurrency);
+
+        var hasPayoutAccount = mentor.BankCode is not null && mentor.BankAccountNumber is not null;
+        var pricing = new MentorPricingResponse(
+            mentor.OffersPaidMentorship,
+            mentor.PriceAmount,
+            mentor.PriceCurrency,
+            hasPayoutAccount,
+            mentor.BankName,
+            mentor.BankAccountName,
+            MaskAccountNumber(mentor.BankAccountNumber),
+            mentor.OffersPaidMentorship && hasPayoutAccount && mentor.PriceAmount > 0
+                && mentor.PriceCurrency is not null);
 
         return ApiResults.Ok(context,
-            new MentorshipPracticeResponse(mentorProfileId.Value, counts, mentees, pending, upcoming, past),
+            new MentorshipPracticeResponse(mentorProfileId, counts, mentees, pending, upcoming, past,
+                pricing, events),
             "Mentorship practice retrieved successfully.");
     }
+
+    // Enough of the account number to recognise it, never enough to use it.
+    internal static string? MaskAccountNumber(string? accountNumber) =>
+        accountNumber is { Length: > 4 } ? $"••••{accountNumber[^4..]}" : accountNumber;
 
     // ----------------------------------------------------------------- counselling
 

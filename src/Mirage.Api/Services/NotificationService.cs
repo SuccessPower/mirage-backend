@@ -59,6 +59,13 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         NotificationType.ProfileVisibleAgain
         ,NotificationType.CalendarReminder
         ,NotificationType.ProfessionalConnectionRequest
+        // A mentorship request is the mentor's whole inbox. It had a template but was never on
+        // this list, so the in-app notification was the only signal a mentor ever got — and a
+        // mentor who wasn't in the app that day never learned the request existed.
+        ,NotificationType.MentorRequestReceived
+        ,NotificationType.ProfessionalInviteRedeemed
+        ,NotificationType.MentorshipPaymentReceived
+        ,NotificationType.MentorEventPublished
     ];
 
     public async Task NotifyAsync(Guid userId, NotificationType type, string title, string body,

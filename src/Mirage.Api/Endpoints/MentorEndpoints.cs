@@ -24,6 +24,14 @@ internal static class MentorEndpoints
         mentors.MapPut("/me", UpdateMyProfile).RequireAuthorization(MiragePolicy.Mentor);
         mentors.MapPost("/apply", Apply).RequireAuthorization();
 
+        // Paid mentorship setup: where the money lands, and what a place costs.
+        mentors.MapPost("/me/bank-account", SaveBankAccount).RequireAuthorization(MiragePolicy.Mentor);
+        mentors.MapPut("/me/pricing", SetPricing).RequireAuthorization(MiragePolicy.Mentor);
+
+        // Public events. A mentor publishes onto the same /events feed a church does.
+        mentors.MapPost("/me/events", CreateEvent).RequireAuthorization(MiragePolicy.Mentor);
+        mentors.MapDelete("/me/events/{eventId:guid}", DeleteEvent).RequireAuthorization(MiragePolicy.Mentor);
+
         var requests = api.MapGroup("/mentorship/requests").WithTags("Mentorship").RequireAuthorization();
         requests.MapGet("/mine", ListMyRequests);
         requests.MapGet("/incoming", ListIncomingRequests);
@@ -32,6 +40,8 @@ internal static class MentorEndpoints
         requests.MapPatch("/{id:guid}/accept", AcceptRequest);
         requests.MapPatch("/{id:guid}/decline", DeclineRequest);
         requests.MapDelete("/{id:guid}", WithdrawRequest);
+        // Moves an accepted mentee between the free and paid groups — the mentor's own call.
+        requests.MapPatch("/{id:guid}/tier", SetMenteeTier);
 
         // Private channel: 1:1 messages between a mentor and one accepted mentee, keyed by the
         // MentorRequest that represents their relationship.
@@ -75,22 +85,50 @@ internal static class MentorEndpoints
             && (x.MenteeUserId == userId || x.Mentor.UserId == userId)
             && x.Status == MentorRequestStatus.Accepted, cancellationToken);
 
-    // Everyone with an accepted request against this mentor, minus whoever triggered the event.
-    // The mentor themselves is included when a mentee is the sender, so a mentor hears their
-    // group talking back.
+    // Everyone in the addressed group with an accepted request against this mentor, minus whoever
+    // triggered the event. The mentor themselves is included when a mentee is the sender, so a
+    // mentor hears their group talking back.
     private static async Task<List<Guid>> GroupAudienceAsync(Guid mentorProfileId, Guid exceptUserId,
-        IMirageDbContext db, CancellationToken cancellationToken)
+        IMirageDbContext db, CancellationToken cancellationToken,
+        MentorAudience audience = MentorAudience.Everyone)
     {
-        var mentees = await db.MentorRequests.AsNoTracking()
-            .Where(x => x.MentorProfileId == mentorProfileId && x.Status == MentorRequestStatus.Accepted)
-            .Select(x => x.MenteeUserId)
-            .ToListAsync(cancellationToken);
+        var query = db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId && x.Status == MentorRequestStatus.Accepted);
+        if (audience == MentorAudience.FreeMentees) query = query.Where(x => x.Tier == MentorshipTier.Free);
+        else if (audience == MentorAudience.PaidMentees) query = query.Where(x => x.Tier == MentorshipTier.Paid);
+
+        var mentees = await query.Select(x => x.MenteeUserId).ToListAsync(cancellationToken);
         var mentorUserId = await db.Mentors.AsNoTracking()
             .Where(x => x.Id == mentorProfileId).Select(x => x.UserId)
             .SingleOrDefaultAsync(cancellationToken);
 
         return mentees.Append(mentorUserId).Distinct().Where(x => x != exceptUserId && x != Guid.Empty).ToList();
     }
+
+    /// <summary>
+    /// Which of the mentor's two groups the caller sits in, or null when the caller is the mentor
+    /// — the mentor is in both and sees everything.
+    /// </summary>
+    private static async Task<MentorshipTier?> ViewerTierAsync(Guid mentorProfileId, Guid userId,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (await db.Mentors.AsNoTracking().AnyAsync(x => x.Id == mentorProfileId && x.UserId == userId, cancellationToken))
+            return null;
+        return await db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId && x.MenteeUserId == userId
+                && x.Status == MentorRequestStatus.Accepted)
+            .Select(x => (MentorshipTier?)x.Tier)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    // The audience label a mentee's own traffic carries, and the one extra audience they are
+    // allowed to read beyond Everyone.
+    private static MentorAudience AudienceFor(MentorshipTier tier) =>
+        tier == MentorshipTier.Paid ? MentorAudience.PaidMentees : MentorAudience.FreeMentees;
+
+    // A mentor may address either group or both; a mentee only ever addresses their own.
+    private static MentorAudience ResolveSendAudience(MentorshipTier? viewerTier, MentorAudience requested) =>
+        viewerTier is null ? requested : AudienceFor(viewerTier.Value);
 
     private static async Task<IResult> ListMentorMessages(Guid id, HttpContext context, IMirageDbContext db,
         CancellationToken cancellationToken)
@@ -145,8 +183,10 @@ internal static class MentorEndpoints
         var meetings = await db.MentorMeetings.AsNoTracking()
             .Where(x => x.MentorRequestId == id)
             .OrderBy(x => x.ScheduledAt)
+            // A 1:1 meeting has exactly one audience — the mentee it belongs to — so Audience is
+            // passed explicitly rather than defaulted (an expression tree cannot omit it).
             .Select(x => new MentorMeetingResponse(x.Id, x.MentorProfileId, x.ScheduledByUserId, x.Title,
-                x.MeetingLink, x.ScheduledAt, x.DurationMinutes))
+                x.MeetingLink, x.ScheduledAt, x.DurationMinutes, MentorAudience.Everyone))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, meetings, "Private meetings retrieved successfully.");
     }
@@ -197,7 +237,7 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> ListMentees(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        MentorAudience? audience, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
@@ -206,37 +246,63 @@ internal static class MentorEndpoints
         var allowMenteesToSeeEachOther = await db.Mentors.AsNoTracking()
             .Where(x => x.Id == id).Select(x => x.AllowMenteesToSeeEachOther).SingleAsync(cancellationToken);
 
-        var mentees = await db.MentorRequests.AsNoTracking()
-            .Where(x => x.MentorProfileId == id && x.Status == MentorRequestStatus.Accepted)
-            .Join(db.Profiles.AsNoTracking(), r => r.MenteeUserId, p => p.UserId, (r, p) => new
+        // A mentee only ever sees their own group's roster; the mentor sees both, and can narrow
+        // to one with ?audience=.
+        var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
+        var query = db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == id && x.Status == MentorRequestStatus.Accepted);
+        if (viewerTier is not null) query = query.Where(x => x.Tier == viewerTier);
+        else if (audience is MentorAudience.FreeMentees) query = query.Where(x => x.Tier == MentorshipTier.Free);
+        else if (audience is MentorAudience.PaidMentees) query = query.Where(x => x.Tier == MentorshipTier.Paid);
+
+        var mentees = await query
+            // Left join, not inner: a mentee with no profile row must still appear on the roster
+            // rather than disappearing from their mentor's list entirely.
+            .Select(r => new
             {
                 r.Id,
                 r.MenteeUserId,
-                p.DisplayName,
-                p.AvatarUrl,
+                DisplayName = db.Profiles.Where(p => p.UserId == r.MenteeUserId)
+                    .Select(p => p.DisplayName).FirstOrDefault(),
+                AvatarUrl = db.Profiles.Where(p => p.UserId == r.MenteeUserId)
+                    .Select(p => p.AvatarUrl).FirstOrDefault(),
+                r.Tier,
                 AcceptedAt = r.UpdatedAt
             })
             .ToListAsync(cancellationToken);
 
         var badges = await db.GetOrgBadgesAsync(mentees.Select(x => x.MenteeUserId), cancellationToken);
         var result = mentees.Select(x => isMentor || x.MenteeUserId == userId || allowMenteesToSeeEachOther
-            ? new MentorMenteeResponse(x.Id, x.MenteeUserId, x.DisplayName, x.AvatarUrl, x.AcceptedAt,
-                badges.GetValueOrDefault(x.MenteeUserId)?.LogoUrl, badges.GetValueOrDefault(x.MenteeUserId)?.OrganisationName)
-            : new MentorMenteeResponse(x.Id, x.MenteeUserId, "Fellow mentee", null, x.AcceptedAt));
+            ? new MentorMenteeResponse(x.Id, x.MenteeUserId, x.DisplayName ?? "Mentee", x.AvatarUrl, x.AcceptedAt,
+                badges.GetValueOrDefault(x.MenteeUserId)?.LogoUrl,
+                badges.GetValueOrDefault(x.MenteeUserId)?.OrganisationName, x.Tier)
+            : new MentorMenteeResponse(x.Id, x.MenteeUserId, "Fellow mentee", null, x.AcceptedAt, Tier: x.Tier));
 
         return ApiResults.Ok(context, result, "Mentees retrieved successfully.");
     }
 
     private static async Task<IResult> ListPosts(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        MentorAudience? audience, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
 
-        var posts = await db.MentorPosts.AsNoTracking()
-            .Where(x => x.MentorProfileId == id)
+        // A mentee sees what was addressed to everyone plus their own group's posts and nothing
+        // else; the mentor (null tier) sees both groups, optionally narrowed by ?audience=.
+        var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
+        var query = db.MentorPosts.AsNoTracking().Where(x => x.MentorProfileId == id);
+        if (viewerTier is not null)
+        {
+            var own = AudienceFor(viewerTier.Value);
+            query = query.Where(x => x.Audience == MentorAudience.Everyone || x.Audience == own);
+        }
+        else if (audience is not null)
+            query = query.Where(x => x.Audience == audience);
+
+        var posts = await query
             .OrderByDescending(x => x.CreatedAt)
-            .Select(x => new MentorPostResponse(x.Id, x.MentorProfileId, x.Content, x.ImageUrl, x.CreatedAt))
+            .Select(x => new MentorPostResponse(x.Id, x.MentorProfileId, x.Content, x.ImageUrl, x.CreatedAt,
+                x.Audience))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, posts, "Posts retrieved successfully.");
     }
@@ -250,18 +316,18 @@ internal static class MentorEndpoints
         if (string.IsNullOrWhiteSpace(request.Content))
             return EndpointHelpers.ValidationProblem(context, ("content", "Post content is required."));
 
-        var post = new MentorPost(id, request.Content, request.ImageUrl);
+        var post = new MentorPost(id, request.Content, request.ImageUrl, request.Audience);
         db.MentorPosts.Add(post);
         await db.SaveChangesAsync(cancellationToken);
 
-        // A post is the mentor speaking to the whole group, so every mentee is told — in-app and
-        // on their phone. Without this a post only reached whoever happened to have the group
+        // A post is the mentor speaking to a group, so every mentee in that group is told — in-app
+        // and on their phone. Without this a post only reached whoever happened to have the group
         // screen open.
         var mentorName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken)
             ?? "Your mentor";
         var preview = request.Content.Length > 120 ? request.Content[..120].TrimEnd() + "…" : request.Content;
-        foreach (var menteeId in await GroupAudienceAsync(id, userId, db, cancellationToken))
+        foreach (var menteeId in await GroupAudienceAsync(id, userId, db, cancellationToken, request.Audience))
             await notifications.NotifyAsync(menteeId, NotificationType.MentorGroupPost,
                 $"{mentorName} posted to your group", preview, id, "MentorProfile", cancellationToken);
 
@@ -269,7 +335,7 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> ListGroupMessages(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        MentorAudience? audience, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
@@ -280,11 +346,27 @@ internal static class MentorEndpoints
             .SingleAsync(cancellationToken);
         var isMentor = mentor.UserId == userId;
 
-        var messages = await db.MentorGroupMessages.AsNoTracking()
-            .Where(x => x.MentorProfileId == id)
+        // Free and paid mentees hold separate conversations: each reads Everyone plus their own
+        // group. The mentor reads both, and can narrow to one with ?audience=.
+        var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
+        var query = db.MentorGroupMessages.AsNoTracking().Where(x => x.MentorProfileId == id);
+        if (viewerTier is not null)
+        {
+            var own = AudienceFor(viewerTier.Value);
+            query = query.Where(x => x.Audience == MentorAudience.Everyone || x.Audience == own);
+        }
+        else if (audience is not null)
+            query = query.Where(x => x.Audience == audience);
+
+        var messages = await query
             .OrderBy(x => x.CreatedAt)
-            .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new MentorGroupMessageResponse(
-                m.Id, m.MentorProfileId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
+            // Left join, not inner: a sender whose profile row is missing must not silently erase
+            // their message from the conversation.
+            .Select(m => new MentorGroupMessageResponse(
+                m.Id, m.MentorProfileId, m.SenderId,
+                db.Profiles.Where(p => p.UserId == m.SenderId).Select(p => p.DisplayName).FirstOrDefault()
+                    ?? "Member",
+                m.Content, m.Type, m.AttachmentUrl, m.CreatedAt, m.Audience))
             .ToListAsync(cancellationToken);
 
         // Mentees can't see who a fellow mentee is unless the mentor opts in; the mentor and each
@@ -308,13 +390,23 @@ internal static class MentorEndpoints
         if (string.IsNullOrWhiteSpace(request.Content))
             return EndpointHelpers.ValidationProblem(context, ("content", "Message content is required."));
 
-        var message = new MentorGroupMessage(id, userId, request.Content, request.Type, request.AttachmentUrl);
+        // A mentee can only ever speak into their own group; only the mentor picks an audience.
+        var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
+        var sendAudience = ResolveSendAudience(viewerTier, request.Audience);
+
+        var message = new MentorGroupMessage(id, userId, request.Content, request.Type, request.AttachmentUrl,
+            sendAudience);
         db.MentorGroupMessages.Add(message);
         await db.SaveChangesAsync(cancellationToken);
 
         var senderName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
-        await hub.Clients.Group($"mentorgroup:{id}").SendAsync("ReceiveMentorGroupMessage", new
+        // The hub group is per audience, so a paid-group message never lands on a free mentee's
+        // open screen. Everyone fans out to both plus the shared room.
+        var hubGroups = sendAudience == MentorAudience.Everyone
+            ? new[] { $"mentorgroup:{id}", $"mentorgroup:{id}:free", $"mentorgroup:{id}:paid" }
+            : [$"mentorgroup:{id}:{(sendAudience == MentorAudience.PaidMentees ? "paid" : "free")}"];
+        await hub.Clients.Groups(hubGroups).SendAsync("ReceiveMentorGroupMessage", new
         {
             message.Id,
             MentorProfileId = id,
@@ -323,6 +415,7 @@ internal static class MentorEndpoints
             message.Content,
             message.Type,
             message.AttachmentUrl,
+            message.Audience,
             SentAt = message.CreatedAt
         }, cancellationToken);
 
@@ -331,7 +424,7 @@ internal static class MentorEndpoints
         var messagePreview = request.Content.Length > 120
             ? request.Content[..120].TrimEnd() + "…"
             : request.Content;
-        foreach (var memberId in await GroupAudienceAsync(id, userId, db, cancellationToken))
+        foreach (var memberId in await GroupAudienceAsync(id, userId, db, cancellationToken, sendAudience))
             await notifications.NotifyAsync(memberId, NotificationType.MentorGroupMessage,
                 $"{senderName ?? "Someone"} messaged your group", messagePreview, id, "MentorProfile",
                 cancellationToken);
@@ -341,16 +434,26 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> ListMeetings(Guid id, HttpContext context, IMirageDbContext db,
-        CancellationToken cancellationToken)
+        MentorAudience? audience, CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
 
-        var meetings = await db.MentorMeetings.AsNoTracking()
-            .Where(x => x.MentorProfileId == id && x.MentorRequestId == null)
+        var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
+        var query = db.MentorMeetings.AsNoTracking()
+            .Where(x => x.MentorProfileId == id && x.MentorRequestId == null);
+        if (viewerTier is not null)
+        {
+            var own = AudienceFor(viewerTier.Value);
+            query = query.Where(x => x.Audience == MentorAudience.Everyone || x.Audience == own);
+        }
+        else if (audience is not null)
+            query = query.Where(x => x.Audience == audience);
+
+        var meetings = await query
             .OrderBy(x => x.ScheduledAt)
             .Select(x => new MentorMeetingResponse(x.Id, x.MentorProfileId, x.ScheduledByUserId, x.Title,
-                x.MeetingLink, x.ScheduledAt, x.DurationMinutes))
+                x.MeetingLink, x.ScheduledAt, x.DurationMinutes, x.Audience))
             .ToListAsync(cancellationToken);
         return ApiResults.Ok(context, meetings, "Meetings retrieved successfully.");
     }
@@ -364,14 +467,13 @@ internal static class MentorEndpoints
         if (string.IsNullOrWhiteSpace(request.Title) || string.IsNullOrWhiteSpace(request.MeetingLink))
             return EndpointHelpers.ValidationProblem(context, ("meeting", "Title and meeting link are required."));
 
-        var meeting = new MentorMeeting(id, userId, request.Title, request.MeetingLink, request.ScheduledAt, request.DurationMinutes);
+        var meeting = new MentorMeeting(id, userId, request.Title, request.MeetingLink, request.ScheduledAt,
+            request.DurationMinutes, null, request.Audience);
         db.MentorMeetings.Add(meeting);
         await db.SaveChangesAsync(cancellationToken);
 
-        var menteeIds = await db.MentorRequests.AsNoTracking()
-            .Where(x => x.MentorProfileId == id && x.Status == MentorRequestStatus.Accepted)
-            .Select(x => x.MenteeUserId)
-            .ToListAsync(cancellationToken);
+        // Only the group the meeting was scheduled for hears about it.
+        var menteeIds = await GroupAudienceAsync(id, userId, db, cancellationToken, request.Audience);
         foreach (var menteeId in menteeIds)
             await notifications.NotifyAsync(menteeId, NotificationType.SessionBooked, "New meeting scheduled",
                 $"{request.Title} was scheduled for {request.ScheduledAt:MMM d, h:mm tt}.", meeting.Id, "MentorMeeting",
@@ -386,9 +488,18 @@ internal static class MentorEndpoints
     {
         var userId = context.User.GetUserId();
         if (!await IsGroupMemberAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
-        if (!await db.MentorMeetings.AsNoTracking()
-                .AnyAsync(x => x.Id == meetingId && x.MentorProfileId == id && x.MentorRequestId == null, cancellationToken))
-            return EndpointHelpers.NotFound(context, "Meeting was not found.");
+        var meetingAudience = await db.MentorMeetings.AsNoTracking()
+            .Where(x => x.Id == meetingId && x.MentorProfileId == id && x.MentorRequestId == null)
+            .Select(x => (MentorAudience?)x.Audience)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (meetingAudience is null) return EndpointHelpers.NotFound(context, "Meeting was not found.");
+
+        // A free mentee must not be handed a token for the paid group's call, or the other way
+        // round — the split is only real if it holds at the video room door too.
+        var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
+        if (viewerTier is not null && meetingAudience != MentorAudience.Everyone
+            && meetingAudience != AudienceFor(viewerTier.Value))
+            return EndpointHelpers.Forbidden(context, "This meeting is for the other mentorship group.");
 
         var mentorUserId = await db.Mentors.AsNoTracking().Where(x => x.Id == id)
             .Select(x => x.UserId).SingleAsync(cancellationToken);
@@ -426,7 +537,12 @@ internal static class MentorEndpoints
             x.YearsMarried,
             x.AcceptsFreeSessions,
             x.AreasOfGuidance,
-            x.Languages
+            x.Languages,
+            x.OffersPaidMentorship,
+            x.PriceAmount,
+            x.PriceCurrency,
+            AcceptsPaidMentees = x.OffersPaidMentorship && x.BankCode != null && x.BankAccountNumber != null
+                && x.PriceAmount > 0 && x.PriceCurrency != null,
         });
         return ApiResults.Ok(context,
             await result.ToPagedResultAsync(page, pageSize, cancellationToken),
@@ -455,7 +571,13 @@ internal static class MentorEndpoints
                 x.AcceptsFreeSessions,
                 x.AreasOfGuidance,
                 x.Languages,
-                PhoneNumber = isAcceptedMentee ? x.PhoneNumber : null
+                PhoneNumber = isAcceptedMentee ? x.PhoneNumber : null,
+                // What a mentee needs in order to choose a group before asking.
+                x.OffersPaidMentorship,
+                x.PriceAmount,
+                x.PriceCurrency,
+                AcceptsPaidMentees = x.OffersPaidMentorship && x.BankCode != null && x.BankAccountNumber != null
+                    && x.PriceAmount > 0 && x.PriceCurrency != null,
             })
             .SingleOrDefaultAsync(cancellationToken);
         return mentor is null
@@ -473,12 +595,23 @@ internal static class MentorEndpoints
             {
                 x.Id, x.UserId, x.YearsMarried, x.Testimony,
                 x.IsApproved, x.AcceptsFreeSessions, x.AllowMenteesToSeeEachOther,
-                x.AreasOfGuidance, x.Languages, x.PhoneNumber, x.CreatedAt
+                x.AreasOfGuidance, x.Languages, x.PhoneNumber, x.CreatedAt,
+                x.OffersPaidMentorship, x.PriceAmount, x.PriceCurrency,
+                x.BankName, x.BankAccountName, x.BankAccountNumber,
             })
             .SingleOrDefaultAsync(cancellationToken);
-        return profile is null
-            ? EndpointHelpers.NotFound(context, "Mentor profile was not found.")
-            : ApiResults.Ok(context, profile, "Mentor profile retrieved successfully.");
+        if (profile is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
+        return ApiResults.Ok(context, new
+        {
+            profile.Id, profile.UserId, profile.YearsMarried, profile.Testimony,
+            profile.IsApproved, profile.AcceptsFreeSessions, profile.AllowMenteesToSeeEachOther,
+            profile.AreasOfGuidance, profile.Languages, profile.PhoneNumber, profile.CreatedAt,
+            profile.OffersPaidMentorship, profile.PriceAmount, profile.PriceCurrency,
+            profile.BankName, profile.BankAccountName,
+            // Never the full number back out — enough to recognise, never enough to use.
+            BankAccountNumberMasked = PracticeEndpoints.MaskAccountNumber(profile.BankAccountNumber),
+            HasPayoutAccount = profile.BankAccountNumber is not null,
+        }, "Mentor profile retrieved successfully.");
     }
 
     private static async Task<IResult> Apply(ApplyMentorRequest request, HttpContext context, IMirageDbContext db,
@@ -532,28 +665,112 @@ internal static class MentorEndpoints
 
         var mentor = await db.Mentors.AsNoTracking()
             .Where(x => x.Id == mentorId && x.IsApproved)
-            .Select(x => new { x.UserId })
+            .Select(x => new
+            {
+                x.UserId, x.AcceptsFreeSessions, x.OffersPaidMentorship,
+                x.PriceAmount, x.PriceCurrency, x.BankCode, x.BankAccountNumber,
+            })
             .SingleOrDefaultAsync(cancellationToken);
         if (mentor is null)
             return EndpointHelpers.NotFound(context, "Approved mentor was not found.");
+        if (mentor.UserId == userId)
+            return EndpointHelpers.ValidationProblem(context, ("mentorId", "You cannot request your own mentorship."));
 
-        if (await db.MentorRequests.AnyAsync(
-                x => x.MentorProfileId == mentorId && x.MenteeUserId == userId &&
-                     x.Status == MentorRequestStatus.Pending, cancellationToken))
-            return EndpointHelpers.Conflict(context, "You already have a pending request to this mentor.");
+        var canCharge = mentor.OffersPaidMentorship && mentor.BankCode is not null
+            && mentor.BankAccountNumber is not null && mentor.PriceAmount > 0 && mentor.PriceCurrency is not null;
+        if (request.Tier == MentorshipTier.Paid && !canCharge)
+            return EndpointHelpers.ValidationProblem(context,
+                ("tier", "This mentor is not currently accepting paid mentees."));
+        if (request.Tier == MentorshipTier.Free && !mentor.AcceptsFreeSessions)
+            return EndpointHelpers.ValidationProblem(context,
+                ("tier", "This mentor is not currently accepting free mentees."));
 
-        var mentorRequest = new MentorRequest(mentorId, userId, request.Message);
-        db.MentorRequests.Add(mentorRequest);
+        // A mentor and a mentee only ever have one relationship row — the unique index on
+        // (MentorProfileId, MenteeUserId) enforces it. Someone who was declined or withdrew and
+        // now asks again reopens that row; inserting a second one used to fail the index and
+        // surface as a 500, which is why re-requests after a decline never reached the mentor.
+        var mentorRequest = await db.MentorRequests
+            .SingleOrDefaultAsync(x => x.MentorProfileId == mentorId && x.MenteeUserId == userId, cancellationToken);
+        if (mentorRequest is null)
+        {
+            mentorRequest = new MentorRequest(mentorId, userId, request.Message, request.Tier);
+            db.MentorRequests.Add(mentorRequest);
+        }
+        else
+        {
+            switch (mentorRequest.Status)
+            {
+                case MentorRequestStatus.Pending:
+                    return EndpointHelpers.Conflict(context, "You already have a pending request to this mentor.");
+                case MentorRequestStatus.Accepted:
+                    return EndpointHelpers.Conflict(context, "This mentor is already mentoring you.");
+                case MentorRequestStatus.AwaitingPayment when request.Tier == MentorshipTier.Paid:
+                    break; // Checkout was abandoned; re-issue a payment against the same row below.
+                default:
+                    mentorRequest.Reopen(request.Message, request.Tier);
+                    break;
+            }
+        }
         await db.SaveChangesAsync(cancellationToken);
 
         var menteeName = await db.Profiles.AsNoTracking()
-            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken);
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken)
+            ?? "A member";
+
+        // A paid place is not a request until it is funded. The mentor is told by the payment
+        // webhook (PaymentEndpoints.ConfirmMentorshipPaymentAsync), not here — otherwise their
+        // inbox fills with places nobody ever paid for.
+        if (request.Tier == MentorshipTier.Paid)
+        {
+            var existingPayment = await db.Payments
+                .Where(x => x.MentorRequestId == mentorRequest.Id && x.Status == PaymentStatus.Pending)
+                .OrderByDescending(x => x.CreatedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+            var payment = existingPayment ?? Payment.ForMentorship(mentorRequest.Id, userId, mentorId,
+                mentor.PriceAmount!.Value, mentor.PriceCurrency!);
+            if (existingPayment is null) db.Payments.Add(payment);
+            await db.SaveChangesAsync(cancellationToken);
+
+            return ApiResults.Created(context, $"/api/v1/mentorship/requests/{mentorRequest.Id}",
+                new { mentorRequest.Id, mentorRequest.Status, mentorRequest.Tier, PaymentId = payment.Id,
+                    payment.Amount, payment.Currency },
+                "Complete payment to send your request to this mentor.");
+        }
+
         await notifications.NotifyAsync(mentor.UserId, NotificationType.MentorRequestReceived,
             "New mentorship request", $"{menteeName} requested your mentorship.",
-            mentorRequest.Id, "MentorRequest", cancellationToken);
+            mentorRequest.Id, "MentorRequest", cancellationToken, "/practice/mentorship");
 
         return ApiResults.Created(context, $"/api/v1/mentorship/requests/{mentorRequest.Id}",
-            new { mentorRequest.Id, mentorRequest.Status }, "Mentor request sent successfully.");
+            new { mentorRequest.Id, mentorRequest.Status, mentorRequest.Tier },
+            "Mentor request sent successfully.");
+    }
+
+    /// <summary>Moves an accepted mentee between the mentor's free and paid groups.</summary>
+    private static async Task<IResult> SetMenteeTier(Guid id, SetMenteeTierRequest request, HttpContext context,
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var mentorProfileId = await db.Mentors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
+        if (mentorProfileId is null) return EndpointHelpers.Forbidden(context, "Only mentors can move a mentee.");
+
+        var mentorRequest = await db.MentorRequests
+            .SingleOrDefaultAsync(x => x.Id == id && x.MentorProfileId == mentorProfileId, cancellationToken);
+        if (mentorRequest is null) return EndpointHelpers.NotFound(context, "Mentor request was not found.");
+        if (mentorRequest.Status != MentorRequestStatus.Accepted)
+            return EndpointHelpers.Conflict(context, "Only an accepted mentee can be moved between groups.");
+
+        mentorRequest.SetTier(request.Tier);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var groupName = request.Tier == MentorshipTier.Paid ? "paid" : "free";
+        await notifications.NotifyAsync(mentorRequest.MenteeUserId, NotificationType.MentorRequestAccepted,
+            "Your mentorship group changed",
+            $"Your mentor moved you into their {groupName} mentorship group.",
+            mentorRequest.Id, "MentorRequest", cancellationToken);
+
+        return ApiResults.Ok(context, new { mentorRequest.Id, mentorRequest.Tier }, "Mentee group updated.");
     }
 
     private static async Task<IResult> ListMyRequests(HttpContext context, IMirageDbContext db,
@@ -578,7 +795,8 @@ internal static class MentorEndpoints
     }
 
     private static async Task<IResult> ListIncomingRequests(HttpContext context, IMirageDbContext db,
-        MentorRequestStatus? status, int page = 1, int pageSize = 20, CancellationToken cancellationToken = default)
+        MentorRequestStatus? status, MentorshipTier? tier, int page = 1, int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
         var userId = context.User.GetUserId();
         var mentorProfile = await db.Mentors.AsNoTracking()
@@ -591,16 +809,24 @@ internal static class MentorEndpoints
         var query = db.MentorRequests.AsNoTracking()
             .Where(x => x.MentorProfileId == mentorProfile);
         if (status.HasValue) query = query.Where(x => x.Status == status.Value);
+        if (tier.HasValue) query = query.Where(x => x.Tier == tier.Value);
 
         var result = query
-            .Join(db.Profiles.AsNoTracking(), r => r.MenteeUserId, p => p.UserId, (r, p) => new
+            // Left join, not inner: this was an inner join on Profiles, so a request from a mentee
+            // whose profile row was missing was dropped from the result set with no error — the
+            // request existed in the database but never appeared in the mentor's inbox.
+            .Select(r => new
             {
                 r.Id,
                 r.MenteeUserId,
-                MenteeName = p.DisplayName,
-                MenteeAvatarUrl = p.AvatarUrl,
+                MenteeName = db.Profiles.Where(p => p.UserId == r.MenteeUserId)
+                    .Select(p => p.DisplayName).FirstOrDefault() ?? "Member",
+                MenteeAvatarUrl = db.Profiles.Where(p => p.UserId == r.MenteeUserId)
+                    .Select(p => p.AvatarUrl).FirstOrDefault(),
                 r.Message,
                 r.Status,
+                r.Tier,
+                r.PaidAt,
                 r.CreatedAt
             })
             .OrderByDescending(x => x.CreatedAt);
@@ -626,6 +852,8 @@ internal static class MentorEndpoints
                 x.MenteeUserId,
                 x.Message,
                 x.Status,
+                x.Tier,
+                x.PaidAt,
                 x.CreatedAt
             })
             .SingleOrDefaultAsync(cancellationToken);
@@ -642,7 +870,8 @@ internal static class MentorEndpoints
         var response = new MentorRequestDetailResponse(request.Id, request.MentorProfileId, request.MentorUserId,
             request.MentorName, request.MentorAvatarUrl, request.MenteeUserId, mentee?.DisplayName ?? "Mentee",
             mentee?.AvatarUrl, request.Message, request.Status, request.CreatedAt, request.MentorPhoneNumber,
-            mentorBadge?.LogoUrl, mentorBadge?.OrganisationName, menteeBadge?.LogoUrl, menteeBadge?.OrganisationName);
+            mentorBadge?.LogoUrl, mentorBadge?.OrganisationName, menteeBadge?.LogoUrl, menteeBadge?.OrganisationName,
+            request.Tier, request.PaidAt);
         return ApiResults.Ok(context, response, "Mentor request retrieved successfully.");
     }
 
@@ -656,6 +885,9 @@ internal static class MentorEndpoints
         var request = await db.MentorRequests
             .SingleOrDefaultAsync(x => x.Id == id && x.MentorProfileId == mentorProfileId, cancellationToken);
         if (request is null) return EndpointHelpers.NotFound(context, "Mentor request was not found.");
+        if (request.Status == MentorRequestStatus.AwaitingPayment)
+            return EndpointHelpers.Conflict(context,
+                "This mentee has not completed payment for their place yet.");
         if (request.Status != MentorRequestStatus.Pending)
             return EndpointHelpers.Conflict(context, "Only pending requests can be accepted.");
         request.Accept();
@@ -697,10 +929,141 @@ internal static class MentorEndpoints
         var request = await db.MentorRequests
             .SingleOrDefaultAsync(x => x.Id == id && x.MenteeUserId == userId, cancellationToken);
         if (request is null) return EndpointHelpers.NotFound(context, "Mentor request was not found.");
-        if (request.Status != MentorRequestStatus.Pending)
+        // AwaitingPayment counts as withdrawable: it is a checkout the mentee started and can
+        // change their mind about before paying.
+        if (request.Status is not (MentorRequestStatus.Pending or MentorRequestStatus.AwaitingPayment))
             return EndpointHelpers.Conflict(context, "Only pending requests can be withdrawn.");
         request.Withdraw();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { request.Id, request.Status }, "Mentor request withdrawn.");
+    }
+
+    // ------------------------------------------------------------ paid mentorship
+
+    /// <summary>
+    /// Stores the mentor's verified payout destination and the reusable Paystack transfer
+    /// recipient. Mirrors the counsellor flow — a practitioner cannot charge until there is
+    /// somewhere for the money to settle.
+    /// </summary>
+    private static async Task<IResult> SaveBankAccount(SaveBankAccountRequest request, HttpContext context,
+        IMirageDbContext db, PaystackService paystack, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.BankCode) || string.IsNullOrWhiteSpace(request.AccountNumber)
+            || string.IsNullOrWhiteSpace(request.AccountName))
+            return EndpointHelpers.ValidationProblem(context,
+                ("accountNumber", "Bank, account number, and account name are required."));
+
+        var userId = context.User.GetUserId();
+        var profile = await db.Mentors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
+
+        profile.SetBankAccount(request.BankCode, request.BankName, request.AccountNumber, request.AccountName);
+
+        try
+        {
+            var recipientCode = await paystack.CreateTransferRecipientAsync(request.AccountName, request.BankCode,
+                request.AccountNumber, "NGN", cancellationToken);
+            profile.SetPaystackTransferRecipientCode(recipientCode);
+        }
+        catch (Exception)
+        {
+            return EndpointHelpers.Problem(context, StatusCodes.Status502BadGateway,
+                "Payout setup failed", "The bank account was resolved, but the payout recipient could not be created.");
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context,
+            new { profile.Id, profile.BankName, profile.BankAccountName, HasPayoutAccount = true },
+            "Payout account saved successfully.");
+    }
+
+    /// <summary>Opens or closes the paid group and sets what a place in it costs.</summary>
+    private static async Task<IResult> SetPricing(SetMentorPricingRequest request, HttpContext context,
+        IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var profile = await db.Mentors.SingleOrDefaultAsync(x => x.UserId == userId, cancellationToken);
+        if (profile is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
+
+        try
+        {
+            profile.SetPaidMentorship(request.OffersPaidMentorship, request.PriceAmount, request.PriceCurrency);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The domain refuses to open a paid group with nowhere for the money to land, so the
+            // mentee never reaches a checkout that cannot settle.
+            return EndpointHelpers.ValidationProblem(context, ("pricing", ex.Message));
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new MentorPricingResponse(
+            profile.OffersPaidMentorship, profile.PriceAmount, profile.PriceCurrency, profile.HasPayoutAccount,
+            profile.BankName, profile.BankAccountName, PracticeEndpoints.MaskAccountNumber(profile.BankAccountNumber),
+            profile.CanChargeForMentorship), "Mentorship pricing updated successfully.");
+    }
+
+    // ------------------------------------------------------------ public events
+
+    /// <summary>
+    /// Publishes a mentor's event onto the same public /events feed churches use. The event is
+    /// public to everyone regardless of audience; Audience only decides which of the mentor's two
+    /// groups is notified about it first.
+    /// </summary>
+    private static async Task<IResult> CreateEvent(CreateMentorEventRequest request, HttpContext context,
+        IMirageDbContext db, NotificationService notifications, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return EndpointHelpers.ValidationProblem(context, ("title", "An event title is required."));
+        if (string.IsNullOrWhiteSpace(request.Location))
+            return EndpointHelpers.ValidationProblem(context, ("location", "An event location is required."));
+        if (request.EndsAt <= request.StartsAt)
+            return EndpointHelpers.ValidationProblem(context, ("endsAt", "The event must end after it starts."));
+        if (request.Capacity is <= 0)
+            return EndpointHelpers.ValidationProblem(context, ("capacity", "Capacity must be greater than zero."));
+
+        var userId = context.User.GetUserId();
+        var mentor = await db.Mentors.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new { x.Id, x.IsApproved })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (mentor is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
+        // An unapproved mentor is invisible on the public feed anyway; refusing here says why.
+        if (!mentor.IsApproved)
+            return EndpointHelpers.Forbidden(context, "Your mentor profile must be approved before you can publish events.");
+
+        var orgEvent = OrgEvent.ForMentor(mentor.Id, userId, request.Title, request.Description, request.ImageUrl,
+            request.StartsAt, request.EndsAt, request.Location, request.Capacity, request.Audience);
+        db.OrgEvents.Add(orgEvent);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var mentorName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken)
+            ?? "Your mentor";
+        foreach (var menteeId in await GroupAudienceAsync(mentor.Id, userId, db, cancellationToken, request.Audience))
+            await notifications.NotifyAsync(menteeId, NotificationType.MentorEventPublished,
+                $"{mentorName} is hosting an event",
+                $"{request.Title} — {request.StartsAt:MMM d, h:mm tt} at {request.Location}.",
+                orgEvent.Id, "OrgEvent", cancellationToken, $"/events/{orgEvent.Id}");
+
+        return ApiResults.Created(context, $"/api/v1/events/{orgEvent.Id}", new { orgEvent.Id },
+            "Event published successfully.");
+    }
+
+    private static async Task<IResult> DeleteEvent(Guid eventId, HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var mentorProfileId = await db.Mentors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
+        if (mentorProfileId is null) return EndpointHelpers.NotFound(context, "Mentor profile was not found.");
+
+        var orgEvent = await db.OrgEvents
+            .SingleOrDefaultAsync(x => x.Id == eventId && x.MentorProfileId == mentorProfileId, cancellationToken);
+        if (orgEvent is null) return EndpointHelpers.NotFound(context, "Event was not found.");
+
+        db.OrgEvents.Remove(orgEvent);
+        await db.SaveChangesAsync(cancellationToken);
+        return ApiResults.Ok(context, new { orgEvent.Id }, "Event removed successfully.");
     }
 }

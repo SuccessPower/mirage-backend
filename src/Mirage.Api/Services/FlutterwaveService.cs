@@ -139,7 +139,9 @@ public sealed class FlutterwaveService(HttpClient http, IConfiguration configura
             currency = payment.Currency,
             beneficiary_name = accountName,
             reference = payment.PayoutReference,
-            narration = $"Mirage counselling session {payment.CounsellingSessionId:N}",
+            narration = payment.IsMentorship
+                ? $"Mirage mentorship {payment.MentorRequestId:N}"
+                : $"Mirage counselling session {payment.CounsellingSessionId:N}",
         }, cancellationToken);
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);

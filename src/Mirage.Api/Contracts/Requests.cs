@@ -147,9 +147,23 @@ public sealed record UpdateVendorRequest(
     string BusinessName, VendorCategory Category, string Description, string Email, string Phone,
     string Address, string City, string Country);
 public sealed record SetVendorPhotosRequest(string[] PhotoUrls);
-public sealed record CreateMentorPostRequest(string Content, string? ImageUrl);
-public sealed record SendMentorGroupMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
-public sealed record ScheduleMentorMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt, int? DurationMinutes);
+// Audience picks which of the mentor's two groups a broadcast goes to. Only a mentor may send
+// Everyone; a mentee's group message is pinned to their own tier by the endpoint.
+public sealed record CreateMentorPostRequest(string Content, string? ImageUrl,
+    MentorAudience Audience = MentorAudience.Everyone);
+public sealed record SendMentorGroupMessageRequest(string Content, MessageType Type = MessageType.Text,
+    string? AttachmentUrl = null, MentorAudience Audience = MentorAudience.Everyone);
+public sealed record ScheduleMentorMeetingRequest(string Title, string MeetingLink, DateTimeOffset ScheduledAt,
+    int? DurationMinutes, MentorAudience Audience = MentorAudience.Everyone);
+public sealed record CreateMentorEventRequest(
+    string Title,
+    string? Description,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Location,
+    string? ImageUrl,
+    int? Capacity,
+    MentorAudience Audience = MentorAudience.Everyone);
 public sealed record CreateCommunityRequest(
     string Name,
     string Category,
@@ -299,7 +313,9 @@ public sealed record UpdateMentorProfileRequest(
     bool AcceptsFreeSessions,
     bool AllowMenteesToSeeEachOther,
     string? PhoneNumber = null);
-public sealed record RequestMentorRequest(string Message);
+public sealed record RequestMentorRequest(string Message, MentorshipTier Tier = MentorshipTier.Free);
+public sealed record SetMenteeTierRequest(MentorshipTier Tier);
+public sealed record SetMentorPricingRequest(bool OffersPaidMentorship, decimal? PriceAmount, string? PriceCurrency);
 public sealed record SendMentorMessageRequest(string Content, MessageType Type = MessageType.Text, string? AttachmentUrl = null);
 public sealed record AddSessionNoteRequest(string Content);
 public sealed record RateSessionRequest(int Rating, string? Comment);

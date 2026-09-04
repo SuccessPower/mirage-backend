@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Mirage.Infrastructure.Persistence;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Mirage.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(MirageDbContext))]
-    partial class MirageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904122747_AddPaidMentorshipTiersAndMentorEvents")]
+    partial class AddPaidMentorshipTiersAndMentorEvents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1263,88 +1266,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("counselling_sessions", "mirage");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellorGroupMeeting", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CounsellorProfileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DurationMinutes")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("MeetingLink")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTimeOffset>("ScheduledAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ScheduledByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CounsellorProfileId");
-
-                    b.HasIndex("ScheduledByUserId");
-
-                    b.ToTable("counsellor_group_meetings", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellorGroupMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AttachmentUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<Guid>("CounsellorProfileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("SenderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CounsellorProfileId");
-
-                    b.HasIndex("SenderId");
-
-                    b.ToTable("counsellor_group_messages", "mirage");
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellorInvite", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1384,37 +1305,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.HasIndex("OrganisationId", "Email");
 
                     b.ToTable("counsellor_invites", "mirage");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellorPost", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<Guid>("CounsellorProfileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ImageUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CounsellorProfileId");
-
-                    b.ToTable("counsellor_posts", "mirage");
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellorProfile", b =>
@@ -4472,36 +4362,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.Navigation("Counsellor");
                 });
 
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellorGroupMeeting", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.CounsellorProfile", null)
-                        .WithMany()
-                        .HasForeignKey("CounsellorProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("ScheduledByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellorGroupMessage", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.CounsellorProfile", null)
-                        .WithMany()
-                        .HasForeignKey("CounsellorProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("SenderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellorInvite", b =>
                 {
                     b.HasOne("Mirage.Domain.Entities.Organisation", "Organisation")
@@ -4511,15 +4371,6 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.Navigation("Organisation");
-                });
-
-            modelBuilder.Entity("Mirage.Domain.Entities.CounsellorPost", b =>
-                {
-                    b.HasOne("Mirage.Domain.Entities.CounsellorProfile", null)
-                        .WithMany()
-                        .HasForeignKey("CounsellorProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.CounsellorProfile", b =>

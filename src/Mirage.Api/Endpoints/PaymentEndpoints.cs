@@ -40,21 +40,30 @@ internal static class PaymentEndpoints
 
         // No subaccount configured yet means the full amount lands in the platform account
         // instead of auto-splitting — booking already requires HasPayoutAccount before a
-        // counsellor can charge at all, so this is a defensive fallback, not the normal path.
+        // counsellor or mentor can charge at all, so this is a defensive fallback, not the
+        // normal path.
+        var subaccountCode = payment.IsMentorship
+            ? await db.Mentors.AsNoTracking().Where(x => x.Id == payment.MentorProfileId)
+                .Select(x => x.PaystackSubaccountCode).SingleOrDefaultAsync(cancellationToken)
+            : await db.Counsellors.AsNoTracking().Where(x => x.Id == payment.CounsellorId)
+                .Select(x => x.PaystackSubaccountCode).SingleOrDefaultAsync(cancellationToken);
+
         var reference = $"mirage-{payment.Id:N}-{DateTimeOffset.UtcNow.Ticks}";
         payment.Initialize(request.Provider, request.Method, reference);
         await db.SaveChangesAsync(cancellationToken);
 
         // Both providers land the browser back on this URL after checkout; the paymentId lets the
-        // frontend poll GET /payments/{id} and show "session scheduled" once the webhook confirms it.
-        var redirectUrl = $"{configuration["Frontend:BaseUrl"]}/counselling/payment-result?paymentId={payment.Id}";
+        // frontend poll GET /payments/{id} and show "session scheduled" — or "request sent to your
+        // mentor" — once the webhook confirms it.
+        var resultPath = payment.IsMentorship ? "/mentorship/payment-result" : "/counselling/payment-result";
+        var redirectUrl = $"{configuration["Frontend:BaseUrl"]}{resultPath}?paymentId={payment.Id}";
 
         try
         {
             var result = request.Provider switch
             {
                 PaymentProvider.Paystack => await paystack.InitializeAsync(payment, payerEmail, request.Method,
-                    null, redirectUrl, cancellationToken),
+                    subaccountCode, redirectUrl, cancellationToken),
                 PaymentProvider.Flutterwave => await flutterwave.InitializeAsync(payment, payerEmail, request.Method,
                     redirectUrl, null, cancellationToken),
                 _ => throw new InvalidOperationException("Unsupported payment provider."),
@@ -77,7 +86,8 @@ internal static class PaymentEndpoints
         var payment = await db.Payments.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (payment is null) return EndpointHelpers.NotFound(context, "Payment was not found.");
         if (payment.PayerUserId != userId) return EndpointHelpers.Forbidden(context);
-        return ApiResults.Ok(context, new { payment.Id, payment.Status, payment.CounsellingSessionId },
+        return ApiResults.Ok(context,
+            new { payment.Id, payment.Status, payment.CounsellingSessionId, payment.MentorRequestId },
             "Payment status retrieved successfully.");
     }
 
@@ -89,6 +99,9 @@ internal static class PaymentEndpoints
         if (payment is null || payment.Status == PaymentStatus.Successful) return Results.Ok();
 
         payment.MarkSuccessful(providerTransactionId);
+        if (payment.IsMentorship)
+            return await ConfirmMentorshipPaymentAsync(payment, db, notifications, emailService, cancellationToken);
+
         var session = await db.CounsellingSessions.Include(x => x.Counsellor)
             .SingleAsync(x => x.Id == payment.CounsellingSessionId, cancellationToken);
         session.ConfirmPayment();
@@ -114,6 +127,40 @@ internal static class PaymentEndpoints
         db.AnonymityAuditLogs.Add(new AnonymityAuditLog(session.Id, payment.PayerUserId,
             "Session requested after payment confirmation"));
         await db.SaveChangesAsync(cancellationToken);
+        return Results.Ok();
+    }
+
+    // A paid mentorship place was funded. Only now does the request become visible to the mentor —
+    // MentorRequest starts in AwaitingPayment precisely so an unfunded place never reaches their
+    // inbox. Both sides are told: the mentee that the money went through, the mentor that a paid
+    // mentee is waiting on them.
+    private static async Task<IResult> ConfirmMentorshipPaymentAsync(Payment payment, MirageDbContext db,
+        NotificationService notifications, IEmailService emailService, CancellationToken cancellationToken)
+    {
+        var request = await db.MentorRequests.Include(x => x.Mentor)
+            .SingleAsync(x => x.Id == payment.MentorRequestId, cancellationToken);
+        request.ConfirmPayment();
+        await db.SaveChangesAsync(cancellationToken);
+
+        var menteeName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == payment.PayerUserId).Select(x => x.DisplayName)
+            .SingleOrDefaultAsync(cancellationToken) ?? "A mentee";
+
+        await notifications.NotifyAsync(payment.PayerUserId, NotificationType.PaymentConfirmed,
+            "Payment confirmed",
+            "Your payment was received and your mentorship request has been sent to the mentor.",
+            request.Id, "MentorRequest", cancellationToken);
+        await notifications.NotifyAsync(request.Mentor.UserId, NotificationType.MentorshipPaymentReceived,
+            "New paid mentorship request",
+            $"{menteeName} paid for a place in your paid mentorship group and is waiting on you.",
+            request.Id, "MentorRequest", cancellationToken, "/practice/mentorship");
+
+        var payerEmail = await db.Users.AsNoTracking()
+            .Where(x => x.Id == payment.PayerUserId).Select(x => x.Email).SingleOrDefaultAsync(cancellationToken);
+        if (payerEmail is not null)
+            await emailService.SendPaymentConfirmedEmailAsync(payerEmail, menteeName,
+                "Paid mentorship place", payment.Amount, payment.Currency, cancellationToken);
+
         return Results.Ok();
     }
 

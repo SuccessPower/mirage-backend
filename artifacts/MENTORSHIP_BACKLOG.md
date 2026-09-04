@@ -1,0 +1,74 @@
+# Working backlog — mentorship / calendar / invites / navigation
+
+Chunks in execution order. Tick as completed.
+
+## Chunk 0 — paid mentorship + groups (DONE)
+- [x] Mentor notified when their invite code is redeemed (ProfessionalInviteRedeemed)
+- [x] Fix: mentors not seeing requests — inner join on Profiles dropped rows; SendRequest
+      violated the unique (mentor, mentee) index on re-request → now Reopen()
+- [x] Free vs paid mentee tiers; separate groups (posts / chat / meetings / roster / video)
+- [x] Paid mentorship pricing + payout account + Paystack checkout
+- [x] Mentors publish public events; host-neutral /events/{id}/register
+- [x] Migration (enum defaults corrected to 1, not 0)
+- [x] mirage-frontend: types, api, practice dashboard, group page, profile checkout
+- [x] mirage-mobile: practice screen UI (models + service done)
+
+## Chunk 1 — blocking bugs (DONE)
+- [x] Already-a-mentee must not see "Request mentorship" (web + mobile)
+- [x] Session expiry → immediate auto-redirect to signin; block all further API calls
+- [x] Mentor gets an EMAIL for a new request — MentorRequestReceived had a template but was
+      never in NotificationService.EmailableTypes, so no email was ever sent
+
+## Chunk 2 — navigation + theme (DONE)
+- [x] Mobile PWA: calendar in the top bar (icon-btn-mobile) as well as the tab bar
+- [x] Web: theme toggle restored to the top-right (icon-btn-desktop), cycles auto/light/dark
+- [x] Web: calendar removed from the desktop top bar; still in the profile dropdown
+- [x] Default theme = system, on web (composables/useTheme.ts, applied before mount) and on
+      Flutter (ThemeController now defaults to ThemeMode.system)
+- [x] Profile settings theme control now shares the same composable, with an Auto option
+
+## Chunk 3 — professional invite links (DONE)
+- [x] Short descriptive codes — already initials + 4 digits (e.g. AO-4821); left as-is
+- [x] /join route created (JoinWithInvitePage) — the backend was handing out /join?invite=CODE
+      links to a route that did not exist, so every shared invite opened a blank page
+- [x] Public GET /professional-invites/lookup/{code} so /join can name the inviter before signup
+- [x] Invite links are now absolute URLs (were site-relative, unusable in WhatsApp or a QR code)
+- [x] Signup already had the field and prefills from ?invite=; auth modal now opens on Register
+- [x] Edit-profile: invite-code field (the backend already redeemed it on update)
+- [x] Mentors hub (web + mobile): enter a mentor's code to send a request
+- [x] QR code, save-as-PNG and print-a-postcard on the professional's InviteCard
+- [x] Approval unchanged — redeeming only ever creates a Pending request
+
+## Chunk 4 — calendar + reminders (DONE)
+- [x] Both sides' calendars — mentor meetings, private 1:1 meetings, counselling sessions and
+      counselling meetings already resolved from both ends; verified
+- [x] Reminders in-app AND by email at 24 hours and 15 minutes — CalendarReminderService and its
+      worker already existed and CalendarReminder is an emailable type; the day-ahead wording no
+      longer says "within 24 hours" for something 40 minutes away
+- [x] Mentor group meeting reminders now respect the meeting's audience, so the other group is
+      not reminded about a call it cannot join
+- [x] Mentor-hosted events reminded their ticket holders only — the audience query joined
+      OrganisationMembers on a null OrganisationId. Now falls back to the mentor's group.
+- [x] Mentor events appear on their mentees' calendars (audience-scoped)
+- [x] Accepted gathering invites appear on the invitee's calendar
+
+## Chunk 5 — design (DONE)
+- [x] Internal hubs run full-width; long-form pages opt into .readable-measure
+- [x] Flutter app was already full-bleed — no change needed
+
+## Chunk 6 — practice dashboards (DONE)
+Audit result:
+- Mentor — individuals: private 1:1 channel + private meetings. Group: posts/chat/meetings,
+  now split free/paid. Both already existed.
+- Counsellor — individuals and couples: session channel, meetings, video; the session carries
+  PartnerUserId so a couple is counselled together. Group: MISSING — counselling was 1:1 or
+  1:couple per session only, so a counsellor running a course for several couples at once had
+  nowhere to hold it.
+- [x] Built the counsellor group to mirror the mentorship one: CounsellorPost,
+      CounsellorGroupMessage, CounsellorGroupMeeting; membership derived from live sessions plus
+      accepted spouses, so it is a group of couples. Names are masked for everyone but the
+      counsellor — confidentiality differs from mentorship here.
+- [x] Group meetings land on every members calendar and fire the same 24h/15min reminders.
+- [x] Web page, mobile screen, SignalR room, migration.
+- [x] Fixed: both apps prefixed the invite link with a hardcoded preview-deployment URL, which
+      now double-prefixes the absolute URL the API returns.

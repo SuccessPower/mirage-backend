@@ -43,7 +43,44 @@ internal static class AuthEndpoints
         group.MapPost("/confirm-email", ConfirmEmail);
         group.MapPost("/resend-confirmation", ResendConfirmation);
         group.MapGet("/sessions", GetSessions).RequireAuthorization();
+        group.MapGet("/session", GetCurrentSession).RequireAuthorization();
         return api;
+    }
+
+    /// <summary>
+    /// The caller's live roles and practice memberships, read from the database rather than from
+    /// their access token. A mentor or counsellor approved after their token was issued carries a
+    /// token with no such role until it next refreshes, which left them staring at a member's view
+    /// of the app — no practice page, no incoming requests — until they signed out and back in.
+    /// Clients gate practice UI on this, not on the token's role claim.
+    /// </summary>
+    private static async Task<IResult> GetCurrentSession(HttpContext context, MirageDbContext db,
+        UserManager<ApplicationUser> userManager, CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null) return EndpointHelpers.NotFound(context, "Account was not found.");
+        var roles = await userManager.GetRolesAsync(user);
+
+        var mentor = await db.Mentors.AsNoTracking().Where(x => x.UserId == userId)
+            .Select(x => new { x.Id, x.IsApproved, x.OffersPaidMentorship })
+            .SingleOrDefaultAsync(cancellationToken);
+        var counsellor = await db.Counsellors.AsNoTracking().Where(x => x.UserId == userId)
+            .Select(x => new { x.Id, x.IsApproved })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return ApiResults.Ok(context, new
+        {
+            UserId = userId,
+            Roles = roles,
+            MentorProfileId = mentor?.Id,
+            IsMentor = mentor is { IsApproved: true },
+            HasMentorApplication = mentor is not null,
+            OffersPaidMentorship = mentor?.OffersPaidMentorship ?? false,
+            CounsellorProfileId = counsellor?.Id,
+            IsCounsellor = counsellor is { IsApproved: true },
+            HasCounsellorApplication = counsellor is not null,
+        }, "Session retrieved successfully.");
     }
 
     private static async Task<IResult> Register(RegisterRequest request, HttpContext context,
@@ -53,6 +90,7 @@ internal static class AuthEndpoints
         MirageDbContext db, TokenService tokens, IConfiguration configuration, ILoggerFactory loggerFactory,
         IEmailService emailService,
         IServiceScopeFactory scopeFactory,
+        NotificationService notifications,
         CancellationToken cancellationToken)
     {
         var errors = Validate(request);
@@ -140,7 +178,7 @@ internal static class AuthEndpoints
                 await db.SaveChangesAsync(cancellationToken);
 
                 if (!await ProfessionalInviteEndpoints.RedeemCode(user.Id, request.ProfessionalInviteCode, db,
-                        cancellationToken))
+                        notifications, cancellationToken))
                     return EndpointHelpers.ValidationProblem(context,
                         ("professionalInviteCode", "Mentor or counsellor invite code is invalid."));
 

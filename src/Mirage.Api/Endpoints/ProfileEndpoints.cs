@@ -606,7 +606,7 @@ internal static class ProfileEndpoints
 
         await db.SaveChangesAsync(cancellationToken);
         if (!await ProfessionalInviteEndpoints.RedeemCode(profile.UserId, request.ProfessionalInviteCode, db,
-                cancellationToken))
+                notifications, cancellationToken))
             return EndpointHelpers.ValidationProblem(context,
                 ("professionalInviteCode", "Mentor or counsellor invite code is invalid."));
         await notifications.NotifyAdminsOfProfileUpdateAsync(profile.UserId, FrontendBaseUrl(configuration),

@@ -30,15 +30,28 @@ public sealed class ChatHub(
 
         var ownMentorProfileId = await db.Mentors.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync();
-        var acceptedMentorProfileIds = await db.MentorRequests.AsNoTracking()
+        var accepted = await db.MentorRequests.AsNoTracking()
             .Where(x => x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted)
-            .Select(x => x.MentorProfileId)
+            .Select(x => new { x.MentorProfileId, x.Tier })
             .ToListAsync();
 
-        var mentorGroupIds = acceptedMentorProfileIds.ToList();
+        var mentorGroupIds = accepted.Select(x => x.MentorProfileId).ToList();
         if (ownMentorProfileId.HasValue) mentorGroupIds.Add(ownMentorProfileId.Value);
         foreach (var mentorProfileId in mentorGroupIds.Distinct())
             await Groups.AddToGroupAsync(Context.ConnectionId, MentorGroup(mentorProfileId));
+
+        // A mentor's free and paid mentees hold separate conversations, so each tier has its own
+        // room. A mentee joins only their own; the mentor joins both, since they speak to both.
+        foreach (var membership in accepted)
+            await Groups.AddToGroupAsync(Context.ConnectionId,
+                MentorTierGroup(membership.MentorProfileId, membership.Tier));
+        if (ownMentorProfileId.HasValue)
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId,
+                MentorTierGroup(ownMentorProfileId.Value, MentorshipTier.Free));
+            await Groups.AddToGroupAsync(Context.ConnectionId,
+                MentorTierGroup(ownMentorProfileId.Value, MentorshipTier.Paid));
+        }
 
         var mentorRequestIds = await db.MentorRequests.AsNoTracking()
             .Where(x => x.Status == MentorRequestStatus.Accepted && (x.MenteeUserId == userId || x.Mentor.UserId == userId))
@@ -46,6 +59,22 @@ public sealed class ChatHub(
             .ToListAsync();
         foreach (var mentorRequestId in mentorRequestIds)
             await Groups.AddToGroupAsync(Context.ConnectionId, MentorRequestGroup(mentorRequestId));
+
+        // A counsellor's group room: the counsellor plus every client (and accepted spouse) they
+        // are working with, so group chat arrives live the way the mentorship group's does.
+        var ownCounsellorProfileId = await db.Counsellors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync();
+        if (ownCounsellorProfileId.HasValue)
+            await Groups.AddToGroupAsync(Context.ConnectionId, CounsellorGroup(ownCounsellorProfileId.Value));
+
+        var clientOfCounsellorIds = await db.CounsellingSessions.AsNoTracking()
+            .Where(x => (x.ClientUserId == userId || (x.PartnerUserId == userId && x.PartnerAccepted))
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
+            .Select(x => x.CounsellorId)
+            .Distinct()
+            .ToListAsync();
+        foreach (var counsellorProfileId in clientOfCounsellorIds)
+            await Groups.AddToGroupAsync(Context.ConnectionId, CounsellorGroup(counsellorProfileId));
 
         var sessionIds = await db.CounsellingSessions.AsNoTracking()
             .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId
@@ -224,7 +253,7 @@ public sealed class ChatHub(
 
     // Client → Hub: send a message to a mentor's broadcast group (mentor + accepted mentees)
     public async Task SendMentorGroupMessage(Guid mentorProfileId, string content, MessageType type = MessageType.Text,
-        string? attachmentUrl = null)
+        string? attachmentUrl = null, MentorAudience audience = MentorAudience.Everyone)
     {
         content = (content ?? string.Empty).Trim();
         if (type == MessageType.Text && (content.Length == 0 || content.Length > 2000)) return;
@@ -238,11 +267,19 @@ public sealed class ChatHub(
         if (mentor is null) return;
 
         var isMentor = mentor.UserId == userId;
-        var isMember = isMentor || await db.MentorRequests.AsNoTracking().AnyAsync(x => x.MentorProfileId == mentorProfileId
-            && x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted);
-        if (!isMember) return;
+        var membershipTier = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId && x.MenteeUserId == userId
+                && x.Status == MentorRequestStatus.Accepted)
+            .Select(x => (MentorshipTier?)x.Tier)
+            .SingleOrDefaultAsync();
+        if (!isMentor && membershipTier is null) return;
 
-        var message = new MentorGroupMessage(mentorProfileId, userId, content, type, attachmentUrl);
+        // A mentee can only ever speak into their own group; only the mentor chooses an audience.
+        var sendAudience = isMentor
+            ? audience
+            : membershipTier == MentorshipTier.Paid ? MentorAudience.PaidMentees : MentorAudience.FreeMentees;
+
+        var message = new MentorGroupMessage(mentorProfileId, userId, content, type, attachmentUrl, sendAudience);
         db.MentorGroupMessages.Add(message);
         await db.SaveChangesAsync();
 
@@ -253,7 +290,15 @@ public sealed class ChatHub(
         // mentor opts in, so a non-mentor sender's name is masked unless that's on.
         var broadcastSenderName = isMentor || mentor.AllowMenteesToSeeEachOther ? senderName : "Fellow mentee";
 
-        await Clients.Group(MentorGroup(mentorProfileId)).SendAsync("ReceiveMentorGroupMessage", new
+        // Everyone reaches the shared room; a tier-specific message reaches only that tier's room,
+        // so a free mentee's open screen never receives paid-group traffic.
+        var target = sendAudience switch
+        {
+            MentorAudience.FreeMentees => Clients.Group(MentorTierGroup(mentorProfileId, MentorshipTier.Free)),
+            MentorAudience.PaidMentees => Clients.Group(MentorTierGroup(mentorProfileId, MentorshipTier.Paid)),
+            _ => Clients.Group(MentorGroup(mentorProfileId)),
+        };
+        await target.SendAsync("ReceiveMentorGroupMessage", new
         {
             message.Id,
             MentorProfileId = mentorProfileId,
@@ -262,6 +307,7 @@ public sealed class ChatHub(
             message.Content,
             message.Type,
             message.AttachmentUrl,
+            message.Audience,
             SentAt = message.CreatedAt
         });
     }
@@ -358,7 +404,10 @@ public sealed class ChatHub(
 
     private static string MatchGroup(Guid matchId) => $"match:{matchId}";
     private static string MentorGroup(Guid mentorProfileId) => $"mentorgroup:{mentorProfileId}";
+    private static string MentorTierGroup(Guid mentorProfileId, MentorshipTier tier) =>
+        $"mentorgroup:{mentorProfileId}:{(tier == MentorshipTier.Paid ? "paid" : "free")}";
     private static string MentorRequestGroup(Guid mentorRequestId) => $"mentorrequest:{mentorRequestId}";
     private static string CounsellingGroup(Guid sessionId) => $"counsellingsession:{sessionId}";
+    private static string CounsellorGroup(Guid counsellorProfileId) => $"counsellorgroup:{counsellorProfileId}";
     private static string CoupleFriendGroup(Guid friendshipId) => $"couplefriend:{friendshipId}";
 }
