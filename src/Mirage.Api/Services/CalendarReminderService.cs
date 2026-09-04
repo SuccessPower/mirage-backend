@@ -54,6 +54,30 @@ public sealed class CalendarReminderService(IMirageDbContext db, NotificationSer
             new Guid?[] { x.ClientUserId, x.CounsellorUserId, x.PartnerAccepted ? x.PartnerUserId : null }
                 .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToArray())));
 
+        // A counsellor's group meeting reminds the counsellor and every client in that group.
+        var counsellorGroupMeetings = await db.CounsellorGroupMeetings.AsNoTracking()
+            .Where(x => x.ScheduledAt > now && x.ScheduledAt <= horizon)
+            .Select(x => new { x.Id, x.Title, x.ScheduledAt, x.CounsellorProfileId })
+            .ToListAsync(ct);
+        foreach (var meeting in counsellorGroupMeetings)
+        {
+            var counsellorUserId = await db.Counsellors.AsNoTracking()
+                .Where(x => x.Id == meeting.CounsellorProfileId).Select(x => x.UserId).SingleAsync(ct);
+            var rows = await db.CounsellingSessions.AsNoTracking()
+                .Where(x => x.CounsellorId == meeting.CounsellorProfileId
+                    && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
+                .Select(x => new { x.ClientUserId, x.PartnerUserId, x.PartnerAccepted })
+                .ToListAsync(ct);
+            var memberIds = rows
+                .SelectMany(x => x.PartnerAccepted && x.PartnerUserId is { } partner
+                    ? new[] { x.ClientUserId, partner }
+                    : [x.ClientUserId])
+                .Append(counsellorUserId)
+                .Distinct()
+                .ToArray();
+            items.Add(new("CounsellorGroupMeeting", meeting.Id, meeting.Title, meeting.ScheduledAt, memberIds));
+        }
+
         var dates = await db.DateRequests.AsNoTracking()
             .Where(x => x.StartsAt > now && x.StartsAt <= horizon && x.Status != DateRequestStatus.Cancelled &&
                 x.Status != DateRequestStatus.Expired)

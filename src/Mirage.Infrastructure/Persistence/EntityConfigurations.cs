@@ -353,6 +353,48 @@ public sealed class CommunityPostCommentVoteConfiguration : IEntityTypeConfigura
     }
 }
 
+public sealed class CounsellorPostConfiguration : IEntityTypeConfiguration<CounsellorPost>
+{
+    public void Configure(EntityTypeBuilder<CounsellorPost> b)
+    {
+        b.ToTable("counsellor_posts");
+        b.HasIndex(x => x.CounsellorProfileId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.Property(x => x.ImageUrl).HasMaxLength(1000);
+        b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public sealed class CounsellorGroupMessageConfiguration : IEntityTypeConfiguration<CounsellorGroupMessage>
+{
+    public void Configure(EntityTypeBuilder<CounsellorGroupMessage> b)
+    {
+        b.ToTable("counsellor_group_messages");
+        b.HasIndex(x => x.CounsellorProfileId);
+        b.Property(x => x.Content).HasMaxLength(2000);
+        b.Property(x => x.AttachmentUrl).HasMaxLength(1000);
+        b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SenderId).OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class CounsellorGroupMeetingConfiguration : IEntityTypeConfiguration<CounsellorGroupMeeting>
+{
+    public void Configure(EntityTypeBuilder<CounsellorGroupMeeting> b)
+    {
+        b.ToTable("counsellor_group_meetings");
+        b.HasIndex(x => x.CounsellorProfileId);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.MeetingLink).HasMaxLength(500);
+        b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ScheduledByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
 public sealed class MentorPostConfiguration : IEntityTypeConfiguration<MentorPost>
 {
     public void Configure(EntityTypeBuilder<MentorPost> b)

@@ -107,6 +107,22 @@ internal static class CalendarEndpoints
                 null, null, x.SessionId))
             .ToListAsync(cancellationToken);
 
+        // A counsellor's group meetings, for the counsellor and every client in that group.
+        var ownCounsellorProfileId = await db.Counsellors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
+        var counsellorGroupIds = await db.CounsellingSessions.AsNoTracking()
+            .Where(x => (x.ClientUserId == userId || (x.PartnerUserId == userId && x.PartnerAccepted))
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
+            .Select(x => x.CounsellorId).Distinct().ToListAsync(cancellationToken);
+        if (ownCounsellorProfileId is { } ownCounsellorId) counsellorGroupIds.Add(ownCounsellorId);
+
+        var counsellorGroupMeetings = await db.CounsellorGroupMeetings.AsNoTracking()
+            .Where(x => counsellorGroupIds.Contains(x.CounsellorProfileId))
+            .Select(x => new CalendarItemResponse("CounsellorGroupMeeting", x.Id, x.Title, x.ScheduledAt,
+                x.DurationMinutes != null ? x.ScheduledAt.AddMinutes(x.DurationMinutes.Value) : null,
+                x.MeetingLink, null, x.CounsellorProfileId))
+            .ToListAsync(cancellationToken);
+
         var dateRequests = await db.DateRequests.AsNoTracking()
             .Where(x => x.RequestorUserId == userId ||
                         x.Acceptances.Any(a => a.AcceptorUserId == userId &&
@@ -116,7 +132,7 @@ internal static class CalendarEndpoints
             .ToListAsync(cancellationToken);
 
         var items = meetings.Concat(sessions).Concat(events).Concat(createdEvents).Concat(communityEvents)
-            .Concat(mentorEvents).Concat(invitedGatherings)
+            .Concat(mentorEvents).Concat(invitedGatherings).Concat(counsellorGroupMeetings)
             .Concat(counsellingMeetings).Concat(dateRequests)
             .GroupBy(x => new { x.Source, x.SourceId })
             .Select(x => x.First())

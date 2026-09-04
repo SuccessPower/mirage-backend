@@ -52,9 +52,10 @@ Chunks in execution order. Tick as completed.
 - [x] Mentor events appear on their mentees' calendars (audience-scoped)
 - [x] Accepted gathering invites appear on the invitee's calendar
 
-## Chunk 5 — design (IN PROGRESS)
-- [ ] All internal hubs full-screen (like the pre-login landing page), not boxed
+## Chunk 5 — design (DONE)
+- [x] Internal hubs run full-width; long-form pages opt into .readable-measure
+- [x] Flutter app was already full-bleed — no change needed
 
-## Chunk 6 — verify
+## Chunk 6 — practice dashboards (IN PROGRESS)
 - [ ] Mentor + counsellor dashboards: chat and schedule calls with individuals, couples, groups
       (mentorship group; couple group for counselling)

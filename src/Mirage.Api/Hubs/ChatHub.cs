@@ -60,6 +60,22 @@ public sealed class ChatHub(
         foreach (var mentorRequestId in mentorRequestIds)
             await Groups.AddToGroupAsync(Context.ConnectionId, MentorRequestGroup(mentorRequestId));
 
+        // A counsellor's group room: the counsellor plus every client (and accepted spouse) they
+        // are working with, so group chat arrives live the way the mentorship group's does.
+        var ownCounsellorProfileId = await db.Counsellors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync();
+        if (ownCounsellorProfileId.HasValue)
+            await Groups.AddToGroupAsync(Context.ConnectionId, CounsellorGroup(ownCounsellorProfileId.Value));
+
+        var clientOfCounsellorIds = await db.CounsellingSessions.AsNoTracking()
+            .Where(x => (x.ClientUserId == userId || (x.PartnerUserId == userId && x.PartnerAccepted))
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
+            .Select(x => x.CounsellorId)
+            .Distinct()
+            .ToListAsync();
+        foreach (var counsellorProfileId in clientOfCounsellorIds)
+            await Groups.AddToGroupAsync(Context.ConnectionId, CounsellorGroup(counsellorProfileId));
+
         var sessionIds = await db.CounsellingSessions.AsNoTracking()
             .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId
                 || (x.PartnerUserId == userId && x.PartnerAccepted))
@@ -392,5 +408,6 @@ public sealed class ChatHub(
         $"mentorgroup:{mentorProfileId}:{(tier == MentorshipTier.Paid ? "paid" : "free")}";
     private static string MentorRequestGroup(Guid mentorRequestId) => $"mentorrequest:{mentorRequestId}";
     private static string CounsellingGroup(Guid sessionId) => $"counsellingsession:{sessionId}";
+    private static string CounsellorGroup(Guid counsellorProfileId) => $"counsellorgroup:{counsellorProfileId}";
     private static string CoupleFriendGroup(Guid friendshipId) => $"couplefriend:{friendshipId}";
 }

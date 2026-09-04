@@ -887,3 +887,34 @@ public sealed record AdminComprehensiveAnalyticsResponse(
     int ApprovedCounsellors,
     int ApprovedMentors,
     int OpenContentReports);
+
+
+// A counsellor's group — posts, chat and meetings shared with the clients (and their spouses)
+// they are working with. Mirrors the mentorship group's shapes on purpose.
+public sealed record CounsellorGroupMemberResponse(Guid UserId, string DisplayName, string? AvatarUrl);
+
+public sealed record CounsellorPostResponse(
+    Guid Id,
+    Guid CounsellorProfileId,
+    string Content,
+    string? ImageUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record CounsellorGroupMessageResponse(
+    Guid Id,
+    Guid CounsellorProfileId,
+    Guid SenderId,
+    string SenderName,
+    string Content,
+    MessageType Type,
+    string? AttachmentUrl,
+    DateTimeOffset CreatedAt);
+
+public sealed record CounsellorGroupMeetingResponse(
+    Guid Id,
+    Guid CounsellorProfileId,
+    Guid ScheduledByUserId,
+    string Title,
+    string MeetingLink,
+    DateTimeOffset ScheduledAt,
+    int? DurationMinutes);
