@@ -183,7 +183,9 @@ public sealed class PaystackService(HttpClient http, IConfiguration configuratio
             amount = (long)Math.Round(payment.CounsellorAmount * 100),
             recipient = recipientCode,
             reference = payment.PayoutReference,
-            reason = $"Mirage counselling session {payment.CounsellingSessionId:N}",
+            reason = payment.IsMentorship
+                ? $"Mirage mentorship {payment.MentorRequestId:N}"
+                : $"Mirage counselling session {payment.CounsellingSessionId:N}",
             currency = payment.Currency,
         }, cancellationToken);
         response.EnsureSuccessStatusCode();

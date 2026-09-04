@@ -43,7 +43,18 @@ public enum MessageType { Text = 1, Image = 2, Voice = 3, Gif = 4 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }
 public enum LikeType { Like = 1, SuperLike = 2 }
 public enum TrustUnlockStatus { NotRequested = 1, Pending = 2, Unlocked = 3, Declined = 4 }
-public enum MentorRequestStatus { Pending = 1, Accepted = 2, Declined = 3, Withdrawn = 4 }
+// AwaitingPayment is the paid-mentorship entry state: the mentee has asked for a paid place and
+// a Payment row exists, but the mentor is not told about the request until the money lands. Free
+// requests skip it and start at Pending.
+public enum MentorRequestStatus { Pending = 1, Accepted = 2, Declined = 3, Withdrawn = 4, AwaitingPayment = 5 }
+
+// Which side of a mentor's practice a mentee sits on. Free mentees and paid mentees are separate
+// groups: separate posts, separate group chat, separate meetings.
+public enum MentorshipTier { Free = 1, Paid = 2 }
+
+// Who a mentor's post, group message, meeting or event is addressed to. Everyone means both
+// groups at once — the mentor speaking to their whole practice.
+public enum MentorAudience { Everyone = 1, FreeMentees = 2, PaidMentees = 3 }
 public enum MilestoneType { Dating = 1, Engaged = 2, Married = 3, Separated = 4 }
 public enum ContentReportTargetType { Profile = 1, DateRequest = 2, Recommendation = 3, CounsellorProfile = 4 }
 public enum ContentReportReason { Inappropriate = 1, FakeProfile = 2, Harassment = 3, Spam = 4, Other = 5 }
@@ -175,7 +186,14 @@ public enum NotificationType
     MentorGroupPost = 49,
     MentorGroupMessage = 50,
     CalendarReminder = 51,
-    ProfessionalConnectionRequest = 52
+    ProfessionalConnectionRequest = 52,
+    // Someone signed up with, or redeemed, a mentor's or counsellor's invite code. Without this
+    // the professional had no idea their invitee had arrived and the request sat unseen.
+    ProfessionalInviteRedeemed = 53,
+    // A mentee's payment for a paid mentorship place cleared, so the request is now live.
+    MentorshipPaymentReceived = 54,
+    // A mentor published an event to the public events feed; their mentees hear about it first.
+    MentorEventPublished = 55
 }
 
 public enum ProfessionalRole { Mentor = 1, Counsellor = 2 }

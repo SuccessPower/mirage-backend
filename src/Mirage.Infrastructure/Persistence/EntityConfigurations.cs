@@ -113,11 +113,13 @@ public sealed class OrgEventConfiguration : IEntityTypeConfiguration<OrgEvent>
     {
         b.ToTable("org_events");
         b.HasIndex(x => x.OrganisationId);
+        b.HasIndex(x => x.MentorProfileId);
         b.Property(x => x.Title).HasMaxLength(200);
         b.Property(x => x.Description).HasMaxLength(2000);
         b.Property(x => x.ImageUrl).HasMaxLength(1000);
         b.Property(x => x.Location).HasMaxLength(300);
         b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Mentor).WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -674,6 +676,7 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
     {
         b.ToTable("payments");
         b.HasIndex(x => x.CounsellingSessionId).IsUnique();
+        b.HasIndex(x => x.MentorRequestId);
         b.HasIndex(x => x.ProviderReference).IsUnique();
         b.Property(x => x.Currency).HasMaxLength(3);
         b.Property(x => x.ProviderReference).HasMaxLength(200);
@@ -686,6 +689,10 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         b.Property(x => x.RefundNote).HasMaxLength(500);
         b.HasOne(x => x.CounsellingSession).WithOne(x => x.Payment)
             .HasForeignKey<Payment>(x => x.CounsellingSessionId).OnDelete(DeleteBehavior.Cascade);
+        // A mentee can pay for a place, be declined, and pay again later, so this is many-to-one
+        // rather than the one-to-one a counselling session gets.
+        b.HasOne(x => x.MentorRequest).WithMany().HasForeignKey(x => x.MentorRequestId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<MentorProfile>().WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.PayerUserId).OnDelete(DeleteBehavior.Restrict);
         b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -772,6 +779,7 @@ public sealed class MentorRequestConfiguration : IEntityTypeConfiguration<Mentor
         b.ToTable("mentor_requests");
         b.HasIndex(x => new { x.MentorProfileId, x.MenteeUserId }).IsUnique();
         b.HasIndex(x => x.Status);
+        b.HasIndex(x => new { x.MentorProfileId, x.Tier, x.Status });
         b.Property(x => x.Message).HasMaxLength(1000);
         b.HasOne(x => x.Mentor).WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.MenteeUserId).OnDelete(DeleteBehavior.Restrict);
@@ -909,6 +917,15 @@ public sealed class MentorProfileConfiguration : IEntityTypeConfiguration<Mentor
         b.Property(x => x.Testimony).HasMaxLength(2000);
         b.Property(x => x.AreasOfGuidance).HasColumnType("text[]");
         b.Property(x => x.Languages).HasColumnType("text[]");
+        b.Property(x => x.PriceAmount).HasPrecision(18, 2);
+        b.Property(x => x.PriceCurrency).HasMaxLength(3);
+        b.Property(x => x.BankCode).HasMaxLength(20);
+        b.Property(x => x.BankName).HasMaxLength(200);
+        b.Property(x => x.BankAccountNumber).HasMaxLength(30);
+        b.Property(x => x.BankAccountName).HasMaxLength(200);
+        b.Property(x => x.PaystackSubaccountCode).HasMaxLength(100);
+        b.Property(x => x.PaystackTransferRecipientCode).HasMaxLength(100);
+        b.Property(x => x.FlutterwaveSubaccountId).HasMaxLength(100);
         b.HasOne(x => x.UserProfile).WithMany().HasForeignKey(x => x.UserId).HasPrincipalKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
     }
 }

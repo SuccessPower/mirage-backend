@@ -151,7 +151,7 @@ public sealed record OrganisationManagerResponse(
 
 public sealed record OrgEventResponse(
     Guid Id,
-    Guid OrganisationId,
+    Guid? OrganisationId,
     Guid? BranchId,
     string Title,
     string? Description,
@@ -164,12 +164,20 @@ public sealed record OrgEventResponse(
 
 public sealed record EventTicketResponse(Guid Id, Guid EventId, string EventTitle, string? EventImageUrl, DateTimeOffset StartsAt, string Code, DateTimeOffset? CheckedInAt);
 
+// One row on the public /events feed. A church publishes events, and so does a mentor, so the
+// host is either an organisation or a mentor — HostKind/HostName save every client from having
+// to work out which of the two id pairs is populated.
 public sealed record PublicEventResponse(
     Guid Id,
-    Guid OrganisationId,
-    string OrganisationName,
+    Guid? OrganisationId,
+    string? OrganisationName,
     Guid? BranchId,
     string? BranchName,
+    Guid? MentorProfileId,
+    string? MentorName,
+    string? MentorAvatarUrl,
+    string HostKind,
+    string HostName,
     string Title,
     string? Description,
     string? ImageUrl,
@@ -361,7 +369,10 @@ public sealed record HearthMentionableResponse(Guid UserId, string DisplayName, 
 
 public sealed record CommunityAvatarPresetResponse(string Key, string Label, string Url);
 
-public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl, DateTimeOffset CreatedAt);
+// Audience says which of the mentor's two groups the post was addressed to; a mentee only ever
+// receives Everyone plus their own group's.
+public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl,
+    DateTimeOffset CreatedAt, MentorAudience Audience = MentorAudience.Everyone);
 
 public sealed record MentorGroupMessageResponse(
     Guid Id,
@@ -371,7 +382,8 @@ public sealed record MentorGroupMessageResponse(
     string Content,
     MessageType Type,
     string? AttachmentUrl,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    MentorAudience Audience = MentorAudience.Everyone);
 
 public sealed record MentorMeetingResponse(
     Guid Id,
@@ -380,7 +392,8 @@ public sealed record MentorMeetingResponse(
     string Title,
     string MeetingLink,
     DateTimeOffset ScheduledAt,
-    int? DurationMinutes);
+    int? DurationMinutes,
+    MentorAudience Audience = MentorAudience.Everyone);
 
 public sealed record MentorMessageResponse(
     Guid Id,
@@ -408,7 +421,9 @@ public sealed record MentorRequestDetailResponse(
     string? MentorOrgBadgeUrl = null,
     string? MentorOrgName = null,
     string? MenteeOrgBadgeUrl = null,
-    string? MenteeOrgName = null);
+    string? MenteeOrgName = null,
+    MentorshipTier Tier = MentorshipTier.Free,
+    DateTimeOffset? PaidAt = null);
 
 public sealed record MentorMenteeResponse(
     Guid MentorRequestId,
@@ -417,7 +432,9 @@ public sealed record MentorMenteeResponse(
     string? AvatarUrl,
     DateTimeOffset AcceptedAt,
     string? OrgBadgeUrl = null,
-    string? OrgName = null);
+    string? OrgName = null,
+    // Which of the mentor's two groups this mentee belongs to.
+    MentorshipTier Tier = MentorshipTier.Free);
 
 public sealed record CalendarItemResponse(
     string Source,
@@ -463,7 +480,28 @@ public sealed record MentorshipCountsResponse(
     int Couples,
     int OtherStatus,
     int UpcomingMeetings,
-    int PastMeetings);
+    int PastMeetings,
+    // The two groups, counted separately — the whole point of the split roster. AwaitingPayment
+    // requests are the paid places someone started checkout for and has not funded yet.
+    int FreeMentees,
+    int PaidMentees,
+    int PendingFreeRequests,
+    int PendingPaidRequests,
+    int AwaitingPaymentRequests,
+    decimal PaidEarnings,
+    string? EarningsCurrency);
+
+// What a mentor can charge and where the money lands. Rendered as the paid group's header on the
+// mentorship dashboard, and as the reason the paid group is closed when it is not set up yet.
+public sealed record MentorPricingResponse(
+    bool OffersPaidMentorship,
+    decimal? PriceAmount,
+    string? PriceCurrency,
+    bool HasPayoutAccount,
+    string? BankName,
+    string? BankAccountName,
+    string? BankAccountNumberMasked,
+    bool CanChargeForMentorship);
 
 public sealed record CounsellingCountsResponse(
     int Clients,
@@ -499,7 +537,10 @@ public sealed record PracticePersonResponse(
     bool IsAnonymous,
     PracticePartnerResponse? Partner = null,
     string? OrgBadgeUrl = null,
-    string? OrgName = null);
+    string? OrgName = null,
+    // Null on the counselling roster; on the mentorship roster it says which group they are in.
+    MentorshipTier? Tier = null,
+    DateTimeOffset? PaidAt = null);
 
 public sealed record PracticeSessionResponse(
     Guid Id,
@@ -523,7 +564,11 @@ public sealed record PracticeRequestResponse(
     string? MenteeAvatarUrl,
     RelationshipStatus? MenteeRelationshipStatus,
     string Message,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    MentorshipTier Tier = MentorshipTier.Free,
+    MentorRequestStatus Status = MentorRequestStatus.Pending,
+    decimal? AmountPaid = null,
+    string? Currency = null);
 
 // A mentor's scheduled call or video meeting with their group. Mentors run meetings the same way
 // counsellors run sessions, so the mentorship page shows them as that practice's activity.
@@ -533,6 +578,21 @@ public sealed record PracticeMeetingResponse(
     string MeetingLink,
     DateTimeOffset ScheduledAt,
     int? DurationMinutes,
+    bool IsPast,
+    MentorAudience Audience = MentorAudience.Everyone);
+
+// An event the mentor published to the public events feed, as it appears on their own dashboard.
+public sealed record PracticeEventResponse(
+    Guid Id,
+    string Title,
+    string? Description,
+    string? ImageUrl,
+    DateTimeOffset StartsAt,
+    DateTimeOffset EndsAt,
+    string Location,
+    int? Capacity,
+    int TicketsIssued,
+    MentorAudience Audience,
     bool IsPast);
 
 public sealed record MentorshipPracticeResponse(
@@ -541,7 +601,9 @@ public sealed record MentorshipPracticeResponse(
     IReadOnlyList<PracticePersonResponse> Mentees,
     IReadOnlyList<PracticeRequestResponse> PendingRequests,
     IReadOnlyList<PracticeMeetingResponse> UpcomingMeetings,
-    IReadOnlyList<PracticeMeetingResponse> PastMeetings);
+    IReadOnlyList<PracticeMeetingResponse> PastMeetings,
+    MentorPricingResponse Pricing,
+    IReadOnlyList<PracticeEventResponse> Events);
 
 // Admin oversight: one row per mentor, with the activity that shows whether the mentorship is
 // actually happening — a mentor with mentees but no meetings in months is the thing to spot.

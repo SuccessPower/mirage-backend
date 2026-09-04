@@ -110,15 +110,34 @@ public sealed class OrganisationMember : Entity
     }
 }
 
+// An event on the public /events feed. Historically only a church could publish one, so it was
+// organisation-owned; approved mentors publish here too, and a mentor's event carries a
+// MentorProfileId instead of an OrganisationId. Exactly one of the two is set.
 public sealed class OrgEvent : Entity
 {
     private OrgEvent() { }
 
     public OrgEvent(Guid organisationId, Guid? branchId, Guid createdByUserId, string title, string? description,
         string? imageUrl, DateTimeOffset startsAt, DateTimeOffset endsAt, string location, int? capacity)
+        : this(createdByUserId, title, description, imageUrl, startsAt, endsAt, location, capacity)
     {
         OrganisationId = organisationId;
         BranchId = branchId;
+    }
+
+    /// <summary>An event published by a mentor rather than a church.</summary>
+    public static OrgEvent ForMentor(Guid mentorProfileId, Guid createdByUserId, string title, string? description,
+        string? imageUrl, DateTimeOffset startsAt, DateTimeOffset endsAt, string location, int? capacity,
+        MentorAudience audience) =>
+        new(createdByUserId, title, description, imageUrl, startsAt, endsAt, location, capacity)
+        {
+            MentorProfileId = mentorProfileId,
+            Audience = audience,
+        };
+
+    private OrgEvent(Guid createdByUserId, string title, string? description, string? imageUrl,
+        DateTimeOffset startsAt, DateTimeOffset endsAt, string location, int? capacity)
+    {
         CreatedByUserId = createdByUserId;
         Title = title.Trim();
         Description = description?.Trim();
@@ -129,8 +148,16 @@ public sealed class OrgEvent : Entity
         Capacity = capacity;
     }
 
-    public Guid OrganisationId { get; private set; }
+    public Guid? OrganisationId { get; private set; }
     public Organisation? Organisation { get; private set; }
+
+    public Guid? MentorProfileId { get; private set; }
+    public MentorProfile? Mentor { get; private set; }
+
+    // Which of the mentor's groups was told about this event first. The event itself is public
+    // either way — this only drives who gets the notification. Ignored on a church event.
+    public MentorAudience Audience { get; private set; } = MentorAudience.Everyone;
+
     public Guid? BranchId { get; private set; }
     public Guid CreatedByUserId { get; private set; }
     public string Title { get; private set; } = string.Empty;

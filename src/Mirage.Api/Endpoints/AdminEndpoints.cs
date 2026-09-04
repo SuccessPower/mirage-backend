@@ -107,7 +107,14 @@ internal static class AdminEndpoints
             x.Id,
             x.CounsellingSessionId,
             x.CounsellorId,
-            CounsellorName = x.CounsellingSession.Counsellor.UserProfile.DisplayName,
+            x.MentorRequestId,
+            x.MentorProfileId,
+            // A payout is owed either to a counsellor for a session or to a mentor for a paid
+            // mentorship place; the payee name comes from whichever side is set.
+            Kind = x.MentorRequestId != null ? "Mentorship" : "Counselling",
+            CounsellorName = x.MentorRequestId != null
+                ? x.MentorRequest!.Mentor.UserProfile.DisplayName
+                : x.CounsellingSession!.Counsellor.UserProfile.DisplayName,
             x.Amount,
             x.PlatformFeeAmount,
             x.CounsellorAmount,
@@ -120,7 +127,9 @@ internal static class AdminEndpoints
             x.PayoutApprovedAt,
             x.PayoutPaidAt,
             x.PayoutFailureReason,
-            SessionCompletedAt = x.CounsellingSession.UpdatedAt
+            SessionCompletedAt = x.MentorRequestId != null
+                ? x.MentorRequest!.UpdatedAt
+                : x.CounsellingSession!.UpdatedAt
         });
         return ApiResults.Ok(context, await rows.ToPagedResultAsync(page, pageSize, cancellationToken),
             "Payouts retrieved successfully.");
@@ -180,17 +189,21 @@ internal static class AdminEndpoints
         {
             x.Id,
             x.CounsellingSessionId,
+            x.MentorRequestId,
+            Kind = x.MentorRequestId != null ? "Mentorship" : "Counselling",
             x.PayerUserId,
             PayerName = db.Profiles.Where(p => p.UserId == x.PayerUserId).Select(p => p.DisplayName).FirstOrDefault(),
-            CounsellorName = x.CounsellingSession.Counsellor.UserProfile.DisplayName,
+            CounsellorName = x.MentorRequestId != null
+                ? x.MentorRequest!.Mentor.UserProfile.DisplayName
+                : x.CounsellingSession!.Counsellor.UserProfile.DisplayName,
             x.Amount,
             x.Currency,
             x.Provider,
             x.Status,
             x.PayoutStatus,
             x.PaidAt,
-            SessionScheduledAt = x.CounsellingSession.ScheduledAt,
-            SessionStatus = x.CounsellingSession.Status,
+            SessionScheduledAt = x.CounsellingSession != null ? x.CounsellingSession.ScheduledAt : (DateTimeOffset?)null,
+            SessionStatus = x.CounsellingSession != null ? x.CounsellingSession.Status : (SessionStatus?)null,
             x.RefundedAmount,
             x.RefundedAt,
             x.RefundReason,
@@ -229,18 +242,40 @@ internal static class AdminEndpoints
         PaystackService paystack, FlutterwaveService flutterwave, ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
-        var payment = await db.Payments.Include(x => x.CounsellingSession).ThenInclude(x => x.Counsellor)
+        var payment = await db.Payments
+            .Include(x => x.CounsellingSession).ThenInclude(x => x!.Counsellor)
+            .Include(x => x.MentorRequest).ThenInclude(x => x!.Mentor)
             .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (payment is null) return EndpointHelpers.NotFound(context, "Payout was not found.");
-        if (payment.CounsellingSession.Status != SessionStatus.Completed)
-            return EndpointHelpers.Conflict(context, "The counselling session is not complete.");
 
-        var counsellor = payment.CounsellingSession.Counsellor;
-        if (string.IsNullOrWhiteSpace(counsellor.BankCode) || string.IsNullOrWhiteSpace(counsellor.BankAccountNumber)
-            || string.IsNullOrWhiteSpace(counsellor.BankAccountName))
-            return EndpointHelpers.Conflict(context, "The counsellor has no verified payout account.");
+        // A payout is owed to a counsellor for a completed session, or to a mentor for a paid
+        // mentorship place they took on. Either way what we need is the same four bank fields
+        // and a transfer recipient, so the two are resolved into one payee here.
+        Payee payee;
+        if (payment.MentorRequest is { } mentorRequest)
+        {
+            if (mentorRequest.Status != MentorRequestStatus.Accepted)
+                return EndpointHelpers.Conflict(context,
+                    "The mentor has not accepted this mentee yet, so the payment is not earned.");
+            var mentor = mentorRequest.Mentor;
+            payee = new Payee("mentor", mentor.BankCode, mentor.BankAccountNumber, mentor.BankAccountName,
+                mentor.PaystackTransferRecipientCode);
+        }
+        else
+        {
+            var session = payment.CounsellingSession!;
+            if (session.Status != SessionStatus.Completed)
+                return EndpointHelpers.Conflict(context, "The counselling session is not complete.");
+            var counsellor = session.Counsellor;
+            payee = new Payee("counsellor", counsellor.BankCode, counsellor.BankAccountNumber,
+                counsellor.BankAccountName, counsellor.PaystackTransferRecipientCode);
+        }
+
+        if (string.IsNullOrWhiteSpace(payee.BankCode) || string.IsNullOrWhiteSpace(payee.AccountNumber)
+            || string.IsNullOrWhiteSpace(payee.AccountName))
+            return EndpointHelpers.Conflict(context, $"The {payee.Role} has no verified payout account.");
         if (payment.Provider == PaymentProvider.Paystack
-            && string.IsNullOrWhiteSpace(counsellor.PaystackTransferRecipientCode))
+            && string.IsNullOrWhiteSpace(payee.PaystackTransferRecipientCode))
             return EndpointHelpers.Conflict(context, "The Paystack payout recipient is not configured.");
 
         try { payment.ApprovePayout(context.User.GetUserId()); }
@@ -254,13 +289,13 @@ internal static class AdminEndpoints
             PayoutSubmissionResult result;
             if (payment.Provider == PaymentProvider.Paystack)
             {
-                result = await paystack.InitiateTransferAsync(payment, counsellor.PaystackTransferRecipientCode!,
+                result = await paystack.InitiateTransferAsync(payment, payee.PaystackTransferRecipientCode!,
                     cancellationToken);
             }
             else
             {
-                result = await flutterwave.InitiateTransferAsync(payment, counsellor.BankCode,
-                    counsellor.BankAccountNumber, counsellor.BankAccountName, cancellationToken);
+                result = await flutterwave.InitiateTransferAsync(payment, payee.BankCode!,
+                    payee.AccountNumber!, payee.AccountName!, cancellationToken);
             }
 
             payment.MarkPayoutSubmitted(result.ProviderTransferId);
@@ -1372,4 +1407,8 @@ internal static class AdminEndpoints
             new { Email = normalizedEmail, InviteToken = rawToken, ExpiresInDays = expiryDays },
             "Organisation admin invite created. Share the token with the invitee; their organisation will be pre-approved.");
     }
+
+    // The bank details a payout lands in, resolved from whichever side of the payment is set.
+    private sealed record Payee(string Role, string? BankCode, string? AccountNumber, string? AccountName,
+        string? PaystackTransferRecipientCode);
 }

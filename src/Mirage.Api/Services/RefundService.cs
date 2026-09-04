@@ -67,10 +67,12 @@ public sealed class RefundService(
         payment.MarkRefunded(amount, reason, result.ProviderReference, note, issuedByUserId);
         await db.SaveChangesAsync(cancellationToken);
 
+        var what = payment.IsMentorship ? "mentorship place" : "cancelled session";
         await notifications.NotifyAsync(payment.PayerUserId, NotificationType.PaymentRefunded,
             "Refund on its way",
-            $"{payment.Currency} {amount:N2} for your cancelled session has been refunded to your original payment method. It usually arrives within 5–10 business days.",
-            payment.CounsellingSessionId, "CounsellingSession", cancellationToken);
+            $"{payment.Currency} {amount:N2} for your {what} has been refunded to your original payment method. It usually arrives within 5–10 business days.",
+            payment.MentorRequestId ?? payment.CounsellingSessionId,
+            payment.IsMentorship ? "MentorRequest" : "CounsellingSession", cancellationToken);
 
         logger.LogInformation("Refunded {Currency} {Amount} for payment {PaymentId} ({Reason})",
             payment.Currency, amount, payment.Id, reason);

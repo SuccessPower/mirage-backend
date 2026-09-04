@@ -6,8 +6,8 @@ using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Endpoints;
 
-// Aggregates every scheduled thing a user is part of — mentor meetings, counselling sessions,
-// and org events they hold a ticket for — into one unified list for a calendar view.
+// Aggregates every scheduled thing a user is part of — mentor meetings and events, counselling
+// sessions, and org events they hold a ticket for — into one unified list for a calendar view.
 internal static class CalendarEndpoints
 {
     public static RouteGroupBuilder MapCalendarEndpoints(this RouteGroupBuilder api)
@@ -24,18 +24,23 @@ internal static class CalendarEndpoints
 
         var ownMentorProfileId = await db.Mentors.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => (Guid?)x.Id).SingleOrDefaultAsync(cancellationToken);
-        var acceptedMentorProfileIds = await db.MentorRequests.AsNoTracking()
+        var acceptedMemberships = await db.MentorRequests.AsNoTracking()
             .Where(x => x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted)
-            .Select(x => x.MentorProfileId)
+            .Select(x => new { x.Id, x.MentorProfileId, x.Tier })
             .ToListAsync(cancellationToken);
-        var mentorGroupIds = acceptedMentorProfileIds.ToList();
-        if (ownMentorProfileId.HasValue) mentorGroupIds.Add(ownMentorProfileId.Value);
 
-        var acceptedMentorRequestIds = await db.MentorRequests.AsNoTracking()
-            .Where(x => x.MenteeUserId == userId && x.Status == MentorRequestStatus.Accepted)
-            .Select(x => x.Id).ToListAsync(cancellationToken);
+        // A mentee only has the free group's or the paid group's meetings on their calendar,
+        // never the other group's. Everyone-audience meetings land on both.
+        var freeGroupIds = acceptedMemberships.Where(x => x.Tier == MentorshipTier.Free)
+            .Select(x => x.MentorProfileId).Distinct().ToList();
+        var paidGroupIds = acceptedMemberships.Where(x => x.Tier == MentorshipTier.Paid)
+            .Select(x => x.MentorProfileId).Distinct().ToList();
+        var acceptedMentorRequestIds = acceptedMemberships.Select(x => x.Id).ToList();
+
         var meetings = await db.MentorMeetings.AsNoTracking()
-            .Where(x => (x.MentorRequestId == null && mentorGroupIds.Contains(x.MentorProfileId))
+            .Where(x => (x.MentorRequestId == null
+                    && ((x.Audience != MentorAudience.PaidMentees && freeGroupIds.Contains(x.MentorProfileId))
+                        || (x.Audience != MentorAudience.FreeMentees && paidGroupIds.Contains(x.MentorProfileId))))
                 || (x.MentorRequestId != null && acceptedMentorRequestIds.Contains(x.MentorRequestId.Value))
                 || (ownMentorProfileId != null && x.MentorProfileId == ownMentorProfileId.Value))
             .Select(x => new CalendarItemResponse("MentorMeeting", x.Id, x.Title, x.ScheduledAt,
@@ -67,7 +72,7 @@ internal static class CalendarEndpoints
             .Where(x => x.UserId == userId && x.Status == OrganisationMemberStatus.Approved)
             .Select(x => x.OrganisationId).ToListAsync(cancellationToken);
         var communityEvents = await db.OrgEvents.AsNoTracking()
-            .Where(x => memberOrganisationIds.Contains(x.OrganisationId))
+            .Where(x => x.OrganisationId != null && memberOrganisationIds.Contains(x.OrganisationId.Value))
             .Select(e => new CalendarItemResponse("OrgEvent", e.Id, e.Title, e.StartsAt, e.EndsAt, null, e.Location, null))
             .ToListAsync(cancellationToken);
 

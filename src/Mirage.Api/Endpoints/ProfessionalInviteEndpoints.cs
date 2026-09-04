@@ -45,8 +45,14 @@ internal static class ProfessionalInviteEndpoints
         }, "Invitation details retrieved successfully.");
     }
 
+    /// <summary>
+    /// Turns a mentor's or counsellor's invite code into a pending request against them. The
+    /// professional is notified here: previously the row was written silently, so someone who
+    /// invited a friend was never told the friend had arrived, and the request sat unanswered in
+    /// a queue nobody knew had anything in it.
+    /// </summary>
     internal static async Task<bool> RedeemCode(Guid memberUserId, string? rawCode, IMirageDbContext db,
-        CancellationToken ct)
+        NotificationService notifications, CancellationToken ct)
     {
         var code = rawCode?.Trim().ToUpperInvariant();
         if (string.IsNullOrEmpty(code)) return true;
@@ -57,16 +63,59 @@ internal static class ProfessionalInviteEndpoints
         var professionalUserId = mentor?.UserId ?? counsellor?.UserId;
         if (professionalUserId is null || professionalUserId == memberUserId) return false;
 
+        Guid? referenceId = null;
+        string referenceType;
+        string actionUrl;
+
         if (mentor is not null)
         {
-            if (!await db.MentorRequests.AnyAsync(x => x.MentorProfileId == mentor.Id && x.MenteeUserId == memberUserId, ct))
-                db.MentorRequests.Add(new MentorRequest(mentor.Id, memberUserId, "Requested using your invite code."));
+            referenceType = "MentorRequest";
+            actionUrl = "/practice/mentorship";
+            // An invited mentee who was declined or withdrew earlier already owns the single row
+            // this pair is allowed by the unique index, so reopen it rather than inserting a
+            // duplicate that SaveChanges would reject.
+            var existing = await db.MentorRequests
+                .SingleOrDefaultAsync(x => x.MentorProfileId == mentor.Id && x.MenteeUserId == memberUserId, ct);
+            if (existing is null)
+            {
+                var created = new MentorRequest(mentor.Id, memberUserId, "Requested using your invite code.");
+                db.MentorRequests.Add(created);
+                referenceId = created.Id;
+            }
+            else if (existing.Status is MentorRequestStatus.Declined or MentorRequestStatus.Withdrawn)
+            {
+                existing.Reopen("Requested using your invite code.", existing.Tier);
+                referenceId = existing.Id;
+            }
+            else
+            {
+                // Already pending or accepted — the code is valid, but there is nothing new to
+                // tell the mentor about.
+                return true;
+            }
         }
-        else if (!await db.ProfessionalConnections.AnyAsync(x => x.ProfessionalUserId == professionalUserId &&
-                     x.MemberUserId == memberUserId && x.Role == ProfessionalRole.Counsellor, ct))
-            db.ProfessionalConnections.Add(new ProfessionalConnection(professionalUserId.Value, memberUserId,
-                ProfessionalRole.Counsellor));
+        else
+        {
+            referenceType = "ProfessionalConnection";
+            actionUrl = "/practice/counselling";
+            if (await db.ProfessionalConnections.AnyAsync(x => x.ProfessionalUserId == professionalUserId &&
+                    x.MemberUserId == memberUserId && x.Role == ProfessionalRole.Counsellor, ct))
+                return true;
+            var connection = new ProfessionalConnection(professionalUserId.Value, memberUserId,
+                ProfessionalRole.Counsellor);
+            db.ProfessionalConnections.Add(connection);
+            referenceId = connection.Id;
+        }
+
         await db.SaveChangesAsync(ct);
+
+        var memberName = await db.Profiles.AsNoTracking()
+            .Where(x => x.UserId == memberUserId).Select(x => x.DisplayName).SingleOrDefaultAsync(ct)
+            ?? "Someone you invited";
+        await notifications.NotifyAsync(professionalUserId.Value, NotificationType.ProfessionalInviteRedeemed,
+            "Your invite was used",
+            $"{memberName} joined with your invite code and is waiting for you to accept them.",
+            referenceId, referenceType, ct, actionUrl);
         return true;
     }
 
@@ -81,7 +130,7 @@ internal static class ProfessionalInviteEndpoints
         IMirageDbContext db, NotificationService notifications, CancellationToken ct)
     {
         var userId = context.User.GetUserId();
-        if (!await RedeemCode(userId, request.Code, db, ct))
+        if (!await RedeemCode(userId, request.Code, db, notifications, ct))
             return EndpointHelpers.ValidationProblem(context, ("code", "Invite code is invalid."));
         return ApiResults.Ok(context, new { status = "Pending" }, "Request sent for professional approval.");
     }
@@ -91,8 +140,20 @@ internal static class ProfessionalInviteEndpoints
         var userId = context.User.GetUserId();
         var requests = await db.ProfessionalConnections.AsNoTracking()
             .Where(x => x.ProfessionalUserId == userId)
-            .Join(db.Profiles.AsNoTracking(), x => x.MemberUserId, p => p.UserId,
-                (x, p) => new { x.Id, x.MemberUserId, p.DisplayName, p.AvatarUrl, x.Role, x.Status, x.CreatedAt })
+            // Left join, not inner: a member whose profile row is missing or not yet created must
+            // still appear in the professional's queue rather than vanishing from it.
+            .Select(x => new
+            {
+                x.Id,
+                x.MemberUserId,
+                DisplayName = db.Profiles.Where(p => p.UserId == x.MemberUserId)
+                    .Select(p => p.DisplayName).FirstOrDefault(),
+                AvatarUrl = db.Profiles.Where(p => p.UserId == x.MemberUserId)
+                    .Select(p => p.AvatarUrl).FirstOrDefault(),
+                x.Role,
+                x.Status,
+                x.CreatedAt,
+            })
             .OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
         return ApiResults.Ok(context, requests, "Connection requests retrieved successfully.");
     }

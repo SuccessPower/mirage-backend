@@ -113,6 +113,9 @@ public static class EmailTemplates
         [NotificationType.ProfileVisibleAgain] = ("Profile visible", Teal)
         ,[NotificationType.CalendarReminder] = ("Calendar reminder", Purple)
         ,[NotificationType.ProfessionalConnectionRequest] = ("Connection request", Purple)
+        ,[NotificationType.ProfessionalInviteRedeemed] = ("Your invite was used", Teal)
+        ,[NotificationType.MentorshipPaymentReceived] = ("Paid mentorship", Teal)
+        ,[NotificationType.MentorEventPublished] = ("Event", Purple)
     };
 
     public static bool HasTemplate(NotificationType type) => TypeLabels.ContainsKey(type);

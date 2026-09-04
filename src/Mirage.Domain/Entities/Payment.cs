@@ -13,21 +13,43 @@ public sealed class Payment : Entity
     private Payment() { }
 
     public Payment(Guid counsellingSessionId, Guid payerUserId, Guid counsellorId, decimal amount, string currency)
+        : this(payerUserId, amount, currency)
     {
         CounsellingSessionId = counsellingSessionId;
-        PayerUserId = payerUserId;
         CounsellorId = counsellorId;
+    }
+
+    /// <summary>A mentee paying for a place in a mentor's paid group.</summary>
+    public static Payment ForMentorship(Guid mentorRequestId, Guid payerUserId, Guid mentorProfileId,
+        decimal amount, string currency) =>
+        new(payerUserId, amount, currency)
+        {
+            MentorRequestId = mentorRequestId,
+            MentorProfileId = mentorProfileId,
+        };
+
+    private Payment(Guid payerUserId, decimal amount, string currency)
+    {
+        PayerUserId = payerUserId;
         Amount = amount;
         Currency = currency.Trim().ToUpperInvariant();
         PlatformFeeAmount = Math.Round(amount * PlatformCommissionRate, 2);
         CounsellorAmount = amount - PlatformFeeAmount;
     }
 
-    public Guid CounsellingSessionId { get; private set; }
+    // Exactly one of these pairs is set: a payment is either for a counselling session or for a
+    // mentorship place. Both were non-nullable when counselling was the only thing anyone paid
+    // for; mentorship charging made them a choice.
+    public Guid? CounsellingSessionId { get; private set; }
+    public Guid? CounsellorId { get; private set; }
+    public Guid? MentorRequestId { get; private set; }
+    public Guid? MentorProfileId { get; private set; }
+    public bool IsMentorship => MentorRequestId is not null;
+
     public Guid PayerUserId { get; private set; }
-    public Guid CounsellorId { get; private set; }
     public decimal Amount { get; private set; }
     public decimal PlatformFeeAmount { get; private set; }
+    /// <summary>The practitioner's share after the platform fee — the counsellor's or the mentor's.</summary>
     public decimal CounsellorAmount { get; private set; }
     public string Currency { get; private set; } = string.Empty;
     public PaymentProvider? Provider { get; private set; }
@@ -55,7 +77,8 @@ public sealed class Payment : Entity
     /// <summary>Null when the refund was automatic under the cancellation policy.</summary>
     public Guid? RefundedByUserId { get; private set; }
 
-    public CounsellingSession CounsellingSession { get; private set; } = null!;
+    public CounsellingSession? CounsellingSession { get; private set; }
+    public MentorRequest? MentorRequest { get; private set; }
 
     public bool IsRefundable =>
         Status == PaymentStatus.Successful && PayoutStatus is not (PayoutStatus.Paid or PayoutStatus.Processing);
@@ -100,8 +123,9 @@ public sealed class Payment : Entity
         if (Status != PaymentStatus.Successful)
             throw new InvalidOperationException("Only a successful payment can be refunded.");
         if (PayoutStatus is PayoutStatus.Paid or PayoutStatus.Processing)
-            throw new InvalidOperationException(
-                "The counsellor has already been paid for this session, so it cannot be refunded automatically.");
+            throw new InvalidOperationException(IsMentorship
+                ? "The mentor has already been paid, so this cannot be refunded automatically."
+                : "The counsellor has already been paid for this session, so it cannot be refunded automatically.");
         if (refundedAmount <= 0 || refundedAmount > Amount)
             throw new InvalidOperationException("The refund amount must be positive and no more than the amount paid.");
 
