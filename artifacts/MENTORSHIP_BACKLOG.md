@@ -56,6 +56,19 @@ Chunks in execution order. Tick as completed.
 - [x] Internal hubs run full-width; long-form pages opt into .readable-measure
 - [x] Flutter app was already full-bleed — no change needed
 
-## Chunk 6 — practice dashboards (IN PROGRESS)
-- [ ] Mentor + counsellor dashboards: chat and schedule calls with individuals, couples, groups
-      (mentorship group; couple group for counselling)
+## Chunk 6 — practice dashboards (DONE)
+Audit result:
+- Mentor — individuals: private 1:1 channel + private meetings. Group: posts/chat/meetings,
+  now split free/paid. Both already existed.
+- Counsellor — individuals and couples: session channel, meetings, video; the session carries
+  PartnerUserId so a couple is counselled together. Group: MISSING — counselling was 1:1 or
+  1:couple per session only, so a counsellor running a course for several couples at once had
+  nowhere to hold it.
+- [x] Built the counsellor group to mirror the mentorship one: CounsellorPost,
+      CounsellorGroupMessage, CounsellorGroupMeeting; membership derived from live sessions plus
+      accepted spouses, so it is a group of couples. Names are masked for everyone but the
+      counsellor — confidentiality differs from mentorship here.
+- [x] Group meetings land on every members calendar and fire the same 24h/15min reminders.
+- [x] Web page, mobile screen, SignalR room, migration.
+- [x] Fixed: both apps prefixed the invite link with a hardcoded preview-deployment URL, which
+      now double-prefixes the absolute URL the API returns.
