@@ -39,12 +39,20 @@ Chunks in execution order. Tick as completed.
 - [x] QR code, save-as-PNG and print-a-postcard on the professional's InviteCard
 - [x] Approval unchanged — redeeming only ever creates a Pending request
 
-## Chunk 4 — calendar + reminders (IN PROGRESS)
-- [ ] Every scheduled meeting (mentor or counsellor) appears on BOTH sides' calendars
-- [ ] Reminder in-app + email the day before, and 15 minutes before
-- [ ] Events (community, dates, friends' events) marked on calendars + reminders
+## Chunk 4 — calendar + reminders (DONE)
+- [x] Both sides' calendars — mentor meetings, private 1:1 meetings, counselling sessions and
+      counselling meetings already resolved from both ends; verified
+- [x] Reminders in-app AND by email at 24 hours and 15 minutes — CalendarReminderService and its
+      worker already existed and CalendarReminder is an emailable type; the day-ahead wording no
+      longer says "within 24 hours" for something 40 minutes away
+- [x] Mentor group meeting reminders now respect the meeting's audience, so the other group is
+      not reminded about a call it cannot join
+- [x] Mentor-hosted events reminded their ticket holders only — the audience query joined
+      OrganisationMembers on a null OrganisationId. Now falls back to the mentor's group.
+- [x] Mentor events appear on their mentees' calendars (audience-scoped)
+- [x] Accepted gathering invites appear on the invitee's calendar
 
-## Chunk 5 — design
+## Chunk 5 — design (IN PROGRESS)
 - [ ] All internal hubs full-screen (like the pre-login landing page), not boxed
 
 ## Chunk 6 — verify

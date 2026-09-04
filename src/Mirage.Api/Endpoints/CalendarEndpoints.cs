@@ -76,6 +76,28 @@ internal static class CalendarEndpoints
             .Select(e => new CalendarItemResponse("OrgEvent", e.Id, e.Title, e.StartsAt, e.EndsAt, null, e.Location, null))
             .ToListAsync(cancellationToken);
 
+        // A mentor's public events belong on their mentees' calendars the way a church's belong on
+        // its members'. The event is public either way; the audience decides which group carries
+        // it, so a free mentee never sees a paid-group event on their calendar.
+        var mentorEvents = await db.OrgEvents.AsNoTracking()
+            .Where(x => x.MentorProfileId != null
+                && ((x.Audience != MentorAudience.PaidMentees && freeGroupIds.Contains(x.MentorProfileId.Value))
+                    || (x.Audience != MentorAudience.FreeMentees && paidGroupIds.Contains(x.MentorProfileId.Value))
+                    || (ownMentorProfileId != null && x.MentorProfileId == ownMentorProfileId.Value)))
+            .Select(e => new CalendarItemResponse("OrgEvent", e.Id, e.Title, e.StartsAt, e.EndsAt, null, e.Location, null))
+            .ToListAsync(cancellationToken);
+
+        // A gathering someone was invited to and accepted, where accepting the invite did not also
+        // write an acceptance row — without this it sat on the inviter's calendar but not theirs.
+        var invitedGatherings = await db.GatheringInvites.AsNoTracking()
+            .Where(x => x.InviteeUserId == userId && x.Kind == GatheringInviteKind.DateRequest
+                && x.Status == GatheringInviteStatus.Accepted)
+            .Join(db.DateRequests.AsNoTracking(), i => i.TargetId, d => d.Id, (i, d) => d)
+            .Where(d => d.Status != DateRequestStatus.Cancelled && d.Status != DateRequestStatus.Expired)
+            .Select(d => new CalendarItemResponse("DateRequest", d.Id, d.Activity, d.StartsAt, d.EndsAt, null,
+                d.LocationArea, null))
+            .ToListAsync(cancellationToken);
+
         var counsellingMeetings = await db.CounsellingMeetings.AsNoTracking()
             .Where(x => db.CounsellingSessions.Any(s => s.Id == x.SessionId
                 && (s.ClientUserId == userId || s.Counsellor.UserId == userId
@@ -94,6 +116,7 @@ internal static class CalendarEndpoints
             .ToListAsync(cancellationToken);
 
         var items = meetings.Concat(sessions).Concat(events).Concat(createdEvents).Concat(communityEvents)
+            .Concat(mentorEvents).Concat(invitedGatherings)
             .Concat(counsellingMeetings).Concat(dateRequests)
             .GroupBy(x => new { x.Source, x.SourceId })
             .Select(x => x.First())

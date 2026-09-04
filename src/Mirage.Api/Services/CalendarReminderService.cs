@@ -19,7 +19,8 @@ public sealed class CalendarReminderService(IMirageDbContext db, NotificationSer
 
         var mentorMeetings = await db.MentorMeetings.AsNoTracking()
             .Where(x => x.ScheduledAt > now && x.ScheduledAt <= horizon)
-            .Select(x => new { x.Id, x.Title, x.ScheduledAt, x.MentorProfileId, x.MentorRequestId }).ToListAsync(ct);
+            .Select(x => new { x.Id, x.Title, x.ScheduledAt, x.MentorProfileId, x.MentorRequestId, x.Audience })
+            .ToListAsync(ct);
         foreach (var meeting in mentorMeetings)
         {
             var mentorId = await db.Mentors.AsNoTracking().Where(x => x.Id == meeting.MentorProfileId)
@@ -27,8 +28,10 @@ public sealed class CalendarReminderService(IMirageDbContext db, NotificationSer
             var memberIds = meeting.MentorRequestId.HasValue
                 ? await db.MentorRequests.AsNoTracking().Where(x => x.Id == meeting.MentorRequestId.Value)
                     .Select(x => x.MenteeUserId).ToListAsync(ct)
-                : await db.MentorRequests.AsNoTracking().Where(x => x.MentorProfileId == meeting.MentorProfileId &&
-                      x.Status == MentorRequestStatus.Accepted).Select(x => x.MenteeUserId).ToListAsync(ct);
+                // A group meeting is held for one of the mentor's two groups, so only that group
+                // is reminded — reminding the other about a call they cannot join is worse than
+                // saying nothing.
+                : await MenteesInAudienceAsync(meeting.MentorProfileId, meeting.Audience, ct);
             items.Add(new("MentorMeeting", meeting.Id, meeting.Title, meeting.ScheduledAt,
                 memberIds.Append(mentorId).Distinct().ToArray()));
         }
@@ -67,10 +70,20 @@ public sealed class CalendarReminderService(IMirageDbContext db, NotificationSer
         var events = await db.OrgEvents.AsNoTracking().Where(x => x.StartsAt > now && x.StartsAt <= horizon).ToListAsync(ct);
         foreach (var evt in events)
         {
-            var audience = await db.EventTickets.AsNoTracking().Where(x => x.EventId == evt.Id).Select(x => x.UserId)
-                .Concat(db.OrganisationMembers.AsNoTracking().Where(x => x.OrganisationId == evt.OrganisationId &&
-                    x.Status == OrganisationMemberStatus.Approved).Select(x => x.UserId))
-                .ToListAsync(ct);
+            // Everyone holding a ticket, plus the host's own people: an approved member of the
+            // church that is hosting, or — for a mentor's event — the group it was addressed to.
+            // The organisation branch cannot serve a mentor's event, whose OrganisationId is null.
+            var audience = await db.EventTickets.AsNoTracking()
+                .Where(x => x.EventId == evt.Id).Select(x => x.UserId).ToListAsync(ct);
+
+            if (evt.OrganisationId is { } organisationId)
+                audience.AddRange(await db.OrganisationMembers.AsNoTracking()
+                    .Where(x => x.OrganisationId == organisationId &&
+                        x.Status == OrganisationMemberStatus.Approved)
+                    .Select(x => x.UserId).ToListAsync(ct));
+            else if (evt.MentorProfileId is { } mentorProfileId)
+                audience.AddRange(await MenteesInAudienceAsync(mentorProfileId, evt.Audience, ct));
+
             items.Add(new("OrgEvent", evt.Id, evt.Title, evt.StartsAt,
                 audience.Append(evt.CreatedByUserId).Distinct().ToArray()));
         }
@@ -80,6 +93,20 @@ public sealed class CalendarReminderService(IMirageDbContext db, NotificationSer
                      ? new[] { CalendarReminderLeadTime.OneDay, CalendarReminderLeadTime.FifteenMinutes }
                      : new[] { CalendarReminderLeadTime.OneDay })
             await SendOnce(item, lead, ct);
+    }
+
+    /// <summary>
+    /// The accepted mentees of one of a mentor's two groups, or of both when the audience is
+    /// Everyone. Reminders follow the same split the meetings and posts do.
+    /// </summary>
+    private async Task<List<Guid>> MenteesInAudienceAsync(Guid mentorProfileId, MentorAudience audience,
+        CancellationToken ct)
+    {
+        var query = db.MentorRequests.AsNoTracking()
+            .Where(x => x.MentorProfileId == mentorProfileId && x.Status == MentorRequestStatus.Accepted);
+        if (audience == MentorAudience.FreeMentees) query = query.Where(x => x.Tier == MentorshipTier.Free);
+        else if (audience == MentorAudience.PaidMentees) query = query.Where(x => x.Tier == MentorshipTier.Paid);
+        return await query.Select(x => x.MenteeUserId).ToListAsync(ct);
     }
 
     private async Task SendOnce(DueItem item, CalendarReminderLeadTime lead, CancellationToken ct)
@@ -93,7 +120,12 @@ public sealed class CalendarReminderService(IMirageDbContext db, NotificationSer
             try
             {
                 await db.SaveChangesAsync(ct);
-                var when = lead == CalendarReminderLeadTime.FifteenMinutes ? "in 15 minutes" : "within 24 hours";
+                // "Within 24 hours" reads as wrong on a meeting that is 40 minutes away, which is
+                // exactly when the day-ahead reminder fires for anything booked at short notice.
+                var minutesAway = (item.StartsAt - DateTimeOffset.UtcNow).TotalMinutes;
+                var when = lead == CalendarReminderLeadTime.FifteenMinutes
+                    ? "in 15 minutes"
+                    : minutesAway <= 90 ? "shortly" : "within 24 hours";
                 await notifications.NotifyAsync(userId, NotificationType.CalendarReminder,
                     $"{item.Title} starts {when}", $"Scheduled for {item.StartsAt:ddd, MMM d 'at' h:mm tt}.",
                     item.SourceId, item.Source, ct, $"{frontend}/calendar", "Open calendar");
