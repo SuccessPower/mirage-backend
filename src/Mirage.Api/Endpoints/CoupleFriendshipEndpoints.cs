@@ -115,7 +115,9 @@ internal static class CoupleFriendshipEndpoints
         if (!await IsParticipantAsync(id, userId, db, cancellationToken))
             return EndpointHelpers.Forbidden(context);
 
-        var query = db.CoupleFriendMessages.AsNoTracking().Where(x => x.FriendshipId == id);
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.CoupleFriend, id).Key, cancellationToken);
+        var query = visibility.Apply(db.CoupleFriendMessages.AsNoTracking().Where(x => x.FriendshipId == id));
         if (before.HasValue) query = query.Where(x => x.CreatedAt < before.Value);
 
         var messages = await query

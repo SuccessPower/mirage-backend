@@ -41,7 +41,7 @@ public sealed class Message : Entity
 
     /// <summary>Message kinds whose meaning lives in the attachment rather than the text body.</summary>
     public static bool RequiresAttachment(MessageType type) =>
-        type is MessageType.Image or MessageType.Voice or MessageType.Gif;
+        type is MessageType.Image or MessageType.Voice or MessageType.Gif or MessageType.Sticker;
 
     public void SetEncryptedContent(string ciphertext, string nonce, string clientMessageId, int version = 1)
     {

@@ -186,7 +186,10 @@ public sealed record PublicEventResponse(
     string Location,
     int? Capacity,
     int TicketsIssued,
-    bool IsRegistered);
+    bool IsRegistered,
+    // Whether the caller may delete this event: whoever posted it, a manager of the host church,
+    // or a platform admin. Sent so a client can show the control without guessing at the rule.
+    bool CanDelete = false);
 
 public sealed record CommunityResponse(
     Guid Id,
@@ -918,3 +921,21 @@ public sealed record CounsellorGroupMeetingResponse(
     string MeetingLink,
     DateTimeOffset ScheduledAt,
     int? DurationMinutes);
+
+// --- chats: wallpapers and deletion (see ChatEndpoints) ---
+
+public sealed record ChatThemeOverrideResponse(string ConversationKey, string? Theme);
+
+/// <param name="Default">The account-wide wallpaper, or null while the member has never set one.</param>
+public sealed record ChatThemesResponse(string? Default, IReadOnlyList<ChatThemeOverrideResponse> Overrides);
+
+/// <param name="PartiallyDeleted">
+/// True when "delete for everyone" was asked for but some of the selection could only be removed
+/// from the caller's own copy — someone else's message, or one past the window.
+/// </param>
+public sealed record DeleteChatMessagesResponse(
+    IReadOnlyList<Guid> DeletedForMe,
+    IReadOnlyList<Guid> DeletedForEveryone,
+    bool PartiallyDeleted);
+
+public sealed record ClearChatResponse(string ConversationKey, DateTimeOffset ClearedAt);

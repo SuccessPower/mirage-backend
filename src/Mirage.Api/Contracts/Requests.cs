@@ -344,3 +344,14 @@ public sealed record RegisterDeviceTokenRequest(
     DevicePlatform Platform,
     string? DeviceName = null);
 public sealed record RevokeDeviceTokenRequest(string Token);
+
+// --- chats: wallpapers and deletion (see ChatEndpoints) ---
+
+public sealed record SetChatThemeRequest(string? Theme);
+
+/// <param name="ForEveryone">
+/// Take the messages back from the whole conversation rather than only the caller's copy. Honoured
+/// for the caller's own messages inside the five-minute window; anything else in the selection is
+/// hidden from the caller instead, and the response says so.
+/// </param>
+public sealed record DeleteChatMessagesRequest(Guid[]? MessageIds, bool ForEveryone = false);

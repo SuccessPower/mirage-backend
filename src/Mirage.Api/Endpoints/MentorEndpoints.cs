@@ -150,8 +150,10 @@ internal static class MentorEndpoints
         var userId = context.User.GetUserId();
         if (!await IsMentorRequestPartyAsync(id, userId, db, cancellationToken)) return EndpointHelpers.Forbidden(context);
 
-        var messages = await db.MentorMessages.AsNoTracking()
-            .Where(x => x.MentorRequestId == id)
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.MentorRequest, id).Key, cancellationToken);
+        var messages = await visibility
+            .Apply(db.MentorMessages.AsNoTracking().Where(x => x.MentorRequestId == id))
             .OrderBy(x => x.CreatedAt)
             .Join(db.Profiles.AsNoTracking(), m => m.SenderId, p => p.UserId, (m, p) => new MentorMessageResponse(
                 m.Id, m.MentorRequestId, m.SenderId, p.DisplayName, m.Content, m.Type, m.AttachmentUrl, m.CreatedAt))
@@ -358,7 +360,10 @@ internal static class MentorEndpoints
         // Free and paid mentees hold separate conversations: each reads Everyone plus their own
         // group. The mentor reads both, and can narrow to one with ?audience=.
         var viewerTier = await ViewerTierAsync(id, userId, db, cancellationToken);
-        var query = db.MentorGroupMessages.AsNoTracking().Where(x => x.MentorProfileId == id);
+        var visibility = await ChatVisibility.ForAsync(db, userId,
+            new ChatSurface(ChatSurfaceKind.MentorGroup, id).Key, cancellationToken);
+        var query = visibility
+            .Apply(db.MentorGroupMessages.AsNoTracking().Where(x => x.MentorProfileId == id));
         var visible = VisibleAudiences(viewerTier, audience);
         query = query.Where(x => visible.Contains(x.Audience));
 

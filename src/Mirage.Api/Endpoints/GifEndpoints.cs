@@ -13,25 +13,48 @@ internal static class GifEndpoints
             .RequireRateLimiting("gifs");
         group.MapGet("/search", Search);
         group.MapGet("/trending", Trending);
+
+        // Stickers are the same proxy against Klipy's sibling library — same key, same quota, same
+        // safety filter — so they share the rate limiter rather than getting a budget of their own.
+        var stickers = api.MapGroup("/stickers").WithTags("Gifs").RequireAuthorization()
+            .RequireRateLimiting("gifs");
+        stickers.MapGet("/search", SearchStickers);
+        stickers.MapGet("/trending", TrendingStickers);
         return api;
     }
 
-    private static async Task<IResult> Search(HttpContext context, KlipyService klipy,
-        ILoggerFactory loggers, string? q, int limit = 24, int page = 1,
-        CancellationToken cancellationToken = default)
+    private static Task<IResult> Search(HttpContext context, KlipyService klipy, ILoggerFactory loggers,
+        string? q, int limit = 24, int page = 1, CancellationToken cancellationToken = default) =>
+        SearchAsync(KlipyLibrary.Gifs, context, klipy, loggers, q, limit, page, cancellationToken);
+
+    private static Task<IResult> Trending(HttpContext context, KlipyService klipy, ILoggerFactory loggers,
+        int limit = 24, int page = 1, CancellationToken cancellationToken = default) =>
+        TrendingAsync(KlipyLibrary.Gifs, context, klipy, loggers, limit, page, cancellationToken);
+
+    private static Task<IResult> SearchStickers(HttpContext context, KlipyService klipy, ILoggerFactory loggers,
+        string? q, int limit = 24, int page = 1, CancellationToken cancellationToken = default) =>
+        SearchAsync(KlipyLibrary.Stickers, context, klipy, loggers, q, limit, page, cancellationToken);
+
+    private static Task<IResult> TrendingStickers(HttpContext context, KlipyService klipy, ILoggerFactory loggers,
+        int limit = 24, int page = 1, CancellationToken cancellationToken = default) =>
+        TrendingAsync(KlipyLibrary.Stickers, context, klipy, loggers, limit, page, cancellationToken);
+
+    private static async Task<IResult> SearchAsync(KlipyLibrary library, HttpContext context, KlipyService klipy,
+        ILoggerFactory loggers, string? q, int limit, int page, CancellationToken cancellationToken)
     {
         if (!klipy.IsConfigured) return NotConfigured(context);
         // An empty query is the picker's initial state rather than a client error — serve trending
         // so the grid is never blank.
         if (string.IsNullOrWhiteSpace(q))
-            return await Trending(context, klipy, loggers, limit, page, cancellationToken);
+            return await TrendingAsync(library, context, klipy, loggers, limit, page, cancellationToken);
         if (q.Length > 100)
             return EndpointHelpers.ValidationProblem(context, ("q", "Search terms must be 100 characters or fewer."));
 
         try
         {
-            var result = await klipy.SearchAsync(q.Trim(), ClampLimit(limit), ClampPage(page), cancellationToken);
-            return ApiResults.Ok(context, result, "GIFs retrieved successfully.");
+            var result = await klipy.SearchAsync(q.Trim(), ClampLimit(limit), ClampPage(page), cancellationToken,
+                library);
+            return ApiResults.Ok(context, result, $"{Label(library)} retrieved successfully.");
         }
         catch (HttpRequestException exception)
         {
@@ -39,20 +62,23 @@ internal static class GifEndpoints
         }
     }
 
-    private static async Task<IResult> Trending(HttpContext context, KlipyService klipy,
-        ILoggerFactory loggers, int limit = 24, int page = 1, CancellationToken cancellationToken = default)
+    private static async Task<IResult> TrendingAsync(KlipyLibrary library, HttpContext context, KlipyService klipy,
+        ILoggerFactory loggers, int limit, int page, CancellationToken cancellationToken)
     {
         if (!klipy.IsConfigured) return NotConfigured(context);
         try
         {
-            var result = await klipy.TrendingAsync(ClampLimit(limit), ClampPage(page), cancellationToken);
-            return ApiResults.Ok(context, result, "GIFs retrieved successfully.");
+            var result = await klipy.TrendingAsync(ClampLimit(limit), ClampPage(page), cancellationToken, library);
+            return ApiResults.Ok(context, result, $"{Label(library)} retrieved successfully.");
         }
         catch (HttpRequestException exception)
         {
             return Unavailable(context, loggers, exception);
         }
     }
+
+    private static string Label(KlipyLibrary library) =>
+        library == KlipyLibrary.Stickers ? "Stickers" : "GIFs";
 
     // Klipy accepts 8-50 per page and rejects anything outside it, so clamp to its band rather than
     // forwarding a value it will refuse.

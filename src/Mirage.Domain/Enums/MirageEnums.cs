@@ -39,7 +39,9 @@ public enum MatchStatus { Active = 1, Closed = 2, Blocked = 3, PendingRequest = 
 // third-party (Tenor) CDN rather than our own Cloudinary account, so it is deliberately a
 // distinct type — the client renders it without the tap-to-zoom treatment photos get, and it
 // is the one attachment kind we never re-host.
-public enum MessageType { Text = 1, Image = 2, Voice = 3, Gif = 4 }
+// Sticker is its own kind rather than a Gif: it is transparent art meant to sit on the wallpaper
+// with no bubble around it, and a client cannot tell that from the URL alone.
+public enum MessageType { Text = 1, Image = 2, Voice = 3, Gif = 4, Sticker = 5 }
 public enum RecommendationStatus { Active = 1, Revoked = 2 }
 public enum LikeType { Like = 1, SuperLike = 2 }
 public enum TrustUnlockStatus { NotRequested = 1, Pending = 2, Unlocked = 3, Declined = 4 }
