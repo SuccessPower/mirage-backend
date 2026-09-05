@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Mirage.Api.Contracts;
 using Mirage.Domain.Entities;
 using Mirage.Api.Security;
+using Mirage.Api.Services;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Enums;
 using Mirage.Infrastructure.Identity;
@@ -111,7 +112,11 @@ internal static class EventEndpoints
         var currentUserId = context.User.TryGetUserId();
         var now = DateTimeOffset.UtcNow;
 
+        // A private event belongs to one mentor's or counsellor's group. It is a real event —
+        // registerable, on its members' calendars — it just never reaches the public feed; the
+        // notification its group received is the way in.
         var query = db.OrgEvents.AsNoTracking()
+            .Where(x => !x.IsPrivate)
             .Where(x => x.Organisation!.Status == OrganisationStatus.Approved
                 || (x.Mentor != null && x.Mentor.IsApproved));
         if (!includePast) query = query.Where(x => x.EndsAt >= now);
@@ -194,16 +199,21 @@ internal static class EventEndpoints
         var currentUserId = context.User.TryGetUserId();
         var evt = await db.OrgEvents.AsNoTracking()
             .Where(x => x.Id == id && (x.Organisation!.Status == OrganisationStatus.Approved
-                || (x.Mentor != null && x.Mentor.IsApproved)))
+                || (x.Mentor != null && x.Mentor.IsApproved)
+                || x.CounsellorProfileId != null))
             .Select(x => new
             {
                 x.Id,
+                x.IsPrivate,
+                x.CounsellorProfileId,
                 x.OrganisationId,
                 OrganisationName = x.Organisation != null ? x.Organisation.Name : null,
                 x.BranchId,
                 x.MentorProfileId,
                 MentorName = x.Mentor != null ? x.Mentor.UserProfile.DisplayName : null,
                 MentorAvatarUrl = x.Mentor != null ? x.Mentor.UserProfile.AvatarUrl : null,
+                CounsellorName = x.Counsellor != null ? x.Counsellor.UserProfile.DisplayName : null,
+                CounsellorAvatarUrl = x.Counsellor != null ? x.Counsellor.UserProfile.AvatarUrl : null,
                 x.Title,
                 x.Description,
                 x.ImageUrl,
@@ -217,6 +227,13 @@ internal static class EventEndpoints
             .SingleOrDefaultAsync(cancellationToken);
         if (evt is null) return EndpointHelpers.NotFound(context, "Event was not found.");
 
+        // A private event is the host's group's business. Anyone else asking gets the same answer
+        // they would get for an event that does not exist — confirming it exists would leak that a
+        // named counsellor is running something, and to whom.
+        if (evt.IsPrivate && !await CanSeePrivateEventAsync(evt.MentorProfileId, evt.CounsellorProfileId,
+                evt.CreatedByUserId, currentUserId, db, cancellationToken))
+            return EndpointHelpers.NotFound(context, "Event was not found.");
+
         var branchName = evt.BranchId is null
             ? null
             : await db.OrganisationBranches.AsNoTracking()
@@ -225,13 +242,42 @@ internal static class EventEndpoints
             await db.EventTickets.AsNoTracking().AnyAsync(x => x.EventId == id && x.UserId == currentUserId, cancellationToken);
 
         var response = new PublicEventResponse(evt.Id, evt.OrganisationId, evt.OrganisationName, evt.BranchId,
-            branchName, evt.MentorProfileId, evt.MentorName, evt.MentorAvatarUrl,
-            evt.MentorProfileId is null ? "Organisation" : "Mentor",
-            evt.MentorProfileId is null ? evt.OrganisationName ?? "Mirage" : evt.MentorName ?? "A mentor",
+            branchName, evt.MentorProfileId, evt.MentorName ?? evt.CounsellorName,
+            evt.MentorAvatarUrl ?? evt.CounsellorAvatarUrl,
+            evt.MentorProfileId is not null ? "Mentor"
+                : evt.CounsellorProfileId is not null ? "Counsellor" : "Organisation",
+            evt.MentorProfileId is not null ? evt.MentorName ?? "A mentor"
+                : evt.CounsellorProfileId is not null ? evt.CounsellorName ?? "A counsellor"
+                : evt.OrganisationName ?? "Mirage",
             evt.Title, evt.Description, evt.ImageUrl, evt.StartsAt, evt.EndsAt, evt.Location,
             evt.Capacity, evt.TicketsIssued, isRegistered,
             currentUserId is not null
             && await CanDeleteAsync(evt.CreatedByUserId, evt.OrganisationId, context, db, cancellationToken));
         return ApiResults.Ok(context, response, "Event retrieved successfully.");
+    }
+
+    // Membership in the host's group, by the same rules the group pages use: a mentee whose
+    // request was accepted (and whose tier the event was addressed to), or a counselling client
+    // — plus the spouse who accepted that session, since the couple is what is being counselled.
+    private static async Task<bool> CanSeePrivateEventAsync(Guid? mentorProfileId, Guid? counsellorProfileId,
+        Guid createdByUserId, Guid? currentUserId, IMirageDbContext db, CancellationToken cancellationToken)
+    {
+        if (currentUserId is not { } userId) return false;
+        if (userId == createdByUserId) return true;
+
+        if (mentorProfileId is { } mentorId)
+        {
+            return await db.MentorRequests.AsNoTracking().AnyAsync(x =>
+                x.MentorProfileId == mentorId && x.MenteeUserId == userId
+                && x.Status == MentorRequestStatus.Accepted, cancellationToken);
+        }
+
+        if (counsellorProfileId is { } counsellorId)
+        {
+            return (await BroadcastAudience.CounsellorRecipientsAsync(db, counsellorId, cancellationToken))
+                .Contains(userId);
+        }
+
+        return false;
     }
 }

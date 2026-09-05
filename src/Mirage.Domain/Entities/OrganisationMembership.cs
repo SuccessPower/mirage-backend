@@ -128,11 +128,25 @@ public sealed class OrgEvent : Entity
     /// <summary>An event published by a mentor rather than a church.</summary>
     public static OrgEvent ForMentor(Guid mentorProfileId, Guid createdByUserId, string title, string? description,
         string? imageUrl, DateTimeOffset startsAt, DateTimeOffset endsAt, string location, int? capacity,
-        MentorAudience audience) =>
+        MentorAudience audience, bool isPrivate = false) =>
         new(createdByUserId, title, description, imageUrl, startsAt, endsAt, location, capacity)
         {
             MentorProfileId = mentorProfileId,
             Audience = audience,
+            IsPrivate = isPrivate,
+        };
+
+    /// <summary>
+    /// An event published by a counsellor to the people they are working with. Always private:
+    /// a counsellor's group is confidential, so their events never reach the public feed.
+    /// </summary>
+    public static OrgEvent ForCounsellor(Guid counsellorProfileId, Guid createdByUserId, string title,
+        string? description, string? imageUrl, DateTimeOffset startsAt, DateTimeOffset endsAt,
+        string location, int? capacity) =>
+        new(createdByUserId, title, description, imageUrl, startsAt, endsAt, location, capacity)
+        {
+            CounsellorProfileId = counsellorProfileId,
+            IsPrivate = true,
         };
 
     private OrgEvent(Guid createdByUserId, string title, string? description, string? imageUrl,
@@ -153,6 +167,14 @@ public sealed class OrgEvent : Entity
 
     public Guid? MentorProfileId { get; private set; }
     public MentorProfile? Mentor { get; private set; }
+
+    public Guid? CounsellorProfileId { get; private set; }
+    public CounsellorProfile? Counsellor { get; private set; }
+
+    // A private event is for the host's group and nobody else: it is kept off the public events
+    // feed and off search, and only a group member (or the host) can open it by its link. The
+    // notification the group gets is the only way in.
+    public bool IsPrivate { get; private set; }
 
     // Which of the mentor's groups was told about this event first. The event itself is public
     // either way — this only drives who gets the notification. Ignored on a church event.

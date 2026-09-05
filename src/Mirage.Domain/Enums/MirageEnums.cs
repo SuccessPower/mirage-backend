@@ -57,6 +57,14 @@ public enum MentorshipTier { Free = 1, Paid = 2 }
 // Who a mentor's post, group message, meeting or event is addressed to. Everyone means both
 // groups at once — the mentor speaking to their whole practice.
 public enum MentorAudience { Everyone = 1, FreeMentees = 2, PaidMentees = 3 }
+
+// A scheduled broadcast is either something to read (materialised as a group post) or something
+// to attend (materialised as a private event) — see ProfessionalBroadcast.
+public enum BroadcastKind { Message = 1, Event = 2 }
+
+// Failed is terminal: the dispatcher does not retry, so a broadcast the database refused shows
+// on the professional's page with a reason instead of silently re-running every minute.
+public enum BroadcastStatus { Scheduled = 1, Sent = 2, Cancelled = 3, Failed = 4 }
 public enum MilestoneType { Dating = 1, Engaged = 2, Married = 3, Separated = 4 }
 public enum ContentReportTargetType { Profile = 1, DateRequest = 2, Recommendation = 3, CounsellorProfile = 4 }
 public enum ContentReportReason { Inappropriate = 1, FakeProfile = 2, Harassment = 3, Spam = 4, Other = 5 }
@@ -195,7 +203,10 @@ public enum NotificationType
     // A mentee's payment for a paid mentorship place cleared, so the request is now live.
     MentorshipPaymentReceived = 54,
     // A mentor published an event to the public events feed; their mentees hear about it first.
-    MentorEventPublished = 55
+    MentorEventPublished = 55,
+    // A mentor or counsellor scheduled a private event for their group only — it is not on the
+    // public events feed, so the notification is the only way anyone hears about it.
+    PrivateEventPublished = 56
 }
 
 public enum ProfessionalRole { Mentor = 1, Counsellor = 2 }

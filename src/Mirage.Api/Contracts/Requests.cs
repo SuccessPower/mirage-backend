@@ -164,6 +164,27 @@ public sealed record CreateMentorEventRequest(
     string? ImageUrl,
     int? Capacity,
     MentorAudience Audience = MentorAudience.Everyone);
+// One scheduled broadcast a mentor or counsellor is writing. Kind decides which half of the
+// record matters: Message reads Content/ImageUrl, Event reads the event fields below it.
+// Practice picks which of the author's two practices it goes out from, for the professional who
+// is both a mentor and a counsellor.
+public sealed record SaveBroadcastRequest(
+    BroadcastKind Kind,
+    BroadcastPractice Practice,
+    DateTimeOffset ScheduledFor,
+    string? Content = null,
+    string? ImageUrl = null,
+    MentorAudience Audience = MentorAudience.Everyone,
+    string? Title = null,
+    string? Location = null,
+    DateTimeOffset? StartsAt = null,
+    DateTimeOffset? EndsAt = null,
+    int? Capacity = null);
+
+// Not a domain enum: it exists only to let the request name a practice, which the endpoint
+// resolves into the caller's MentorProfileId or CounsellorProfileId.
+public enum BroadcastPractice { Mentorship = 1, Counselling = 2 }
+
 public sealed record CreateCommunityRequest(
     string Name,
     string Category,
