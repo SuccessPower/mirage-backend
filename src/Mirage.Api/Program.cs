@@ -124,7 +124,10 @@ builder.Services.AddHostedService<CalendarReminderWorker>();
 builder.Services.AddScoped<ReEngagementService>();
 builder.Services.AddHostedService<ReEngagementWorker>();
 builder.Services.AddScoped<NewsletterDispatchService>();
+builder.Services.AddScoped<BroadcastDispatchService>();
 builder.Services.AddHostedService<NewsletterDispatchWorker>();
+// Delivers mentors' and counsellors' scheduled broadcasts to their groups.
+builder.Services.AddHostedService<BroadcastDispatchWorker>();
 // Singleton so the service-account OAuth token is cached across pushes rather than re-minted
 // per notification; the typed HttpClient that carries it stays pooled by the factory.
 builder.Services.AddSingleton<FirebaseCredentials>();

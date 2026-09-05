@@ -62,6 +62,7 @@ public interface IMirageDbContext
     DbSet<CounsellorPost> CounsellorPosts { get; }
     DbSet<CounsellorGroupMessage> CounsellorGroupMessages { get; }
     DbSet<CounsellorGroupMeeting> CounsellorGroupMeetings { get; }
+    DbSet<ProfessionalBroadcast> ProfessionalBroadcasts { get; }
     DbSet<Payment> Payments { get; }
     DbSet<GatheringInvite> GatheringInvites { get; }
     DbSet<Vendor> Vendors { get; }

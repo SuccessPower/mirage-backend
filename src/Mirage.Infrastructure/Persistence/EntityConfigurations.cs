@@ -120,6 +120,10 @@ public sealed class OrgEventConfiguration : IEntityTypeConfiguration<OrgEvent>
         b.Property(x => x.Location).HasMaxLength(300);
         b.HasOne(x => x.Organisation).WithMany().HasForeignKey(x => x.OrganisationId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Mentor).WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Counsellor).WithMany().HasForeignKey(x => x.CounsellorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.CounsellorProfileId);
+        // The public feed reads "upcoming and not private" on every page load.
+        b.HasIndex(x => new { x.IsPrivate, x.StartsAt });
         b.HasOne<OrganisationBranch>().WithMany().HasForeignKey(x => x.BranchId).OnDelete(DeleteBehavior.SetNull);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
     }
@@ -392,6 +396,26 @@ public sealed class CounsellorGroupMeetingConfiguration : IEntityTypeConfigurati
             .OnDelete(DeleteBehavior.Cascade);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ScheduledByUserId)
             .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public sealed class ProfessionalBroadcastConfiguration : IEntityTypeConfiguration<ProfessionalBroadcast>
+{
+    public void Configure(EntityTypeBuilder<ProfessionalBroadcast> b)
+    {
+        b.ToTable("professional_broadcasts");
+        b.Property(x => x.Content).HasMaxLength(4000);
+        b.Property(x => x.ImageUrl).HasMaxLength(1000);
+        b.Property(x => x.Title).HasMaxLength(200);
+        b.Property(x => x.Location).HasMaxLength(300);
+        b.Property(x => x.FailureReason).HasMaxLength(500);
+        // The dispatcher's only query: everything Scheduled whose moment has come.
+        b.HasIndex(x => new { x.Status, x.ScheduledFor });
+        b.HasIndex(x => x.MentorProfileId);
+        b.HasIndex(x => x.CounsellorProfileId);
+        b.HasOne<MentorProfile>().WithMany().HasForeignKey(x => x.MentorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<CounsellorProfile>().WithMany().HasForeignKey(x => x.CounsellorProfileId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.AuthorUserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
 

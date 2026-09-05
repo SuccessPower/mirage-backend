@@ -148,6 +148,13 @@ internal static class CalendarEndpoints
                 ExternalLink(x.MeetingLink), null, x.CounsellorProfileId))
             .ToList();
 
+        // A counsellor's private event belongs on their group's calendars for the same reason a
+        // mentor's does: it was scheduled for them, and it is nowhere on the public feed to find.
+        var counsellorEvents = await db.OrgEvents.AsNoTracking()
+            .Where(x => x.CounsellorProfileId != null && counsellorGroupIds.Contains(x.CounsellorProfileId.Value))
+            .Select(e => new CalendarItemResponse("OrgEvent", e.Id, e.Title, e.StartsAt, e.EndsAt, null, e.Location, null))
+            .ToListAsync(cancellationToken);
+
         var dateRequests = await db.DateRequests.AsNoTracking()
             .Where(x => x.RequestorUserId == userId ||
                         x.Acceptances.Any(a => a.AcceptorUserId == userId &&
@@ -158,7 +165,7 @@ internal static class CalendarEndpoints
 
         var items = meetings.Concat(sessions).Concat(events).Concat(createdEvents).Concat(communityEvents)
             .Concat(mentorEvents).Concat(invitedGatherings).Concat(counsellorGroupMeetings)
-            .Concat(counsellingMeetings).Concat(dateRequests)
+            .Concat(counsellingMeetings).Concat(counsellorEvents).Concat(dateRequests)
             .GroupBy(x => new { x.Source, x.SourceId })
             .Select(x => x.First())
             .OrderBy(x => x.StartsAt)

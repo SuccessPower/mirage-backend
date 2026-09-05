@@ -372,6 +372,38 @@ public sealed record HearthMentionableResponse(Guid UserId, string DisplayName, 
 
 public sealed record CommunityAvatarPresetResponse(string Key, string Label, string Url);
 
+// A scheduled broadcast as its author sees it on the broadcast page. RecipientCount is filled
+// in at dispatch (how many were actually notified); before that it is the size of the audience
+// the broadcast is currently addressed to, so the author can see who they are about to reach.
+public sealed record BroadcastResponse(
+    Guid Id,
+    BroadcastPractice Practice,
+    BroadcastKind Kind,
+    BroadcastStatus Status,
+    MentorAudience Audience,
+    DateTimeOffset ScheduledFor,
+    string Content,
+    string? ImageUrl,
+    string? Title,
+    string? Location,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt,
+    int? Capacity,
+    int RecipientCount,
+    DateTimeOffset? SentAt,
+    Guid? PublishedEntityId,
+    string? FailureReason,
+    DateTimeOffset CreatedAt);
+
+// What the broadcast page needs to render its composer: which practices the caller can broadcast
+// from, and how many people are in each audience right now.
+public sealed record BroadcastAudienceResponse(
+    bool CanBroadcastAsMentor,
+    bool CanBroadcastAsCounsellor,
+    int FreeMentees,
+    int PaidMentees,
+    int Counselees);
+
 // Audience says which of the mentor's two groups the post was addressed to; a mentee only ever
 // receives Everyone plus their own group's.
 public sealed record MentorPostResponse(Guid Id, Guid MentorProfileId, string Content, string? ImageUrl,
