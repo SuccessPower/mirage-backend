@@ -97,6 +97,8 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<ChatThemePreference> ChatThemePreferences => Set<ChatThemePreference>();
     public DbSet<ChatMessageHide> ChatMessageHides => Set<ChatMessageHide>();
     public DbSet<ChatClearMarker> ChatClearMarkers => Set<ChatClearMarker>();
+    public DbSet<ChatConversationTheme> ChatConversationThemes => Set<ChatConversationTheme>();
+    public DbSet<ChatMessageReaction> ChatMessageReactions => Set<ChatMessageReaction>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

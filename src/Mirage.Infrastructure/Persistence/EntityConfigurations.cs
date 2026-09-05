@@ -1162,6 +1162,32 @@ public sealed class ChatMessageHideConfiguration : IEntityTypeConfiguration<Chat
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
     }
 }
+public sealed class ChatConversationThemeConfiguration : IEntityTypeConfiguration<ChatConversationTheme>
+{
+    public void Configure(EntityTypeBuilder<ChatConversationTheme> b)
+    {
+        b.ToTable("chat_conversation_themes");
+        b.Property(x => x.ConversationKey).HasMaxLength(80);
+        b.Property(x => x.ThemeKey).HasMaxLength(60);
+        // One wallpaper per conversation — whoever changes it last is who it belongs to.
+        b.HasIndex(x => x.ConversationKey).IsUnique();
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.SetByUserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+public sealed class ChatMessageReactionConfiguration : IEntityTypeConfiguration<ChatMessageReaction>
+{
+    public void Configure(EntityTypeBuilder<ChatMessageReaction> b)
+    {
+        b.ToTable("chat_message_reactions");
+        b.Property(x => x.ConversationKey).HasMaxLength(80);
+        b.Property(x => x.Emoji).HasMaxLength(ChatMessageReaction.MaxEmojiLength);
+        // One reaction per member per message: reacting again updates this row rather than adding.
+        b.HasIndex(x => new { x.UserId, x.MessageId }).IsUnique();
+        // The read path is always "every reaction in this conversation", loaded with the thread.
+        b.HasIndex(x => x.ConversationKey);
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
 public sealed class ChatClearMarkerConfiguration : IEntityTypeConfiguration<ChatClearMarker>
 {
     public void Configure(EntityTypeBuilder<ChatClearMarker> b)
