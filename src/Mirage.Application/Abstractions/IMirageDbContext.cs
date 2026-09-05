@@ -92,5 +92,7 @@ public interface IMirageDbContext
     DbSet<ChatThemePreference> ChatThemePreferences { get; }
     DbSet<ChatMessageHide> ChatMessageHides { get; }
     DbSet<ChatClearMarker> ChatClearMarkers { get; }
+    DbSet<ChatConversationTheme> ChatConversationThemes { get; }
+    DbSet<ChatMessageReaction> ChatMessageReactions { get; }
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

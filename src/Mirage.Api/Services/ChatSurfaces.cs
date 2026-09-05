@@ -155,6 +155,58 @@ public sealed class ChatSurfaceService(IMirageDbContext db)
             _ => Task.FromResult(false),
         };
 
+    /// <summary>Every conversation the member belongs to, named the way the wire names them.</summary>
+    /// <remarks>
+    /// Backs the reads that are addressed to a member rather than to one conversation — loading
+    /// the wallpapers of every thread at once, for instance — so they can be answered with a
+    /// single indexed lookup per surface instead of a membership check per row.
+    /// </remarks>
+    public async Task<List<string>> ConversationKeysAsync(Guid userId, CancellationToken cancellationToken)
+    {
+        var keys = new List<string>();
+
+        void Add(ChatSurfaceKind kind, IEnumerable<Guid> ids)
+        {
+            foreach (var id in ids) keys.Add(new ChatSurface(kind, id).Key);
+        }
+
+        Add(ChatSurfaceKind.Match, await db.Matches.AsNoTracking()
+            .Where(x => x.User1Id == userId || x.User2Id == userId)
+            .Select(x => x.Id).ToListAsync(cancellationToken));
+
+        Add(ChatSurfaceKind.CoupleFriend, await db.CoupleFriendships.AsNoTracking()
+            .Where(f => db.Couples.Any(c => (c.Id == f.Couple1Id || c.Id == f.Couple2Id)
+                && (c.User1Id == userId || c.User2Id == userId)))
+            .Select(f => f.Id).ToListAsync(cancellationToken));
+
+        var mentorRequests = await db.MentorRequests.AsNoTracking()
+            .Where(x => x.Status == MentorRequestStatus.Accepted
+                && (x.MenteeUserId == userId || x.Mentor.UserId == userId))
+            .Select(x => new { x.Id, x.MentorProfileId })
+            .ToListAsync(cancellationToken);
+        Add(ChatSurfaceKind.MentorRequest, mentorRequests.Select(x => x.Id));
+
+        var mentorGroupIds = mentorRequests.Select(x => x.MentorProfileId).ToList();
+        mentorGroupIds.AddRange(await db.Mentors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.Id).ToListAsync(cancellationToken));
+        Add(ChatSurfaceKind.MentorGroup, mentorGroupIds.Distinct());
+
+        var sessions = await db.CounsellingSessions.AsNoTracking()
+            .Where(x => (x.ClientUserId == userId || x.Counsellor.UserId == userId
+                    || (x.PartnerUserId == userId && x.PartnerAccepted))
+                && x.Status != SessionStatus.Declined && x.Status != SessionStatus.Cancelled)
+            .Select(x => new { x.Id, x.CounsellorId })
+            .ToListAsync(cancellationToken);
+        Add(ChatSurfaceKind.CounsellingSession, sessions.Select(x => x.Id));
+
+        var counsellorGroupIds = sessions.Select(x => x.CounsellorId).ToList();
+        counsellorGroupIds.AddRange(await db.Counsellors.AsNoTracking()
+            .Where(x => x.UserId == userId).Select(x => x.Id).ToListAsync(cancellationToken));
+        Add(ChatSurfaceKind.CounsellorGroup, counsellorGroupIds.Distinct());
+
+        return keys;
+    }
+
     /// <summary>Finds a message by id, but only within the conversation it is claimed to belong to.</summary>
     public Task<ChatMessageRef?> FindMessageAsync(ChatSurface surface, Guid messageId,
         CancellationToken cancellationToken) =>

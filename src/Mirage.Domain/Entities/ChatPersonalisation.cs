@@ -3,14 +3,15 @@ using Mirage.Domain.Common;
 namespace Mirage.Domain.Entities;
 
 /// <summary>
-/// One member's chosen wallpaper for one conversation, or their account-wide default when
-/// <see cref="ConversationKey"/> is <see cref="AccountDefaultKey"/>.
+/// One member's account-wide default wallpaper: what a conversation wears when nobody in it has
+/// chosen one.
 /// </summary>
 /// <remarks>
 /// The theme itself (gradient, doodle, bubble tints) lives in the clients' shared catalogue — the
-/// server stores only the key that was picked, so a new theme ships without a migration. Kept per
-/// user rather than per conversation: a wallpaper is how one member wants their own screen to
-/// look, and imposing it on whoever they are talking to would be someone else's decision.
+/// server stores only the key that was picked, so a new theme ships without a migration. This is
+/// the private half of the picture: a member's default is theirs alone, while a wallpaper chosen
+/// inside a conversation is shared with everyone in it and lives in
+/// <see cref="ChatConversationTheme"/>.
 /// </remarks>
 public sealed class ChatThemePreference : Entity
 {
@@ -88,6 +89,83 @@ public sealed class ChatClearMarker : Entity
     public void MoveTo(DateTimeOffset clearedAt)
     {
         if (clearedAt > ClearedAt) ClearedAt = clearedAt;
+        Touch();
+    }
+}
+
+/// <summary>
+/// The wallpaper a conversation wears, for everyone in it.
+/// </summary>
+/// <remarks>
+/// Distinct from <see cref="ChatThemePreference"/>, which is now only ever an account-wide
+/// default: choosing a wallpaper *inside* a conversation is a shared act, the way naming a group
+/// is, so the row belongs to the conversation rather than to the member who picked it. The hub
+/// pushes the change to whoever else is in the thread, so their screen repaints without a reload.
+/// Conversations with no row here fall back to each member's own account default, which stays
+/// private.
+/// </remarks>
+public sealed class ChatConversationTheme : Entity
+{
+    private ChatConversationTheme() { }
+
+    public ChatConversationTheme(string conversationKey, string themeKey, Guid setByUserId)
+    {
+        ConversationKey = conversationKey;
+        ThemeKey = themeKey;
+        SetByUserId = setByUserId;
+    }
+
+    public string ConversationKey { get; private set; } = string.Empty;
+    public string ThemeKey { get; private set; } = string.Empty;
+
+    /// <summary>Who chose it last — the clients name them when announcing the change.</summary>
+    public Guid SetByUserId { get; private set; }
+
+    public void SetTheme(string themeKey, Guid setByUserId)
+    {
+        ThemeKey = themeKey;
+        SetByUserId = setByUserId;
+        Touch();
+    }
+}
+
+/// <summary>
+/// One member's emoji reaction to one message, in whichever conversation it lives.
+/// </summary>
+/// <remarks>
+/// One reaction per member per message: reacting again replaces what was there, the way it does
+/// in every chat client people already use, so a message cannot collect a wall of emoji from a
+/// single person. Message ids are GUIDs and unique across every message table, so — like
+/// <see cref="ChatMessageHide"/> — one table serves all six chat surfaces, with
+/// <see cref="ConversationKey"/> carried so a thread's reactions load in one indexed lookup.
+///
+/// Reactions are deliberately stored in the clear even where the messages themselves are
+/// end-to-end encrypted: an emoji says nothing on its own without the message it hangs off, and
+/// encrypting it would mean a reaction could not be counted without every reader holding a key.
+/// </remarks>
+public sealed class ChatMessageReaction : Entity
+{
+    /// <summary>Long enough for a ZWJ sequence with skin-tone modifiers, short enough to not be a message.</summary>
+    public const int MaxEmojiLength = 24;
+
+    private ChatMessageReaction() { }
+
+    public ChatMessageReaction(Guid userId, string conversationKey, Guid messageId, string emoji)
+    {
+        UserId = userId;
+        ConversationKey = conversationKey;
+        MessageId = messageId;
+        Emoji = emoji;
+    }
+
+    public Guid UserId { get; private set; }
+    public string ConversationKey { get; private set; } = string.Empty;
+    public Guid MessageId { get; private set; }
+    public string Emoji { get; private set; } = string.Empty;
+
+    public void SetEmoji(string emoji)
+    {
+        Emoji = emoji;
         Touch();
     }
 }

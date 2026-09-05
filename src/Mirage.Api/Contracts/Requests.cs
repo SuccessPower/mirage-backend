@@ -376,3 +376,9 @@ public sealed record SetChatThemeRequest(string? Theme);
 /// hidden from the caller instead, and the response says so.
 /// </param>
 public sealed record DeleteChatMessagesRequest(Guid[]? MessageIds, bool ForEveryone = false);
+
+/// <param name="Emoji">
+/// The single emoji to hang off the message. One per member per message — sending a second
+/// replaces the first rather than adding to it.
+/// </param>
+public sealed record SetChatReactionRequest(string? Emoji);

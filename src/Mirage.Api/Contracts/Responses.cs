@@ -959,7 +959,22 @@ public sealed record CounsellorGroupMeetingResponse(
 public sealed record ChatThemeOverrideResponse(string ConversationKey, string? Theme);
 
 /// <param name="Default">The account-wide wallpaper, or null while the member has never set one.</param>
+/// <param name="Overrides">
+/// The wallpapers chosen inside conversations the caller belongs to. Shared, not personal: they
+/// are what everyone in the thread sees, and the caller's own default only shows through where a
+/// conversation has none.
+/// </param>
 public sealed record ChatThemesResponse(string? Default, IReadOnlyList<ChatThemeOverrideResponse> Overrides);
+
+/// <summary>Every reaction on one message, folded into one emoji per group.</summary>
+/// <param name="Emoji">The emoji itself.</param>
+/// <param name="Count">How many members chose it.</param>
+/// <param name="Mine">Whether the caller is one of them.</param>
+/// <param name="UserIds">Who reacted, so a group chat can name them.</param>
+public sealed record ChatReactionGroupResponse(string Emoji, int Count, bool Mine, IReadOnlyList<Guid> UserIds);
+
+/// <summary>A message's reactions, addressed the way the clients hold them: by message id.</summary>
+public sealed record ChatMessageReactionsResponse(Guid MessageId, IReadOnlyList<ChatReactionGroupResponse> Reactions);
 
 /// <param name="PartiallyDeleted">
 /// True when "delete for everyone" was asked for but some of the selection could only be removed
