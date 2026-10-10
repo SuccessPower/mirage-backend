@@ -193,9 +193,21 @@ internal static class HearthEndpoints
                 $"{authorName} mentioned you in a post.", post.Id, "HearthPost", cancellationToken);
         }
 
-        var row = new FeedRow(post.Id, communityId,
-            await db.Communities.AsNoTracking().Where(c => c.Id == communityId).Select(c => c.Name)
-                .SingleOrDefaultAsync(cancellationToken) ?? HearthService.HearthName,
+        var audienceName = await db.Communities.AsNoTracking().Where(c => c.Id == communityId)
+            .Select(c => c.Name).SingleOrDefaultAsync(cancellationToken) ?? HearthService.HearthName;
+
+        // The rest of the audience — all of Hearth, or just the circle — is told too, unless they
+        // have muted it. Mentioned members already got their own notification above.
+        var memberIds = await db.CommunityMembers.AsNoTracking()
+            .Where(x => x.CommunityId == communityId && x.LeftAt == null &&
+                        x.Status == CommunityMemberStatus.Approved && x.UserId != userId)
+            .Select(x => x.UserId)
+            .ToListAsync(cancellationToken);
+        await notifications.NotifyMembersAsync(memberIds.Except(mentionedUserIds), NotificationScope.Community,
+            communityId, NotificationType.CommunityPost, $"New post in {audienceName}",
+            $"{authorName}: {NotificationService.Preview(post.Body)}", communityId, "Hearth", cancellationToken);
+
+        var row = new FeedRow(post.Id, communityId, audienceName,
             userId, post.Kind, post.Body, post.Place, post.ImageUrl, post.ImageUrl2, post.ImageUrl3,
             0, 0, 0, false, false, post.MentionedUserIds, post.CreatedAt);
 

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Mirage.Api.Endpoints;
 using Mirage.Api.Services;
 using Mirage.Domain.Entities;
 using Mirage.Domain.Enums;
@@ -12,7 +13,8 @@ namespace Mirage.Api.Hubs;
 [Authorize]
 public sealed class ChatHub(
     MirageDbContext db,
-    PresenceTracker presence) : Hub
+    PresenceTracker presence,
+    NotificationService notifications) : Hub
 {
     // Called when a client connects — join all active match groups immediately
     // so messages arrive regardless of which conversation the client has open.
@@ -237,6 +239,9 @@ public sealed class ChatHub(
             message.AttachmentUrl,
             SentAt = message.CreatedAt
         });
+
+        await CoupleFriendshipEndpoints.NotifyParticipantsAsync(friendshipId, userId, senderName, message.Content,
+            db, notifications, Context.ConnectionAborted);
     }
 
     // Client → Hub: send a message to a match

@@ -337,10 +337,11 @@ internal static class MentorEndpoints
         var mentorName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken)
             ?? "Your mentor";
-        var preview = request.Content.Length > 120 ? request.Content[..120].TrimEnd() + "…" : request.Content;
-        foreach (var menteeId in await GroupAudienceAsync(id, userId, db, cancellationToken, request.Audience))
-            await notifications.NotifyAsync(menteeId, NotificationType.MentorGroupPost,
-                $"{mentorName} posted to your group", preview, id, "MentorProfile", cancellationToken);
+        await notifications.NotifyMembersAsync(
+            await GroupAudienceAsync(id, userId, db, cancellationToken, request.Audience),
+            NotificationScope.MentorGroup, id, NotificationType.MentorGroupPost,
+            $"{mentorName} posted to your group", NotificationService.Preview(request.Content), id, "MentorProfile",
+            cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/mentors/{id}/posts/{post.Id}", new { post.Id }, "Post published successfully.");
     }
@@ -430,13 +431,11 @@ internal static class MentorEndpoints
 
         // The hub broadcast above only reaches members with the group screen open. Everyone else
         // needs a real notification, or the conversation is invisible until they happen to look.
-        var messagePreview = request.Content.Length > 120
-            ? request.Content[..120].TrimEnd() + "…"
-            : request.Content;
-        foreach (var memberId in await GroupAudienceAsync(id, userId, db, cancellationToken, sendAudience))
-            await notifications.NotifyAsync(memberId, NotificationType.MentorGroupMessage,
-                $"{senderName ?? "Someone"} messaged your group", messagePreview, id, "MentorProfile",
-                cancellationToken);
+        await notifications.NotifyMembersAsync(
+            await GroupAudienceAsync(id, userId, db, cancellationToken, sendAudience),
+            NotificationScope.MentorGroup, id, NotificationType.MentorGroupMessage,
+            $"{senderName ?? "Someone"} messaged your group", NotificationService.Preview(request.Content), id,
+            "MentorProfile", cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/mentors/{id}/group-messages/{message.Id}",
             new { message.Id }, "Message sent successfully.");

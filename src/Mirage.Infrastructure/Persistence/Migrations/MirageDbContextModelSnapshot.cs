@@ -2931,6 +2931,37 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                     b.ToTable("notifications", "mirage");
                 });
 
+            modelBuilder.Entity("Mirage.Domain.Entities.NotificationMute", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Scope")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ScopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Scope", "ScopeId");
+
+                    b.HasIndex("UserId", "Scope", "ScopeId")
+                        .IsUnique();
+
+                    b.ToTable("notification_mutes", "mirage");
+                });
+
             modelBuilder.Entity("Mirage.Domain.Entities.OrgEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5271,6 +5302,15 @@ namespace Mirage.Infrastructure.Persistence.Migrations
                 });
 
             modelBuilder.Entity("Mirage.Domain.Entities.Notification", b =>
+                {
+                    b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Mirage.Domain.Entities.NotificationMute", b =>
                 {
                     b.HasOne("Mirage.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()

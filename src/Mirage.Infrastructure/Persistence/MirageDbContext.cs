@@ -37,6 +37,7 @@ public sealed class MirageDbContext(DbContextOptions<MirageDbContext> options)
     public DbSet<CounsellingKeyEnvelope> CounsellingKeyEnvelopes => Set<CounsellingKeyEnvelope>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
+    public DbSet<NotificationMute> NotificationMutes => Set<NotificationMute>();
     public DbSet<OrganisationBranch> OrganisationBranches => Set<OrganisationBranch>();
     public DbSet<OrganisationMember> OrganisationMembers => Set<OrganisationMember>();
     public DbSet<OrganisationManager> OrganisationManagers => Set<OrganisationManager>();

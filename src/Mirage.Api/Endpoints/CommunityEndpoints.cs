@@ -634,6 +634,20 @@ internal static class CommunityEndpoints
                 "CommunityPost", cancellationToken);
         }
 
+        // Everyone else in the community hears about the post too, unless they've muted it. The
+        // people mentioned above are skipped — they already got the more specific notification.
+        var memberIds = await db.CommunityMembers.AsNoTracking()
+            .Where(x => x.CommunityId == id && x.LeftAt == null && x.Status == CommunityMemberStatus.Approved &&
+                        x.UserId != userId)
+            .Select(x => x.UserId)
+            .ToListAsync(cancellationToken);
+        var communityName = await db.Communities.AsNoTracking()
+            .Where(x => x.Id == id).Select(x => x.Name).SingleAsync(cancellationToken);
+        await notifications.NotifyMembersAsync(memberIds.Except(mentionedUserIds), NotificationScope.Community, id,
+            NotificationType.CommunityPost, $"New post in {communityName}",
+            $"{author?.DisplayName ?? "Someone"}: {NotificationService.Preview(post.Body)}", id, "Community",
+            cancellationToken);
+
         var authorBadge = await db.GetOrgBadgeAsync(userId, cancellationToken);
         var mentionNames = await db.ResolveMentionsAsync(mentionedUserIds, cancellationToken);
         var response = new CommunityPostResponse(post.Id, post.CommunityId, post.AuthorUserId,

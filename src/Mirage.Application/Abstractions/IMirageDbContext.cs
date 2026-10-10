@@ -32,6 +32,7 @@ public interface IMirageDbContext
     DbSet<CounsellingKeyEnvelope> CounsellingKeyEnvelopes { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<DeviceToken> DeviceTokens { get; }
+    DbSet<NotificationMute> NotificationMutes { get; }
     DbSet<OrganisationBranch> OrganisationBranches { get; }
     DbSet<OrganisationMember> OrganisationMembers { get; }
     DbSet<OrganisationManager> OrganisationManagers { get; }

@@ -145,8 +145,43 @@ internal static class CoupleFriendshipEndpoints
 
     // REST fallback mirroring ChatHub.SendCoupleFriendMessage — broadcasts through the same
     // hub group so connected clients still receive it in real time.
+    // The hub broadcast only reaches spouses with the thread open, so the other three also get a
+    // notification — but at most one unread per thread each: until they open it, further messages
+    // add nothing, so a lively conversation is one buzz rather than one per line. Shared by this
+    // endpoint and ChatHub.SendCoupleFriendMessage.
+    internal static async Task NotifyParticipantsAsync(Guid friendshipId, Guid senderId, string? senderName,
+        string? content, IMirageDbContext db, NotificationService notifications,
+        CancellationToken cancellationToken)
+    {
+        var friendship = await db.CoupleFriendships.AsNoTracking()
+            .Where(f => f.Id == friendshipId)
+            .Select(f => new { f.Couple1Id, f.Couple2Id })
+            .SingleAsync(cancellationToken);
+        var participantIds = (await db.Couples.AsNoTracking()
+                .Where(c => c.Id == friendship.Couple1Id || c.Id == friendship.Couple2Id)
+                .Select(c => new { c.User1Id, c.User2Id })
+                .ToListAsync(cancellationToken))
+            .SelectMany(c => new[] { c.User1Id, c.User2Id })
+            .Where(x => x != Guid.Empty && x != senderId)
+            .Distinct()
+            .ToList();
+
+        var alreadyNotified = await db.Notifications.AsNoTracking()
+            .Where(x => participantIds.Contains(x.UserId) && !x.IsRead &&
+                        x.Type == NotificationType.CoupleFriendMessage && x.ReferenceId == friendshipId)
+            .Select(x => x.UserId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        await notifications.NotifyMembersAsync(participantIds.Except(alreadyNotified),
+            NotificationScope.CoupleFriendship, friendshipId, NotificationType.CoupleFriendMessage,
+            $"New message from {senderName ?? "your couple friends"}", NotificationService.Preview(content),
+            friendshipId, "CoupleFriendship", cancellationToken);
+    }
+
     private static async Task<IResult> SendMessage(Guid id, SendChatMessageRequest request, HttpContext context,
-        IMirageDbContext db, IHubContext<ChatHub> hub, CancellationToken cancellationToken)
+        IMirageDbContext db, IHubContext<ChatHub> hub, NotificationService notifications,
+        CancellationToken cancellationToken)
     {
         var userId = context.User.GetUserId();
         if (!await IsParticipantAsync(id, userId, db, cancellationToken))
@@ -177,6 +212,8 @@ internal static class CoupleFriendshipEndpoints
             message.AttachmentUrl,
             SentAt = message.CreatedAt
         }, cancellationToken);
+
+        await NotifyParticipantsAsync(id, userId, senderName, message.Content, db, notifications, cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/couple-friendships/{id}/messages", new { message.Id },
             "Message sent successfully.");

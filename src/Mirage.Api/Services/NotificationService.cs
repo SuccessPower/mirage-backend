@@ -76,7 +76,61 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
         db.Notifications.Add(notification);
         await db.SaveChangesAsync(cancellationToken);
 
-        await hub.Clients.Group(NotificationHub.UserGroup(userId)).SendAsync("Notification", new
+        await SendToHubAsync(notification, cancellationToken);
+
+        if (!PushSuppressedTypes.Contains(type))
+            await SendPushAsync([notification], cancellationToken);
+
+        if (EmailableTypes.Contains(type) && email.HasNotificationTemplate(type))
+            await SendNotificationEmailAsync(userId, type, title, body, actionUrl, actionLabel, cancellationToken);
+    }
+
+    // Fan-out for activity in a shared space (a community post, a group message): tells every
+    // recipient except those who have muted that space. Written as one batch — one insert, one
+    // device-token lookup — because a community can have thousands of members, and NotifyAsync's
+    // per-recipient round trips would hold the poster's request open for all of them.
+    public async Task NotifyMembersAsync(IEnumerable<Guid> recipientIds, NotificationScope scope, Guid scopeId,
+        NotificationType type, string title, string body, Guid? referenceId = null, string? referenceType = null,
+        CancellationToken cancellationToken = default)
+    {
+        var recipients = recipientIds.Distinct().ToList();
+        if (recipients.Count == 0) return;
+
+        var muted = await db.NotificationMutes.AsNoTracking()
+            .Where(x => x.Scope == scope && x.ScopeId == scopeId && recipients.Contains(x.UserId))
+            .Select(x => x.UserId)
+            .ToListAsync(cancellationToken);
+        if (muted.Count > 0) recipients = recipients.Except(muted).ToList();
+        if (recipients.Count == 0) return;
+
+        var created = recipients
+            .Select(userId => new Notification(userId, type, title, body, referenceId, referenceType))
+            .ToList();
+        db.Notifications.AddRange(created);
+        await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var notification in created)
+            await SendToHubAsync(notification, cancellationToken);
+
+        if (!PushSuppressedTypes.Contains(type))
+            await SendPushAsync(created, cancellationToken);
+
+        if (EmailableTypes.Contains(type) && email.HasNotificationTemplate(type))
+            foreach (var userId in recipients)
+                await SendNotificationEmailAsync(userId, type, title, body, null, null, cancellationToken);
+    }
+
+    // The first line or so of a post or message, for a notification body. Image-only content has
+    // no text, so it reads as a photo rather than as an empty quote.
+    public static string Preview(string? text, int maxLength = 120)
+    {
+        var trimmed = (text ?? string.Empty).Trim();
+        if (trimmed.Length == 0) return "Shared a photo";
+        return trimmed.Length > maxLength ? trimmed[..maxLength].TrimEnd() + "…" : trimmed;
+    }
+
+    private Task SendToHubAsync(Notification notification, CancellationToken cancellationToken) =>
+        hub.Clients.Group(NotificationHub.UserGroup(notification.UserId)).SendAsync("Notification", new
         {
             notification.Id,
             notification.Type,
@@ -87,13 +141,6 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
             notification.IsRead,
             notification.CreatedAt
         }, cancellationToken);
-
-        if (!PushSuppressedTypes.Contains(type))
-            await SendPushAsync(notification, cancellationToken);
-
-        if (EmailableTypes.Contains(type) && email.HasNotificationTemplate(type))
-            await SendNotificationEmailAsync(userId, type, title, body, actionUrl, actionLabel, cancellationToken);
-    }
 
     // Called after a self-service profile update (UpdateMine/UpdateMyPhotos) to nudge whichever
     // admin(s) flagged this account — via a direct hide or an open profile/conduct warning — that
@@ -134,31 +181,46 @@ public sealed class NotificationService(IMirageDbContext db, IHubContext<Notific
                 actionUrl: $"{frontendUrl}/profiles/{userId}", actionLabel: "Review profile");
     }
 
-    private async Task SendPushAsync(Notification notification, CancellationToken cancellationToken)
+    private async Task SendPushAsync(IReadOnlyCollection<Notification> notifications,
+        CancellationToken cancellationToken)
     {
-        if (!push.IsEnabled) return;
+        if (!push.IsEnabled || notifications.Count == 0) return;
 
-        var tokens = await db.DeviceTokens.AsNoTracking()
-            .Where(x => x.UserId == notification.UserId && x.RevokedAt == null)
-            .Select(x => x.Token)
-            .ToListAsync(cancellationToken);
-        if (tokens.Count == 0) return;
+        var userIds = notifications.Select(x => x.UserId).Distinct().ToList();
+        var tokensByUser = (await db.DeviceTokens.AsNoTracking()
+                .Where(x => userIds.Contains(x.UserId) && x.RevokedAt == null)
+                .Select(x => new { x.UserId, x.Token })
+                .ToListAsync(cancellationToken))
+            .GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Token).ToList());
+        if (tokensByUser.Count == 0) return;
 
-        var unread = await db.Notifications
-            .CountAsync(x => x.UserId == notification.UserId && !x.IsRead, cancellationToken);
+        var withDevices = tokensByUser.Keys.ToList();
+        var unreadByUser = await db.Notifications
+            .Where(x => withDevices.Contains(x.UserId) && !x.IsRead)
+            .GroupBy(x => x.UserId)
+            .Select(g => new { UserId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.UserId, x => x.Count, cancellationToken);
 
-        // Enum names, not numbers: the mobile and web clients switch on these strings to pick the
-        // route to deep-link into (see PushNotificationService._routeFor on Flutter).
-        var data = new Dictionary<string, string>
+        var dead = new List<string>();
+        foreach (var notification in notifications)
         {
-            ["notificationId"] = notification.Id.ToString(),
-            ["type"] = notification.Type.ToString()
-        };
-        if (notification.ReferenceId is { } referenceId) data["referenceId"] = referenceId.ToString();
-        if (notification.ReferenceType is { } referenceType) data["referenceType"] = referenceType;
+            if (!tokensByUser.TryGetValue(notification.UserId, out var tokens)) continue;
 
-        var dead = await push.SendAsync(tokens,
-            new PushPayload(notification.Title, notification.Body, data, unread), cancellationToken);
+            // Enum names, not numbers: the mobile and web clients switch on these strings to pick the
+            // route to deep-link into (see PushNotificationService._routeFor on Flutter).
+            var data = new Dictionary<string, string>
+            {
+                ["notificationId"] = notification.Id.ToString(),
+                ["type"] = notification.Type.ToString()
+            };
+            if (notification.ReferenceId is { } referenceId) data["referenceId"] = referenceId.ToString();
+            if (notification.ReferenceType is { } referenceType) data["referenceType"] = referenceType;
+
+            dead.AddRange(await push.SendAsync(tokens,
+                new PushPayload(notification.Title, notification.Body, data,
+                    unreadByUser.GetValueOrDefault(notification.UserId)), cancellationToken));
+        }
         if (dead.Count == 0) return;
 
         var stale = await db.DeviceTokens.Where(x => dead.Contains(x.Token)).ToListAsync(cancellationToken);

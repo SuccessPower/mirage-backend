@@ -206,8 +206,17 @@ public enum NotificationType
     MentorEventPublished = 55,
     // A mentor or counsellor scheduled a private event for their group only — it is not on the
     // public events feed, so the notification is the only way anyone hears about it.
-    PrivateEventPublished = 56
+    PrivateEventPublished = 56,
+    // Someone posted in a community (including Hearth and church circles) the recipient belongs
+    // to. In-app and push only, and silenced per community via NotificationMute.
+    CommunityPost = 57,
+    // A message in a couple friendship thread. Collapsed to one unread notification per thread
+    // so a lively conversation is one buzz, not one per line.
+    CoupleFriendMessage = 58
 }
+
+// The kinds of shared space a member can mute notifications for — see NotificationMute.
+public enum NotificationScope { Community = 1, MentorGroup = 2, CounsellorGroup = 3, CoupleFriendship = 4 }
 
 public enum ProfessionalRole { Mentor = 1, Counsellor = 2 }
 public enum ProfessionalConnectionStatus { Pending = 1, Accepted = 2, Declined = 3, Withdrawn = 4 }

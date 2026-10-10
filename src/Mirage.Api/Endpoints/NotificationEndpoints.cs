@@ -3,6 +3,7 @@ using Mirage.Api.Contracts;
 using Mirage.Api.Security;
 using Mirage.Application.Abstractions;
 using Mirage.Domain.Entities;
+using Mirage.Domain.Enums;
 
 namespace Mirage.Api.Endpoints;
 
@@ -20,6 +21,10 @@ internal static class NotificationEndpoints
         // and minimal APIs refuse to bind a body on DELETE (bodies on DELETE are also liable to be
         // stripped by intermediary proxies).
         group.MapPost("/device-tokens/revoke", RevokeDeviceToken);
+        // Per-space notification switches. Everything is on by default, so the list holds only
+        // the spaces the caller has turned off.
+        group.MapGet("/mutes", ListMutes);
+        group.MapPut("/mutes", SetMute);
         return api;
     }
 
@@ -119,5 +124,49 @@ internal static class NotificationEndpoints
         foreach (var notification in unread) notification.MarkRead();
         await db.SaveChangesAsync(cancellationToken);
         return ApiResults.Ok(context, new { marked = unread.Count }, "All notifications marked as read.");
+    }
+
+    private static async Task<IResult> ListMutes(HttpContext context, IMirageDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var userId = context.User.GetUserId();
+        var mutes = await db.NotificationMutes.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => new { x.Scope, x.ScopeId })
+            .ToListAsync(cancellationToken);
+        return ApiResults.Ok(context, mutes, "Notification mutes retrieved successfully.");
+    }
+
+    // Not gated on membership: muting a space you are not in changes nothing anyone can see, and
+    // letting it through means a mute set just before leaving still holds if you rejoin.
+    private static async Task<IResult> SetMute(HttpContext context, IMirageDbContext db,
+        SetNotificationMuteRequest request, CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(request.Scope))
+            return EndpointHelpers.ValidationProblem(context, (nameof(request.Scope), "Scope is not recognised."));
+        if (request.ScopeId == Guid.Empty)
+            return EndpointHelpers.ValidationProblem(context, (nameof(request.ScopeId), "A scope id is required."));
+
+        var userId = context.User.GetUserId();
+        var existing = await db.NotificationMutes.SingleOrDefaultAsync(
+            x => x.UserId == userId && x.Scope == request.Scope && x.ScopeId == request.ScopeId, cancellationToken);
+
+        if (request.Muted && existing is null)
+            db.NotificationMutes.Add(new NotificationMute(userId, request.Scope, request.ScopeId));
+        else if (!request.Muted && existing is not null)
+            db.NotificationMutes.Remove(existing);
+
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (request.Muted)
+        {
+            // A double-tap raced another insert of the same mute; the unique index kept one row,
+            // which is the state the caller asked for.
+        }
+
+        return ApiResults.Ok(context, new { request.Scope, request.ScopeId, muted = request.Muted },
+            request.Muted ? "Notifications turned off." : "Notifications turned on.");
     }
 }

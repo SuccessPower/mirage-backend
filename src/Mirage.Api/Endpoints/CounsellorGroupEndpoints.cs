@@ -128,10 +128,11 @@ internal static class CounsellorGroupEndpoints
         var counsellorName = await db.Profiles.AsNoTracking()
             .Where(x => x.UserId == userId).Select(x => x.DisplayName).SingleOrDefaultAsync(cancellationToken)
             ?? "Your counsellor";
-        var preview = request.Content.Length > 120 ? request.Content[..120].TrimEnd() + "…" : request.Content;
-        foreach (var memberId in (await GroupMemberIdsAsync(id, db, cancellationToken)).Where(x => x != userId))
-            await notifications.NotifyAsync(memberId, NotificationType.MentorGroupPost,
-                $"{counsellorName} posted to your group", preview, id, "CounsellorProfile", cancellationToken);
+        await notifications.NotifyMembersAsync(
+            (await GroupMemberIdsAsync(id, db, cancellationToken)).Where(x => x != userId),
+            NotificationScope.CounsellorGroup, id, NotificationType.MentorGroupPost,
+            $"{counsellorName} posted to your group", NotificationService.Preview(request.Content), id,
+            "CounsellorProfile", cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/counsellors/{id}/posts/{post.Id}", new { post.Id },
             "Post published successfully.");
@@ -204,12 +205,11 @@ internal static class CounsellorGroupEndpoints
             SentAt = message.CreatedAt
         }, cancellationToken);
 
-        var preview = request.Content.Length > 120 ? request.Content[..120].TrimEnd() + "…" : request.Content;
-        foreach (var memberId in (await GroupMemberIdsAsync(id, db, cancellationToken))
-                     .Append(counsellorUserId).Distinct().Where(x => x != userId))
-            await notifications.NotifyAsync(memberId, NotificationType.MentorGroupMessage,
-                $"{broadcastName ?? "Someone"} messaged your group", preview, id, "CounsellorProfile",
-                cancellationToken);
+        await notifications.NotifyMembersAsync(
+            (await GroupMemberIdsAsync(id, db, cancellationToken)).Append(counsellorUserId).Where(x => x != userId),
+            NotificationScope.CounsellorGroup, id, NotificationType.MentorGroupMessage,
+            $"{broadcastName ?? "Someone"} messaged your group", NotificationService.Preview(request.Content), id,
+            "CounsellorProfile", cancellationToken);
 
         return ApiResults.Created(context, $"/api/v1/counsellors/{id}/group-messages/{message.Id}",
             new { message.Id }, "Message sent successfully.");

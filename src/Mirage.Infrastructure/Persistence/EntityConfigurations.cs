@@ -943,6 +943,18 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
     }
 }
 
+public sealed class NotificationMuteConfiguration : IEntityTypeConfiguration<NotificationMute>
+{
+    public void Configure(EntityTypeBuilder<NotificationMute> b)
+    {
+        b.ToTable("notification_mutes");
+        // One mute per member per space; unmuting deletes the row.
+        b.HasIndex(x => new { x.UserId, x.Scope, x.ScopeId }).IsUnique();
+        // The fan-out path asks "who has muted this space?" on every post.
+        b.HasIndex(x => new { x.Scope, x.ScopeId });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
 public sealed class DeviceTokenConfiguration : IEntityTypeConfiguration<DeviceToken>
 {
     public void Configure(EntityTypeBuilder<DeviceToken> b)

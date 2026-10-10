@@ -360,6 +360,10 @@ public sealed record BookSessionRequest(
 public sealed record InitializePaymentRequest(PaymentProvider Provider, PaymentMethod Method);
 public sealed record ResetWelcomeEmailsRequest(string[] Emails);
 
+// Muted = true silences notifications from one community, group or couple friendship; false
+// turns them back on. Idempotent either way.
+public sealed record SetNotificationMuteRequest(NotificationScope Scope, Guid ScopeId, bool Muted);
+
 public sealed record RegisterDeviceTokenRequest(
     string Token,
     DevicePlatform Platform,
